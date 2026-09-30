@@ -3,18 +3,29 @@ use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use gtk4 as gtk;
-use gtk::gio::prelude::*;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::{
-    Align, Application, ApplicationWindow, Box as GtkBox, Button, EventControllerKey, Label,
-    Orientation, ScrolledWindow, Separator,
+    Align, Application, ApplicationWindow, Box as GtkBox, Button, ComboBoxText,
+    EventControllerKey, EventControllerScroll, EventControllerScrollFlags, Label, Orientation,
+    ScrolledWindow, Separator,
 };
 
 use crate::Args;
 use crate::services::{self, ServiceConfig};
 use crate::translate;
-use crate::{read_selection, read_stdin};
+use crate::{persist_target, read_selection, read_stdin};
+
+const TARGET_LANGUAGES: &[(&str, &str)] = &[
+    ("zh", "中文"),
+    ("en", "英语"),
+    ("ja", "日语"),
+    ("ko", "韩语"),
+    ("fr", "法语"),
+    ("de", "德语"),
+    ("es", "西班牙语"),
+    ("ru", "俄语"),
+];
 
 #[derive(Clone)]
 enum Mode {
@@ -35,6 +46,8 @@ struct Ui {
     copy_button: Button,
     receiver: Rc<RefCell<Option<Receiver<Progress>>>>,
     store: Rc<RefCell<String>>,
+    source_text: RefCell<String>,
+    target: RefCell<String>,
     args: Args,
     mode: Mode,
 }
@@ -58,20 +71,17 @@ pub fn run(args: Args) -> i32 {
         let state = state.clone();
 
         move |app| {
-            let mut slot = state.borrow_mut();
-            let old = slot.take();
+            let state_for_ui = state.clone();
 
-            let hold_guard = old.as_ref().map(|ui| {
-                let guard = app.hold();
-                ui.window.close();
-                guard
-            });
+            {
+                let mut slot = state.borrow_mut();
 
-            *slot = Some(build_ui(app, &args, &mode));
-
-            drop(hold_guard);
-            drop(old);
-            drop(slot);
+                if let Some(ui) = slot.as_mut() {
+                    ui.window.present();
+                } else {
+                    *slot = Some(build_ui(app, &args, &mode, state_for_ui));
+                }
+            }
 
             refresh(&state);
         }
@@ -82,7 +92,12 @@ pub fn run(args: Args) -> i32 {
     0
 }
 
-fn build_ui(app: &Application, args: &Args, mode: &Mode) -> Ui {
+fn build_ui(
+    app: &Application,
+    args: &Args,
+    mode: &Mode,
+    state: Rc<RefCell<Option<Ui>>>,
+) -> Ui {
     let title = format!("OpenTranslator ({} → {})", args.source, args.target);
 
     let window = ApplicationWindow::builder()
@@ -120,6 +135,26 @@ fn build_ui(app: &Application, args: &Args, mode: &Mode) -> Ui {
 
     let close_button = Button::with_label("关闭");
 
+    let language_label = Label::new(Some("目标语言"));
+    let language_combo = ComboBoxText::new();
+
+    for (code, name) in TARGET_LANGUAGES {
+        language_combo.append(Some(code), name);
+    }
+    if !TARGET_LANGUAGES.iter().any(|(code, _)| *code == args.target) {
+        language_combo.append(Some(args.target.as_str()), args.target.as_str());
+    }
+    language_combo.set_active_id(Some(args.target.as_str()));
+
+    let scroll_controller = EventControllerScroll::new(EventControllerScrollFlags::VERTICAL);
+    scroll_controller.connect_scroll(|_, _, _| glib::Propagation::Stop);
+    language_combo.add_controller(scroll_controller);
+
+    let language_box = GtkBox::new(Orientation::Horizontal, 8);
+    language_box.set_halign(Align::Start);
+    language_box.append(&language_label);
+    language_box.append(&language_combo);
+
     let buttons = GtkBox::new(Orientation::Horizontal, 8);
     buttons.set_halign(Align::End);
     buttons.append(&copy_button);
@@ -128,6 +163,7 @@ fn build_ui(app: &Application, args: &Args, mode: &Mode) -> Ui {
     container.append(&source_label);
     container.append(&Separator::new(Orientation::Horizontal));
     container.append(&scroller);
+    container.append(&language_box);
     container.append(&buttons);
 
     window.set_child(Some(&container));
@@ -185,6 +221,37 @@ fn build_ui(app: &Application, args: &Args, mode: &Mode) -> Ui {
         move |_| window.close()
     });
 
+    language_combo.connect_changed({
+        let state = state.clone();
+        let window = window.clone();
+        let source = args.source.clone();
+
+        move |combo| {
+            let Some(target) = combo.active_id() else {
+                return;
+            };
+            let target = target.to_string();
+
+            let source_text = {
+                let slot = state.borrow();
+                let Some(ui) = slot.as_ref() else {
+                    return;
+                };
+                ui.target.replace(target.clone());
+                ui.source_text.borrow().clone()
+            };
+
+            persist_target(&target);
+            window.set_title(Some(&format!("OpenTranslator ({source} → {target})")));
+
+            if source_text.is_empty() {
+                refresh(&state);
+            } else {
+                begin_translation(&state, source_text);
+            }
+        }
+    });
+
     let key_controller = EventControllerKey::new();
     key_controller.connect_key_pressed({
         let window = window.clone();
@@ -209,47 +276,65 @@ fn build_ui(app: &Application, args: &Args, mode: &Mode) -> Ui {
         copy_button,
         receiver,
         store,
+        source_text: RefCell::new(String::new()),
+        target: RefCell::new(args.target.clone()),
         args: args.clone(),
         mode: mode.clone(),
     }
 }
 
 fn refresh(state: &Rc<RefCell<Option<Ui>>>) {
+    let text = {
+        let slot = state.borrow();
+        let Some(ui) = slot.as_ref() else {
+            return;
+        };
+
+        match &ui.mode {
+            Mode::Selection { clipboard } => match read_selection(*clipboard) {
+                Ok(text) if !text.is_empty() => Some(text),
+                Ok(_) => {
+                    ui.translation_label.set_text("未选中文本");
+                    None
+                }
+                Err(error) => {
+                    ui.translation_label.set_text(&error);
+                    None
+                }
+            },
+            Mode::Stdin(Ok(text)) if !text.is_empty() => Some(text.clone()),
+            Mode::Stdin(Ok(_)) => {
+                ui.translation_label.set_text("未选中文本");
+                None
+            }
+            Mode::Stdin(Err(error)) => {
+                ui.translation_label.set_text(error);
+                None
+            }
+        }
+    };
+
+    match text {
+        Some(text) => begin_translation(state, text),
+        None => {
+            let slot = state.borrow();
+            if let Some(ui) = slot.as_ref() {
+                ui.source_label.set_text("");
+                ui.source_text.borrow_mut().clear();
+                ui.copy_button.set_sensitive(false);
+                ui.store.borrow_mut().clear();
+            }
+        }
+    }
+}
+
+fn begin_translation(state: &Rc<RefCell<Option<Ui>>>, text: String) {
     let slot = state.borrow();
     let Some(ui) = slot.as_ref() else {
         return;
     };
 
-    let text = match &ui.mode {
-        Mode::Selection { clipboard } => match read_selection(*clipboard) {
-            Ok(text) if !text.is_empty() => Some(text),
-            Ok(_) => {
-                ui.translation_label.set_text("未选中文本");
-                None
-            }
-            Err(error) => {
-                ui.translation_label.set_text(&error);
-                None
-            }
-        },
-        Mode::Stdin(Ok(text)) if !text.is_empty() => Some(text.clone()),
-        Mode::Stdin(Ok(_)) => {
-            ui.translation_label.set_text("未选中文本");
-            None
-        }
-        Mode::Stdin(Err(error)) => {
-            ui.translation_label.set_text(error);
-            None
-        }
-    };
-
-    let Some(text) = text else {
-        ui.source_label.set_text("");
-        ui.copy_button.set_sensitive(false);
-        ui.store.borrow_mut().clear();
-        return;
-    };
-
+    ui.source_text.replace(text.clone());
     ui.source_label.set_text(&text);
     ui.translation_label.set_text("正在准备翻译服务…");
     ui.copy_button.set_sensitive(false);
@@ -259,11 +344,13 @@ fn refresh(state: &Rc<RefCell<Option<Ui>>>) {
     let (sender, receiver) = channel();
     *ui.receiver.borrow_mut() = Some(receiver);
 
-    spawn_worker(&ui.args, text, sender);
+    let target = ui.target.borrow().clone();
+    spawn_worker(&ui.args, &target, text, sender);
 }
 
-fn spawn_worker(args: &Args, text: String, sender: Sender<Progress>) {
+fn spawn_worker(args: &Args, target: &str, text: String, sender: Sender<Progress>) {
     let args = args.clone();
+    let target = target.to_string();
 
     std::thread::spawn(move || {
         let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -299,7 +386,7 @@ fn spawn_worker(args: &Args, text: String, sender: Sender<Progress>) {
                 &client,
                 &args.service_url,
                 &args.source,
-                &args.target,
+                &target,
                 &text,
             )
             .await;
