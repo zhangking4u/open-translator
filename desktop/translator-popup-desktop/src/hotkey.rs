@@ -1,9 +1,9 @@
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 pub struct Hotkey {
     _manager: global_hotkey::GlobalHotKeyManager,
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 impl Hotkey {
     pub fn register() -> Result<Self, String> {
         use global_hotkey::hotkey::{Code, HotKey, Modifiers};
@@ -33,10 +33,10 @@ impl Hotkey {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub struct Hotkey;
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 impl Hotkey {
     pub fn register() -> Result<Self, String> {
         Ok(Self)

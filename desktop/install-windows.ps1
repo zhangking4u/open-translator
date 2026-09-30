@@ -12,9 +12,9 @@ $ErrorActionPreference = "Stop"
 
 $DesktopDir = $PSScriptRoot
 $RepoRoot = Split-Path -Parent $DesktopDir
-$PopupManifest = Join-Path $DesktopDir "translator-popup-windows\Cargo.toml"
+$PopupManifest = Join-Path $DesktopDir "translator-popup-desktop\Cargo.toml"
 $CoreManifest = Join-Path $RepoRoot "core\translator-service\Cargo.toml"
-$Exe = Join-Path $DesktopDir "translator-popup-windows\target\release\translator-popup-windows.exe"
+$Exe = Join-Path $DesktopDir "translator-popup-desktop\target\release\translator-popup-desktop.exe"
 $Startup = [Environment]::GetFolderPath("Startup")
 $Link = Join-Path $Startup "OpenTranslator.lnk"
 

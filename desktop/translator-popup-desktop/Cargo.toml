@@ -1,5 +1,5 @@
 [package]
-name = "translator-popup-windows"
+name = "translator-popup-desktop"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,7 +8,7 @@ eframe = "0.36.2"
 tokio = { version = "1.53.1", features = ["macros", "rt", "time"] }
 translator-core = { version = "0.1.0", path = "../translator-core" }
 
-[target."cfg(windows)".dependencies]
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 arboard = "3.6.1"
 enigo = "0.6.1"
 global-hotkey = "0.8.0"

@@ -78,6 +78,15 @@ pub fn log_path(name: &str) -> PathBuf {
 
 pub fn default_core_bin() -> Option<PathBuf> {
     let exe = env::current_exe().ok()?;
+
+    // Installed layouts (e.g. a macOS .app bundle) ship the service next to the popup.
+    if let Some(dir) = exe.parent() {
+        let sibling = dir.join(format!("translator-service{}", env::consts::EXE_SUFFIX));
+        if sibling.is_file() {
+            return Some(sibling);
+        }
+    }
+
     let candidate = core_bin_from_exe(&exe)?;
     candidate.is_file().then_some(candidate)
 }

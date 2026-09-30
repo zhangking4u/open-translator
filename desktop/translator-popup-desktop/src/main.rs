@@ -9,30 +9,33 @@ use translator_core::services::{self, ServiceConfig};
 use translator_core::translate;
 
 const HELP: &str = "\
-Usage: translator-popup-windows [OPTIONS]
+Usage: translator-popup-desktop [OPTIONS]
 
-Windows desktop popup for OpenTranslator: select text and press Ctrl+Alt+T to
-translate it with the local service. The app stays resident; Esc hides the
-window, 退出 quits.
+Desktop popup for OpenTranslator (Windows / macOS): select text and press
+Ctrl+Alt+T to translate it with the local service. The app stays resident;
+Esc hides the window, 退出 quits.
 
 Options:
   -s, --source <LANG>   Source language tag (default: en)
   -t, --target <LANG>   Target language tag (default: zh)
       --stdin           Use stdin instead of the current selection (testing)
-      --print           Print the translation and exit (debug builds; release
-                        builds are GUI-only without a console)
+      --print           Print the translation and exit (debug builds; Windows
+                        release builds are GUI-only without a console)
       --service <URL>   Service base URL (default: http://127.0.0.1:17890)
       --no-start        Do not auto-start services
   -h, --help            Show this help
 
-Config file (Windows: %APPDATA%\\open-translator\\config) is applied when no
-CLI flag is given; CLI > config file > environment > defaults.
+Config file (Windows: %APPDATA%\\open-translator\\config, macOS:
+~/Library/Application Support/open-translator/config) is applied when no CLI
+flag is given; CLI > config file > environment > defaults.
 
 Auto-start environment: TRANSLATOR_CORE_BIN, TRANSLATOR_OLLAMA_BIN,
 TRANSLATOR_MODEL, TRANSLATOR_PROMPT_STYLE (same as the Linux popup).
 
-The hotkey sends Ctrl+C to the focused window and reads the clipboard, so the
-selection must come from an application that supports Ctrl+C.
+The hotkey sends Ctrl+C (Cmd+C on macOS) to the focused window and reads the
+clipboard, so the selection must come from an application that supports copy.
+On macOS, allow OpenTranslator under System Settings -> Privacy & Security ->
+Accessibility on first use.
 ";
 
 async fn run_headless(args: &Args, text: &str) -> i32 {

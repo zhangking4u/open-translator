@@ -3479,7 +3479,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "translator-popup-windows"
+name = "translator-popup-desktop"
 version = "0.1.0"
 dependencies = [
  "arboard",
