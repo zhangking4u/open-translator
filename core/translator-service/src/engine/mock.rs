@@ -7,9 +7,9 @@ pub struct MockEngine;
 impl TranslationEngine for MockEngine {
     fn translate(&self, request: TranslationRequest) -> TranslationFuture<'_> {
         Box::pin(async move {
-            TranslationResult {
+            Ok(TranslationResult {
                 translated_text: format!("[Mock Translation] {}", request.text),
-            }
+            })
         })
     }
 }
@@ -26,7 +26,8 @@ mod tests {
                 source: "en".to_string(),
                 target: "zh".to_string(),
             })
-            .await;
+            .await
+            .unwrap();
 
         assert_eq!(result.translated_text, "[Mock Translation] hello world");
     }

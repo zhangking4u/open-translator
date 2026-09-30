@@ -1,17 +1,23 @@
-use std::sync::Arc;
-
-use translator_service::{api, engine::mock::MockEngine};
+use translator_service::{api, config::Config, engine};
 
 #[tokio::main]
 async fn main() {
-    let app = api::router(Arc::new(MockEngine));
+    let config = Config::from_env().unwrap_or_else(|error| {
+        eprintln!("Configuration error: {error}");
+        std::process::exit(1);
+    });
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:17890")
+    let app = api::router(engine::build(config.engine));
+
+    let listener = tokio::net::TcpListener::bind(&config.bind_addr)
         .await
-        .unwrap();
+        .unwrap_or_else(|error| {
+            eprintln!("Failed to bind {}: {error}", config.bind_addr);
+            std::process::exit(1);
+        });
 
     println!("OpenTranslator Core Started");
-    println!("Listening on http://127.0.0.1:17890");
+    println!("Listening on http://{}", config.bind_addr);
 
     axum::serve(listener, app).await.unwrap();
 }

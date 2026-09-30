@@ -1,18 +1,16 @@
-use std::sync::Arc;
-
 use axum::{
     extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::domain::translation::TranslationRequest;
-use crate::engine::TranslationEngine;
+use crate::domain::translation::{TranslationError, TranslationRequest};
+use crate::engine::EngineRef;
 
-pub type EngineState = Arc<dyn TranslationEngine>;
-
-pub fn router(engine: EngineState) -> Router {
+pub fn router(engine: EngineRef) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/translate", post(translate))
@@ -45,9 +43,15 @@ struct TranslateResponse {
 }
 
 async fn translate(
-    State(engine): State<EngineState>,
+    State(engine): State<EngineRef>,
     Json(payload): Json<TranslateRequest>,
-) -> Json<TranslateResponse> {
+) -> Result<Json<TranslateResponse>, TranslationError> {
+    if payload.text.trim().is_empty() {
+        return Err(TranslationError::InvalidRequest(
+            "text must not be empty".to_string(),
+        ));
+    }
+
     println!("Translate request: {}", payload.text);
 
     let request = TranslationRequest {
@@ -56,9 +60,42 @@ async fn translate(
         target: payload.target,
     };
 
-    let result = engine.translate(request).await;
+    let result = engine.translate(request).await?;
 
-    Json(TranslateResponse {
+    Ok(Json(TranslateResponse {
         translation: result.translated_text,
-    })
+    }))
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: ErrorBody,
+}
+
+#[derive(Serialize)]
+struct ErrorBody {
+    kind: &'static str,
+    message: String,
+}
+
+impl IntoResponse for TranslationError {
+    fn into_response(self) -> Response {
+        let (status, kind) = match &self {
+            TranslationError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, "invalid_request"),
+            TranslationError::EngineUnavailable(_) => {
+                (StatusCode::BAD_GATEWAY, "engine_unavailable")
+            }
+            TranslationError::Timeout => (StatusCode::GATEWAY_TIMEOUT, "timeout"),
+            TranslationError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+        };
+
+        let body = ErrorResponse {
+            error: ErrorBody {
+                kind,
+                message: self.to_string(),
+            },
+        };
+
+        (status, Json(body)).into_response()
+    }
 }
