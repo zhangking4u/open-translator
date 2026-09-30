@@ -36,6 +36,14 @@ if (-not (Test-Path $Exe)) {
     throw "popup binary not found after build: $Exe"
 }
 
+$ModelDir = Join-Path $env:LOCALAPPDATA "open-translator\models"
+$ModelFile = Join-Path $ModelDir "hy-mt1.5-1.8b-q4_k_m.gguf"
+
+if (-not (Test-Path $ModelFile)) {
+    Write-Host "warning: model not found at $ModelFile" -ForegroundColor Yellow
+    Write-Host "         place a .gguf there, or set model_path in %APPDATA%\open-translator\config" -ForegroundColor Yellow
+}
+
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($Link)
 $shortcut.TargetPath = $Exe

@@ -1,5 +1,9 @@
 use std::fmt;
 
+#[cfg_attr(
+    not(any(target_os = "windows", target_os = "macos")),
+    allow(dead_code)
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Modifier {
     Control,
@@ -20,12 +24,20 @@ impl fmt::Display for Modifier {
     }
 }
 
+#[cfg_attr(
+    not(any(target_os = "windows", target_os = "macos")),
+    allow(dead_code)
+)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct HotkeySpec {
     pub modifiers: Vec<Modifier>,
     pub key: String,
 }
 
+#[cfg_attr(
+    not(any(target_os = "windows", target_os = "macos")),
+    allow(dead_code)
+)]
 pub fn parse_spec(spec: &str) -> Result<HotkeySpec, String> {
     let mut modifiers: Vec<Modifier> = Vec::new();
     let mut key: Option<String> = None;
@@ -74,6 +86,10 @@ pub fn parse_spec(spec: &str) -> Result<HotkeySpec, String> {
     Ok(HotkeySpec { modifiers, key })
 }
 
+#[cfg_attr(
+    not(any(target_os = "windows", target_os = "macos")),
+    allow(dead_code)
+)]
 fn is_supported_key(key: &str) -> bool {
     if key.len() == 1 {
         return key.chars().all(|c| c.is_ascii_alphanumeric());

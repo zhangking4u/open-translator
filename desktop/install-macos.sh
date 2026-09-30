@@ -39,6 +39,12 @@ if [ ! -x "$BIN" ] || [ ! -x "$CORE_BIN" ]; then
     exit 1
 fi
 
+MODEL_FILE="$HOME/Library/Application Support/open-translator/models/hy-mt1.5-1.8b-q4_k_m.gguf"
+if [ ! -f "$MODEL_FILE" ]; then
+    echo "warning: model not found at $MODEL_FILE"
+    echo "         place a .gguf there, or set model_path in ~/Library/Application Support/open-translator/config"
+fi
+
 mkdir -p "$APP_DIR/Contents/MacOS"
 cp "$BIN" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$CORE_BIN" "$APP_DIR/Contents/MacOS/translator-service"

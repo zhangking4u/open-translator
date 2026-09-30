@@ -8,6 +8,9 @@ pub struct FileConfig {
     pub source: Option<String>,
     pub target: Option<String>,
     pub hotkey: Option<String>,
+    pub model_path: Option<String>,
+    pub prompt_style: Option<String>,
+    pub serve_extension: Option<String>,
 }
 
 pub fn load_config() -> FileConfig {
@@ -45,6 +48,9 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "source" => config.source = Some(value.to_string()),
             "target" => config.target = Some(value.to_string()),
             "hotkey" => config.hotkey = Some(value.to_string()),
+            "model_path" => config.model_path = Some(value.to_string()),
+            "prompt_style" => config.prompt_style = Some(value.to_string()),
+            "serve_extension" => config.serve_extension = Some(value.to_string()),
             _ => {}
         }
     }
@@ -99,7 +105,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nunknown = x\n",
         )
         .unwrap();
 
@@ -110,6 +116,9 @@ mod tests {
         assert_eq!(config.target.as_deref(), Some("ko"));
         assert_eq!(config.service_url.as_deref(), Some("http://127.0.0.1:1"));
         assert_eq!(config.hotkey.as_deref(), Some("Ctrl+Shift+T"));
+        assert_eq!(config.model_path.as_deref(), Some("/models/hy-mt.gguf"));
+        assert_eq!(config.prompt_style.as_deref(), Some("hymt"));
+        assert_eq!(config.serve_extension.as_deref(), Some("false"));
     }
 
     #[test]

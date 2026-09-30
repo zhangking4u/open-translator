@@ -72,6 +72,47 @@ pub fn state_dir() -> PathBuf {
     base.join("open-translator")
 }
 
+pub const DEFAULT_MODEL_FILE: &str = "hy-mt1.5-1.8b-q4_k_m.gguf";
+
+#[cfg(target_os = "windows")]
+pub fn models_dir() -> Option<PathBuf> {
+    env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var_os("USERPROFILE").map(|home| {
+                PathBuf::from(home)
+                    .join("AppData")
+                    .join("Local")
+            })
+        })
+        .map(|base| base.join("open-translator").join("models"))
+}
+
+#[cfg(target_os = "macos")]
+pub fn models_dir() -> Option<PathBuf> {
+    let home = env::var_os("HOME")?;
+    Some(
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("open-translator")
+            .join("models"),
+    )
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn models_dir() -> Option<PathBuf> {
+    let base = env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))?;
+
+    Some(base.join("open-translator").join("models"))
+}
+
+pub fn default_model_path() -> Option<PathBuf> {
+    Some(models_dir()?.join(DEFAULT_MODEL_FILE))
+}
+
 pub fn log_path(name: &str) -> PathBuf {
     state_dir().join(name)
 }
@@ -146,6 +187,16 @@ mod tests {
                 "/repo/core/translator-service/target/release/translator-service{}",
                 env::consts::EXE_SUFFIX
             ))
+        );
+    }
+
+    #[test]
+    fn default_model_path_ends_with_model_file() {
+        let path = default_model_path().unwrap();
+
+        assert_eq!(
+            path.file_name().unwrap().to_string_lossy(),
+            DEFAULT_MODEL_FILE
         );
     }
 }

@@ -1,10 +1,11 @@
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use eframe::egui;
 use translator_core::args::{Args, read_stdin};
-use translator_core::services::{self, ServiceConfig};
 use translator_core::settings::persist_target;
-use translator_core::translate;
+use translator_service::domain::translation::TranslationRequest;
+use translator_service::engine::llama_cpp::LlamaCppEngine;
 
 use crate::capture;
 use crate::hotkey::Hotkey;
@@ -22,13 +23,13 @@ pub const LANGUAGES: &[(&str, &str)] = &[
 ];
 
 enum Progress {
-    Translating,
     Done(String),
     Error(String),
 }
 
 pub struct PopupApp {
     args: Args,
+    engine: Option<Arc<LlamaCppEngine>>,
     source_text: String,
     translation: String,
     status: String,
@@ -41,10 +42,16 @@ pub struct PopupApp {
 }
 
 impl PopupApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, args: Args, hotkey_spec: &str) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        args: Args,
+        hotkey_spec: &str,
+        engine: Result<Arc<LlamaCppEngine>, String>,
+    ) -> Self {
         let mut app = Self {
             target: args.target.clone(),
             args,
+            engine: None,
             source_text: String::new(),
             translation: String::new(),
             status: String::new(),
@@ -55,9 +62,18 @@ impl PopupApp {
             quit: false,
         };
 
+        match engine {
+            Ok(engine) => app.engine = Some(engine),
+            Err(error) => app.show_error(&format!("模型加载失败：{error}")),
+        }
+
         match Hotkey::register(hotkey_spec) {
             Ok(hotkey) => app.hotkey = Some(hotkey),
-            Err(error) => app.show_error(&error),
+            Err(error) => {
+                if !app.error {
+                    app.show_error(&error);
+                }
+            }
         }
 
         match Tray::new(&format!("OpenTranslator（{hotkey_spec}）")) {
@@ -97,6 +113,11 @@ impl PopupApp {
     }
 
     fn begin_translation(&mut self, text: String) {
+        let Some(engine) = self.engine.clone() else {
+            self.show_error("模型未加载，无法翻译");
+            return;
+        };
+
         self.source_text = text.clone();
         self.translation.clear();
         self.status = "翻译中…".to_string();
@@ -104,7 +125,14 @@ impl PopupApp {
 
         let (sender, receiver) = channel();
         self.receiver = Some(receiver);
-        spawn_worker(self.args.clone(), self.target.clone(), text, sender);
+
+        spawn_worker(
+            engine,
+            self.args.source.clone(),
+            self.target.clone(),
+            text,
+            sender,
+        );
     }
 
     fn show_error(&mut self, message: &str) {
@@ -162,10 +190,6 @@ impl eframe::App for PopupApp {
 
         for message in messages {
             match message {
-                Progress::Translating => {
-                    self.status = "翻译中…".to_string();
-                    self.error = false;
-                }
                 Progress::Done(translation) => {
                     self.translation = translation;
                     self.status.clear();
@@ -286,46 +310,20 @@ fn target_label(target: &str) -> &str {
         .unwrap_or(target)
 }
 
-fn spawn_worker(args: Args, target: String, text: String, sender: Sender<Progress>) {
+fn spawn_worker(
+    engine: Arc<LlamaCppEngine>,
+    source: String,
+    target: String,
+    text: String,
+    sender: Sender<Progress>,
+) {
     std::thread::spawn(move || {
-        let runtime = match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => runtime,
-            Err(error) => {
-                let _ = sender.send(Progress::Error(format!("failed to start runtime: {error}")));
-                return;
-            }
+        let request = TranslationRequest { text, source, target };
+
+        let _ = match engine.translate_blocking(&request) {
+            Ok(result) => sender.send(Progress::Done(result.translated_text)),
+            Err(error) => sender.send(Progress::Error(error.to_string())),
         };
-
-        runtime.block_on(async move {
-            let client = match translate::build_client() {
-                Ok(client) => client,
-                Err(error) => {
-                    let _ = sender.send(Progress::Error(error));
-                    return;
-                }
-            };
-
-            let config = ServiceConfig::from_env(&args.service_url, !args.no_start);
-
-            if let Err(error) = services::ensure(&client, &config).await {
-                let _ = sender.send(Progress::Error(error));
-                return;
-            }
-
-            let _ = sender.send(Progress::Translating);
-
-            let outcome =
-                translate::translate(&client, &args.service_url, &args.source, &target, &text)
-                    .await;
-
-            let _ = match outcome {
-                Ok(translation) => sender.send(Progress::Done(translation)),
-                Err(error) => sender.send(Progress::Error(error)),
-            };
-        });
     });
 }
 

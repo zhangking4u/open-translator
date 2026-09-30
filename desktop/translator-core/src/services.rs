@@ -231,7 +231,7 @@ fn is_local_url(url: &str) -> bool {
     matches!(url_host(url), Some("127.0.0.1") | Some("localhost"))
 }
 
-fn bind_addr_from_service_url(url: &str) -> Option<String> {
+pub fn bind_addr_from_service_url(url: &str) -> Option<String> {
     if !is_local_url(url) {
         return None;
     }
