@@ -283,6 +283,39 @@ Live checks:
 ---
 
 
+## Milestone: Desktop Phase 0 — Selection Popup
+
+
+Completed:
+
+- New crate `desktop/translator-popup`: reads the Wayland primary selection (or clipboard), calls `POST /translate` and shows the result in a zenity popup
+- Flags: `--source/-s`, `--target/-t`, `--clipboard`, `--stdin`, `--print`, `--service` (default `$TRANSLATOR_SERVICE_URL`)
+
+
+Findings (GNOME Wayland):
+
+- `wl-clipboard-rs` cannot be used: it requires the data-control protocol, which Mutter does not implement (both set and read fail)
+- GUI processes cannot set the selection without keyboard focus, so scripted selection injection is not possible; test setup needs a real focused app
+- Reading via `wl-paste` (wl-clipboard package) is the GNOME-compatible path
+
+
+Verification:
+
+- cargo test (4 tests)
+- `echo "kernel panic" | translator-popup --stdin --print` → 内核崩溃 against local Ollama (hy-mt1.5-1.8b)
+- Unreachable service exits 1 with a clear message
+
+
+Real selection verification (2026-09-30, wl-clipboard installed):
+
+- `wl-copy --primary "kernel panic"` + `translator-popup --print` → 内核崩溃
+- `wl-copy "Break a leg!"` + `translator-popup --clipboard --print` → 祝你好运！
+- A GNOME custom shortcut should point at `desktop/translator-popup/target/release/translator-popup`
+
+
+---
+
+
 # Git History
 
 

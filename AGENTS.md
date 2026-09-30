@@ -1,14 +1,15 @@
 # AGENTS.md
 
-OpenTranslator: local-first AI translation platform. Only the Rust core service exists so far; `desktop/`, `models/`, and `tests/` are empty placeholders. `README.md` is empty — `docs/` is the project context.
+OpenTranslator: local-first AI translation platform. Two crates exist: `core/translator-service` (HTTP service + engines) and `desktop/translator-popup` (Wayland selection popup, Phase 0). `tests/` is an empty placeholder; `README.md` is empty — `docs/` is the project context.
 
 ## Repo layout / build
 
-- The only crate is `core/translator-service`. There is no root Cargo.toml or workspace: run all cargo commands from `core/translator-service/`:
+- The core crate is `core/translator-service`. There is no root Cargo.toml or workspace: run all cargo commands from the crate directory:
   - `cargo run` — Axum server at `TRANSLATOR_BIND_ADDR` (default `http://127.0.0.1:17890`)
   - `cargo test` — unit tests plus `tests/api.rs` (tower `oneshot`) and `tests/ollama.rs` (local axum stub server) integration tests; no external services needed
   - `cargo check`
-- `Cargo.lock` is committed; keep it.
+- `desktop/translator-popup` is a separate crate: run cargo from `desktop/translator-popup/`. It calls the core service over HTTP and reads the Wayland selection via `wl-paste` (from the `wl-clipboard` package, installed on the dev machine); `--stdin` and `--print` keep it scriptable and testable. GNOME/Mutter does not implement the data-control protocol, so `wl-clipboard-rs` cannot be used.
+- `Cargo.lock` is committed in both crates; keep them.
 - A root `tests/` dir exists but is not a Cargo test dir — Rust tests belong under `core/translator-service/tests/` or as `#[cfg(test)]` modules. `models/` holds the HY-MT → Ollama import script (`import-hymt-ollama.sh`).
 - Root `.gitignore` ignores `package.json`, lockfiles, and `node_modules` (legacy template leftovers), so JS tooling files would be silently ignored.
 - Active branch is `main`.

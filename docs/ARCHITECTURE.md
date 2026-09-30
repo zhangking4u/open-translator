@@ -85,7 +85,7 @@ Responsibility:
 
 Status:
 
-Planned
+Phase 0 implemented: `desktop/translator-popup` (Wayland selection → core `/translate` → popup)
 
 
 ---
@@ -204,11 +204,12 @@ Completed:
 - MockEngine and OllamaEngine (local model adapter)
 - Model evaluation (HY-MT1.5-1.8B recommended default; TranslateGemma 4B quality option)
 - API layer split (`src/api`) with unit and integration tests
+- Desktop Phase 0: selection popup (`desktop/translator-popup`)
 
 
 In Progress:
 
-- Desktop client preparation (Sprint 3)
+- Desktop client polish (hotkey setup, popup UX, service startup)
 
 
 Next:

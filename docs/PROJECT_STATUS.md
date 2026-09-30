@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record service hardening
+docs: record desktop phase 0
 
 
 ---
@@ -247,7 +247,7 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Prepare desktop client integration (Sprint 3)
+1. Desktop Phase 1: portal-based hotkey, GTK popup, service startup checks
 
 2. Plan browser integration
 
@@ -338,4 +338,25 @@ Completed:
 
 Pending:
 
-- Desktop client preparation
+- Desktop client polish (hotkey setup, popup UX, service startup)
+
+
+## Sprint 3 Progress (Phase 0)
+
+
+Completed:
+
+- `desktop/translator-popup`: reads the Wayland primary selection (or clipboard), calls `POST /translate` and shows a zenity popup
+- `--stdin` / `--print` keep it scriptable; end-to-end verified against the Ollama engine (kernel panic → 内核崩溃)
+- GNOME constraint documented: `wl-clipboard-rs` unusable (no data-control protocol); reading goes through `wl-paste`
+
+
+Pending:
+
+- Bind a GNOME custom shortcut to the popup binary (user setup)
+- Phase 1: portal-based hotkey, GTK popup, service startup checks
+
+
+Status:
+
+Phase 0 popup implemented and verified with a real selection (wl-clipboard).
