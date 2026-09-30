@@ -209,7 +209,7 @@ main
 
 Latest commit:
 
-docs: update status docs and agent guide
+docs: log error contract and config
 
 
 ---
@@ -219,12 +219,12 @@ docs: update status docs and agent guide
 
 Sprint:
 
-Sprint 1.2
+Sprint 2 (preparation)
 
 
 Goal:
 
-Introduce Translation Engine abstraction layer.
+Integrate a local translation model.
 
 
 ---
@@ -232,11 +232,11 @@ Introduce Translation Engine abstraction layer.
 ## 9. Next Steps
 
 
-1. Define model engine selection and configuration
+1. Choose model runtime (Ollama / llama.cpp server / in-process)
 
-2. Integrate first local translation model adapter (Sprint 2)
+2. Integrate first local translation model adapter
 
-3. Separate domain layer and infrastructure layer
+3. Extend config with model address, model name and timeout
 
 4. Prepare desktop client integration
 
@@ -302,3 +302,20 @@ TranslationResult
 Status:
 
 Translation architecture abstraction completed; API layer split and test foundation in place.
+
+
+## Sprint 2 Preparation Progress
+
+
+Completed:
+
+- TranslationEngine now returns `Result` with a shared `TranslationError`
+- API maps errors to JSON `{"error":{"kind","message"}}` (400/500/502/504)
+- Env-based config: `TRANSLATOR_BIND_ADDR`, `TRANSLATOR_ENGINE`; engine factory (`engine::build`)
+- Tests for invalid input, engine failure and engine kind parsing
+
+
+Pending:
+
+- Model runtime selection
+- Model adapter and model config (address, model name, timeout)

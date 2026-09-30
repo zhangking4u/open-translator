@@ -135,6 +135,11 @@ Purpose:
 Submit translation request.
 
 
+Error responses:
+
+JSON `{"error":{"kind","message"}}` with 400 invalid request, 500 internal, 502 engine unavailable, 504 timeout.
+
+
 ---
 
 ## 3.4 Translation Engine
@@ -153,6 +158,11 @@ Possible implementations:
 - HY-MT Engine
 - NLLB Engine
 - Qwen Engine
+
+
+Current implementation:
+
+MockEngine behind `engine::build`; the engine trait is async and fallible.
 
 
 ---

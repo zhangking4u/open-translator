@@ -81,6 +81,22 @@ Verification:
 cargo test
 
 
+## Milestone: Engine Error Path and Configuration
+
+
+Completed:
+
+- `TranslationEngine::translate` now returns `Result<TranslationResult, TranslationError>`
+- API error contract: JSON `{"error":{"kind","message"}}` with 400 invalid request, 500 internal, 502 engine unavailable, 504 timeout
+- Added `config` module and engine factory: `TRANSLATOR_BIND_ADDR` (default `127.0.0.1:17890`), `TRANSLATOR_ENGINE` (default `mock`)
+- Added tests for empty input rejection, engine failure mapping and engine kind parsing
+
+
+Verification:
+
+cargo test
+
+
 ---
 
 
@@ -112,20 +128,28 @@ docs: add project status document
 # Current Sprint
 
 
-Sprint 1.2
+Sprint 2 (preparation)
 
 
 Goal:
 
-Introduce Translation Engine abstraction.
+Integrate a local translation model.
 
 
-Tasks (completed 2026-09-30):
+Planned:
 
+1. Choose model runtime (Ollama / llama.cpp server / in-process — TBD)
+
+2. Add model adapter behind engine config
+
+3. Extend config with model address, model name and timeout
+
+
+Sprint 1.2 (completed 2026-09-30):
 
 1. Create domain model
 
-2. Define TranslationEngine trait
+2. Define TranslationEngine trait (async, fallible)
 
 3. Implement MockTranslationEngine
 

@@ -5,8 +5,8 @@ OpenTranslator: local-first AI translation platform. Only the Rust core service 
 ## Repo layout / build
 
 - The only crate is `core/translator-service`. There is no root Cargo.toml or workspace: run all cargo commands from `core/translator-service/`:
-  - `cargo run` — starts Axum server at `http://127.0.0.1:17890` (hardcoded)
-  - `cargo test` — runs the `MockEngine` unit test plus `tests/api.rs` integration tests via tower `oneshot` (no port or network needed)
+  - `cargo run` — Axum server at `TRANSLATOR_BIND_ADDR` (default `http://127.0.0.1:17890`)
+  - `cargo test` — unit tests plus `tests/api.rs` integration tests via tower `oneshot` (no port or network needed)
   - `cargo check`
 - `Cargo.lock` is committed; keep it.
 - A root `tests/` dir exists but is not a Cargo test dir — Rust tests belong under `core/translator-service/tests/` or as `#[cfg(test)]` modules.
@@ -16,13 +16,15 @@ OpenTranslator: local-first AI translation platform. Only the Rust core service 
 
 ## Architecture (current state)
 
-`src/lib.rs` exposes `api`, `domain`, `engine`; `src/main.rs` is bootstrap only (builds `api::router(...)` and binds the port).
+`src/lib.rs` exposes `api`, `config`, `domain`, `engine`; `src/main.rs` is bootstrap only (`Config::from_env()` → `engine::build(...)` → `api::router(...)` → bind).
 
-Flow: `src/api/mod.rs` (router + handlers + DTOs) → `src/domain/translation.rs` (`TranslationRequest`/`TranslationResult`) → `src/engine/mod.rs` (`TranslationEngine` trait) → `src/engine/mock.rs` (`MockEngine`).
+Flow: `src/api/mod.rs` (router + handlers + DTOs + error mapping) → `src/domain/translation.rs` (`TranslationRequest`/`TranslationResult`/`TranslationError`) → `src/engine/mod.rs` (`TranslationEngine` trait, `EngineKind`, `build` factory) → `src/engine/mock.rs` (`MockEngine`).
 
-- `TranslationEngine::translate` is async and dyn-compatible: it returns `TranslationFuture` (`Pin<Box<dyn Future<Output = TranslationResult> + Send + '_>>`), and the trait has `Send + Sync` supertraits so API state is `Arc<dyn TranslationEngine>`. New engines must use this signature — plain `async fn` in the trait would break `dyn` support.
+- `TranslationEngine::translate` is async and dyn-compatible: it returns `TranslationFuture` (`Pin<Box<dyn Future<Output = Result<TranslationResult, TranslationError>> + Send + '_>>`), and the trait has `Send + Sync` supertraits so API state is `EngineRef` (`Arc<dyn TranslationEngine>`). New engines must use this signature — plain `async fn` in the trait would break `dyn` support.
+- Errors: engines return `TranslationError::{InvalidRequest, EngineUnavailable, Timeout, Internal}`; `api` implements `IntoResponse` mapping them to 400/502/504/500 with body `{"error":{"kind","message"}}`. Empty/whitespace `text` is rejected in the handler with 400.
 - API: `GET /health` → `{"status":"ok","service":"translator-core"}`; `POST /translate` body `{"text","source","target"}` → `{"translation":"[Mock Translation] <text>"}`.
 - `source`/`target` are accepted but unused by `MockEngine`.
+- Startup config is env-only: `TRANSLATOR_BIND_ADDR` and `TRANSLATOR_ENGINE` (default `mock`); unknown engine kinds abort startup with exit 1.
 
 ## Conventions
 
