@@ -85,7 +85,7 @@ Responsibility:
 
 Status:
 
-Phase 0 implemented: `desktop/translator-popup` (Wayland selection → core `/translate` → popup); Phase 1a adds service self-start (checks `/health`, starts ollama + core when down)
+Phase 0 implemented: `desktop/translator-popup` (Wayland selection → core `/translate` → popup); Phase 1a adds service self-start (checks `/health`, starts ollama + core when down); Phase 1b replaces zenity with a GTK4 window (loading/error states, copy button)
 
 
 ---
@@ -209,7 +209,7 @@ Completed:
 
 In Progress:
 
-- Desktop client polish (popup UX, portal hotkey)
+- Desktop client polish (portal hotkey)
 
 
 Next:

@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record popup service self-start
+docs: record gtk popup
 
 
 ---
@@ -353,10 +353,9 @@ Completed:
 
 Pending:
 
-- Phase 1b: popup UX (GTK window, copy button, loading/error states)
 - Phase 1c: portal-based hotkey (ashpd) and removing the manual shortcut setup
 
 
 Status:
 
-Phase 0 popup implemented, bound to a GNOME custom shortcut (Ctrl+Alt+T) and verified with a real selection (wl-clipboard). Phase 1a done: the popup auto-starts ollama and the core service when they are down (cold start 2.7s).
+Phase 0 popup implemented, bound to a GNOME custom shortcut (Ctrl+Alt+T) and verified with a real selection (wl-clipboard). Phase 1a: the popup auto-starts ollama and the core service when they are down (cold start 2.7s). Phase 1b: GTK4 window with source/translation, copy button, loading and error states.

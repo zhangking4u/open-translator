@@ -342,6 +342,38 @@ Live cold start (both services stopped):
 ---
 
 
+## Milestone: Desktop 1b — GTK Popup
+
+
+Completed:
+
+- Replaced the zenity dialog with a GTK4 window (`gtk4` crate 0.11): source text, status line, selectable translation, 复制/关闭 buttons, Esc closes; errors shown in-window
+- Popup mode shows the window immediately and runs service self-start + translation on a worker thread, updating the UI through a channel ("正在准备翻译服务…" → "翻译中…" → result)
+- Repeated hotkey presses: GtkApplication's single-instance behavior forwards new launches to the running instance; `activate` now closes the previous window and opens a fresh one (with an application hold guard so closing the last window does not quit the app) and re-reads the selection
+- `--print` path unchanged; HTTP client and translation moved to `src/translate.rs`, UI in `src/ui.rs`
+- Build requirement added: `libgtk-4-dev` + `pkg-config`
+
+
+Gotcha:
+
+- GTK's `Application::run()` feeds process arguments to GApplication, which rejects custom flags; use `run_with_args(&[])`
+
+
+Verification:
+
+- cargo test (9 tests)
+- Popup smoke tests via `--stdin`: success and error windows both open and stay until closed; `--print` regression passes
+- Refresh check: the same instance survived two quick activations and translated a 3-char, then 10-char, then 16-char selection after each launch (0.03s forwarding)
+
+
+Note:
+
+- GNOME/Wayland does not let applications position windows, so the popup is compositor-placed; cursor-following would require a GNOME Shell extension
+
+
+---
+
+
 # Git History
 
 
