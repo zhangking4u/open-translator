@@ -47,6 +47,7 @@ fn engine(base_url: &str) -> OllamaEngine {
         base_url.to_string(),
         "test-model".to_string(),
         PromptStyle::Generic,
+        "30m".to_string(),
     )
 }
 
@@ -71,6 +72,7 @@ async fn translates_via_ollama_generate_api() {
     let payload = recorded.first().expect("request was recorded");
     assert_eq!(payload["model"], "test-model");
     assert_eq!(payload["stream"], false);
+    assert_eq!(payload["keep_alive"], "30m");
     assert_eq!(payload["options"]["temperature"], 0.0);
     assert!(payload["options"]["top_p"].is_null());
 
@@ -89,6 +91,7 @@ async fn sends_hymt_prompt_style_and_sampling() {
         base_url,
         "hy-mt1.5-1.8b".to_string(),
         PromptStyle::HunYuanMt,
+        "30m".to_string(),
     );
     let result = engine.translate(request()).await.unwrap();
 

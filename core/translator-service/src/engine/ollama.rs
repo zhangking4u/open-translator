@@ -9,15 +9,22 @@ pub struct OllamaEngine {
     base_url: String,
     model: String,
     prompt_style: PromptStyle,
+    keep_alive: String,
 }
 
 impl OllamaEngine {
-    pub fn new(base_url: String, model: String, prompt_style: PromptStyle) -> Self {
+    pub fn new(
+        base_url: String,
+        model: String,
+        prompt_style: PromptStyle,
+        keep_alive: String,
+    ) -> Self {
         Self {
             client: reqwest::Client::new(),
             base_url,
             model,
             prompt_style,
+            keep_alive,
         }
     }
 }
@@ -27,6 +34,7 @@ struct GenerateRequest<'a> {
     model: &'a str,
     prompt: &'a str,
     stream: bool,
+    keep_alive: &'a str,
     options: GenerateOptions,
 }
 
@@ -76,6 +84,7 @@ impl TranslationEngine for OllamaEngine {
                     model: &self.model,
                     prompt: &prompt,
                     stream: false,
+                    keep_alive: &self.keep_alive,
                     options: sampling_options(self.prompt_style),
                 })
                 .send()

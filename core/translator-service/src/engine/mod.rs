@@ -51,6 +51,7 @@ pub fn build(config: &Config) -> EngineRef {
             config.model_url.clone(),
             config.model.clone(),
             config.prompt_style,
+            config.keep_alive.clone(),
         )),
     };
 

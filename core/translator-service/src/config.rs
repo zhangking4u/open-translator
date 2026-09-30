@@ -7,6 +7,7 @@ use crate::engine::EngineKind;
 pub const DEFAULT_BIND_ADDR: &str = "127.0.0.1:17890";
 pub const DEFAULT_MODEL_URL: &str = "http://127.0.0.1:11434";
 pub const DEFAULT_TIMEOUT_MS: u64 = 30_000;
+pub const DEFAULT_KEEP_ALIVE: &str = "30m";
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -17,6 +18,7 @@ pub struct Config {
     pub model: String,
     pub prompt_style: PromptStyle,
     pub warmup: bool,
+    pub keep_alive: String,
 }
 
 impl Config {
@@ -47,6 +49,8 @@ impl Config {
             Err(_) => true,
         };
 
+        let keep_alive = resolve_keep_alive(env::var("TRANSLATOR_KEEP_ALIVE").ok())?;
+
         Ok(Self {
             bind_addr,
             engine,
@@ -55,6 +59,7 @@ impl Config {
             model,
             prompt_style,
             warmup,
+            keep_alive,
         })
     }
 }
@@ -77,6 +82,17 @@ fn parse_bool(value: &str) -> Result<bool, String> {
         "false" => Ok(false),
         other => Err(format!("invalid TRANSLATOR_WARMUP: {other}")),
     }
+}
+
+fn resolve_keep_alive(value: Option<String>) -> Result<String, String> {
+    let keep_alive = value.unwrap_or_else(|| DEFAULT_KEEP_ALIVE.to_string());
+    let keep_alive = keep_alive.trim().to_string();
+
+    if keep_alive.is_empty() {
+        return Err("TRANSLATOR_KEEP_ALIVE must not be empty".to_string());
+    }
+
+    Ok(keep_alive)
 }
 
 fn resolve_model_url(value: Option<String>) -> Result<String, String> {
@@ -122,6 +138,13 @@ mod tests {
         assert!(parse_bool("true").unwrap());
         assert!(!parse_bool("false").unwrap());
         assert!(parse_bool("yes").is_err());
+    }
+
+    #[test]
+    fn resolves_keep_alive() {
+        assert_eq!(resolve_keep_alive(None).unwrap(), DEFAULT_KEEP_ALIVE);
+        assert_eq!(resolve_keep_alive(Some(" 1h ".to_string())).unwrap(), "1h");
+        assert!(resolve_keep_alive(Some("".to_string())).is_err());
     }
 
     #[test]
