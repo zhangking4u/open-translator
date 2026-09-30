@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record windows support status
+docs: confirm windows ci green
 
 
 ---

@@ -591,7 +591,7 @@ Completed:
 Verification:
 
 - Code review: `core/translator-service` has no Unix-specific code or path assumptions; dependencies (axum/tokio/reqwest/tracing) are cross-platform
-- CI (pending push): the Windows job is expected green
+- CI run 36716297123: all five jobs green, Windows core tests pass in 1m57s
 
 
 ---
