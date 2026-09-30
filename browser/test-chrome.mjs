@@ -66,6 +66,12 @@ async function evaluate(sessionId, expression, extra = {}) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const BUBBLE_READER = `(() => {
+  const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+  const status = host && host.shadowRoot.querySelector(".status");
+  return status ? status.textContent : null;
+})()`;
+
 let failures = 0;
 function check(name, ok, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` (${detail})` : ""}`);
@@ -157,15 +163,7 @@ try {
 
     let bubble = null;
     for (let attempt = 0; attempt < 150; attempt++) {
-      bubble = await evaluate(
-        pageSession,
-        `(() => {
-           const host = [...document.documentElement.children].find((el) => el.shadowRoot);
-           const status = host && host.shadowRoot.querySelector(".status");
-           return status ? status.textContent : null;
-         })()`,
-        { contextId: isolated.id }
-      );
+      bubble = await evaluate(pageSession, BUBBLE_READER, { contextId: isolated.id });
       if (bubble && bubble !== "翻译中…" && bubble !== "正在准备翻译服务…") break;
       await sleep(200);
     }
@@ -173,6 +171,105 @@ try {
       "bubble shows translation",
       Boolean(bubble) && bubble.length > 0 && !bubble.includes("翻译失败"),
       bubble ?? "<empty>"
+    );
+
+    const selected = await evaluate(
+      pageSession,
+      `(() => {
+         const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+         const select = host && host.shadowRoot.querySelector("select");
+         if (!select) return null;
+         select.value = "ja";
+         select.dispatchEvent(new Event("change", { bubbles: true }));
+         return select.value;
+       })()`,
+      { contextId: isolated.id }
+    );
+    check("bubble language switch", selected === "ja", selected ?? "<no select>");
+
+    const stored = await evaluate(
+      pageSession,
+      `(async () => {
+         const api = globalThis.browser ?? globalThis.chrome;
+         return (await api.storage.local.get({ target: "zh" })).target;
+       })()`,
+      { contextId: isolated.id }
+    );
+    check("bubble target persisted", stored === "ja", String(stored));
+
+    let switched = bubble;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      const current = await evaluate(pageSession, BUBBLE_READER, { contextId: isolated.id });
+      if (current && current !== "翻译中…" && current !== "正在准备翻译服务…") {
+        switched = current;
+        break;
+      }
+      await sleep(200);
+    }
+    check(
+      "bubble translation after switch",
+      Boolean(switched) && switched.length > 0 && !switched.includes("翻译失败"),
+      switched ?? "<empty>"
+    );
+    console.log(
+      `bubble translation ${switched === bubble ? "unchanged (mock engine?)" : "updated after switch"}`
+    );
+
+    // Auto-translate: enable the setting, hide the bubble, select text and
+    // dispatch a mouseup; the content script should translate after ~400ms.
+    await evaluate(
+      pageSession,
+      `(async () => {
+         const api = globalThis.browser ?? globalThis.chrome;
+         await api.storage.local.set({ autoTranslate: true });
+         return true;
+       })()`,
+      { contextId: isolated.id }
+    );
+
+    await evaluate(
+      pageSession,
+      `(() => {
+         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+         return true;
+       })()`
+    );
+
+    await evaluate(
+      pageSession,
+      `(() => {
+         const range = document.createRange();
+         range.selectNodeContents(document.getElementById("t"));
+         const selection = getSelection();
+         selection.removeAllRanges();
+         selection.addRange(range);
+         document.getElementById("t").dispatchEvent(
+           new MouseEvent("mouseup", { bubbles: true })
+         );
+         return true;
+       })()`
+    );
+
+    let auto = null;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      auto = await evaluate(
+        pageSession,
+        `(() => {
+           const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+           const status = host && host.shadowRoot.querySelector(".status");
+           return host && status
+             ? { text: status.textContent, visible: host.style.display !== "none" }
+             : null;
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (auto && auto.visible && auto.text && auto.text !== "翻译中…") break;
+      await sleep(200);
+    }
+    check(
+      "auto translate on selection",
+      Boolean(auto) && auto.visible && auto.text.length > 0 && !auto.text.includes("翻译失败"),
+      auto ? auto.text : "<no bubble>"
     );
   }
 

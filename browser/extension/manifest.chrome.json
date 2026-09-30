@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenTranslator",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Translate the selected text with the local OpenTranslator service.",
   "permissions": [
     "contextMenus",
@@ -15,8 +15,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ]
     }
   ],
   "commands": {

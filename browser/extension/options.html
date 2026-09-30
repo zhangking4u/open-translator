@@ -6,7 +6,9 @@
   <style>
     body { font: 14px/1.6 system-ui, sans-serif; margin: 24px; max-width: 420px; }
     label { display: block; margin-bottom: 12px; }
+    label.checkbox { display: flex; align-items: center; gap: 6px; }
     input { width: 100%; padding: 4px 6px; font: inherit; }
+    label.checkbox input { width: auto; }
     button { font: inherit; padding: 4px 12px; margin-right: 8px; }
     #status { color: #374151; min-height: 1.6em; }
   </style>
@@ -22,6 +24,9 @@
     </label>
     <label>目标语言
       <input id="target">
+    </label>
+    <label class="checkbox">
+      <input id="autoTranslate" type="checkbox"> 划词自动翻译（选中文字后自动弹出译文）
     </label>
     <button type="submit">保存</button>
     <button type="button" id="test">测试连接</button>

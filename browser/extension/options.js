@@ -6,18 +6,21 @@ const DEFAULTS = {
   serviceUrl: "http://127.0.0.1:17890",
   source: "en",
   target: "zh",
+  autoTranslate: false,
 };
 
 const form = document.getElementById("form");
 const serviceUrlInput = document.getElementById("serviceUrl");
 const sourceInput = document.getElementById("source");
 const targetInput = document.getElementById("target");
+const autoTranslateInput = document.getElementById("autoTranslate");
 const statusEl = document.getElementById("status");
 
 api.storage.local.get(DEFAULTS).then((settings) => {
   serviceUrlInput.value = settings.serviceUrl;
   sourceInput.value = settings.source;
   targetInput.value = settings.target;
+  autoTranslateInput.checked = Boolean(settings.autoTranslate);
 });
 
 form.addEventListener("submit", (event) => {
@@ -28,6 +31,7 @@ form.addEventListener("submit", (event) => {
       serviceUrl: serviceUrlInput.value.trim() || DEFAULTS.serviceUrl,
       source: sourceInput.value.trim() || DEFAULTS.source,
       target: targetInput.value.trim() || DEFAULTS.target,
+      autoTranslate: autoTranslateInput.checked,
     })
     .then(() => {
       statusEl.textContent = "已保存。";

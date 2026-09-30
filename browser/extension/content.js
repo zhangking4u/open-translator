@@ -2,10 +2,52 @@
 
 const api = globalThis.browser ?? globalThis.chrome;
 
+const DEFAULTS = {
+  source: "en",
+  target: "zh",
+  autoTranslate: false,
+};
+
+const LANGUAGES = [
+  ["zh", "中文"],
+  ["en", "英语"],
+  ["ja", "日语"],
+  ["ko", "韩语"],
+  ["fr", "法语"],
+  ["de", "德语"],
+  ["es", "西班牙语"],
+  ["ru", "俄语"],
+];
+
 let host = null;
 let statusEl = null;
 let copyButton = null;
+let languageSelect = null;
 let currentTranslation = "";
+let currentText = "";
+let targetLanguage = DEFAULTS.target;
+let autoTranslate = false;
+let autoTimer = null;
+
+async function loadSettings() {
+  const settings = await api.storage.local.get(DEFAULTS);
+  targetLanguage = settings.target;
+  autoTranslate = Boolean(settings.autoTranslate);
+  if (languageSelect) languageSelect.value = targetLanguage;
+}
+
+api.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+
+  if (changes.target && changes.target.newValue) {
+    targetLanguage = changes.target.newValue;
+    if (languageSelect) languageSelect.value = targetLanguage;
+  }
+
+  if (changes.autoTranslate) {
+    autoTranslate = Boolean(changes.autoTranslate.newValue);
+  }
+});
 
 function ensureBubble() {
   if (host) return;
@@ -26,7 +68,10 @@ function ensureBubble() {
     "  max-width: 420px; min-width: 220px; padding: 10px 12px; }",
     ".status { white-space: pre-wrap; word-break: break-word; }",
     ".status.error { color: #b91c1c; }",
-    ".row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }",
+    ".row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }",
+    ".spacer { flex: 1; }",
+    "select { font: inherit; padding: 2px 6px; border-radius: 6px; border: 1px solid #d1d5db;",
+    "  background: #fff; }",
     "button { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid #d1d5db;",
     "  background: #f9fafb; cursor: pointer; }",
     "button:hover { background: #f3f4f6; }",
@@ -41,6 +86,29 @@ function ensureBubble() {
 
   const row = document.createElement("div");
   row.className = "row";
+
+  languageSelect = document.createElement("select");
+  for (const [code, name] of LANGUAGES) {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = name;
+    languageSelect.append(option);
+  }
+  if (!LANGUAGES.some(([code]) => code === targetLanguage)) {
+    const option = document.createElement("option");
+    option.value = targetLanguage;
+    option.textContent = targetLanguage;
+    languageSelect.append(option);
+  }
+  languageSelect.value = targetLanguage;
+  languageSelect.addEventListener("change", async () => {
+    targetLanguage = languageSelect.value;
+    await api.storage.local.set({ target: targetLanguage });
+    if (currentText) beginTranslate(currentText);
+  });
+
+  const spacer = document.createElement("div");
+  spacer.className = "spacer";
 
   copyButton = document.createElement("button");
   copyButton.textContent = "复制";
@@ -67,7 +135,7 @@ function ensureBubble() {
   closeButton.textContent = "关闭";
   closeButton.addEventListener("click", hide);
 
-  row.append(copyButton, closeButton);
+  row.append(languageSelect, spacer, copyButton, closeButton);
   card.append(statusEl, row);
   shadow.append(style, card);
   document.documentElement.append(host);
@@ -101,6 +169,7 @@ function hide() {
   if (!host) return;
   host.style.display = "none";
   currentTranslation = "";
+  currentText = "";
   copyButton.textContent = "复制";
   copyButton.disabled = true;
   statusEl.classList.remove("error");
@@ -131,6 +200,24 @@ function showError(message) {
   show();
 }
 
+function beginTranslate(text) {
+  currentText = text;
+  showLoading();
+
+  api.runtime
+    .sendMessage({ type: "translate", text })
+    .then((response) => {
+      if (!response) {
+        showError("翻译请求失败。");
+      } else if (response.ok) {
+        showResult(response.translation);
+      } else {
+        showError(response.error);
+      }
+    })
+    .catch(() => showError("翻译请求失败。"));
+}
+
 function start() {
   const selection = window.getSelection();
   const text = selection ? selection.toString().trim() : "";
@@ -147,21 +234,8 @@ function start() {
     ? range.getBoundingClientRect()
     : { left: 40, top: 40, bottom: 60 };
 
-  showLoading();
+  beginTranslate(text);
   positionBubble(rect);
-
-  api.runtime
-    .sendMessage({ type: "translate", text })
-    .then((response) => {
-      if (!response) {
-        showError("翻译请求失败。");
-      } else if (response.ok) {
-        showResult(response.translation);
-      } else {
-        showError(response.error);
-      }
-    })
-    .catch(() => showError("翻译请求失败。"));
 }
 
 api.runtime.onMessage.addListener((message) => {
@@ -175,3 +249,36 @@ document.addEventListener(
   },
   true
 );
+
+document.addEventListener("mouseup", (event) => {
+  if (!autoTranslate) return;
+  if (host && event.composedPath().includes(host)) return;
+
+  const target = event.target;
+  if (target && typeof target.closest === "function" && target.closest("input, textarea, [contenteditable]")) {
+    return;
+  }
+
+  const selection = window.getSelection();
+  const text = selection ? selection.toString().trim() : "";
+  if (!text) return;
+
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => {
+    const fresh = window.getSelection();
+    const freshText = fresh ? fresh.toString().trim() : "";
+    if (freshText !== text) return;
+
+    ensureBubble();
+
+    const range = fresh.rangeCount > 0 ? fresh.getRangeAt(0) : null;
+    const rect = range
+      ? range.getBoundingClientRect()
+      : { left: 40, top: 40, bottom: 60 };
+
+    beginTranslate(text);
+    positionBubble(rect);
+  }, 400);
+});
+
+loadSettings();

@@ -1,14 +1,16 @@
 {
   "manifest_version": 2,
   "name": "OpenTranslator",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Translate the selected text with the local OpenTranslator service.",
   "browser_specific_settings": {
     "gecko": {
       "id": "opentranslator@local",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   },
@@ -18,13 +20,19 @@
     "http://127.0.0.1/*"
   ],
   "background": {
-    "scripts": ["background.js"],
+    "scripts": [
+      "background.js"
+    ],
     "persistent": false
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ]
     }
   ],
   "commands": {
