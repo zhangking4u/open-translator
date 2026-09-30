@@ -74,11 +74,15 @@ target="${target:-all}"
 case "$target" in
     firefox)
         build_target firefox manifest.json
-        [ "$with_zip" -eq 1 ] && zip_target firefox
+        if [ "$with_zip" -eq 1 ]; then
+            zip_target firefox
+        fi
         ;;
     chrome)
         build_target chrome manifest.chrome.json
-        [ "$with_zip" -eq 1 ] && zip_target chrome
+        if [ "$with_zip" -eq 1 ]; then
+            zip_target chrome
+        fi
         ;;
     all)
         build_target firefox manifest.json
