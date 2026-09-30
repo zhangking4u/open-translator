@@ -145,6 +145,7 @@ mod tests {
             service_url: Some("http://127.0.0.1:9999".to_string()),
             source: Some("fr".to_string()),
             target: Some("de".to_string()),
+            ..FileConfig::default()
         };
 
         let args = Args::resolve(CliArgs::default(), file);
@@ -165,6 +166,7 @@ mod tests {
             service_url: None,
             source: Some("fr".to_string()),
             target: Some("de".to_string()),
+            ..FileConfig::default()
         };
 
         let args = Args::resolve(cli, file);
