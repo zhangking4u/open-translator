@@ -75,15 +75,23 @@ PAGE_PID=$!
 
 "$BROWSER" --headless=new --no-first-run --no-default-browser-check \
     --user-data-dir="$PROFILE_DIR" --remote-debugging-port="$DEBUG_PORT" \
-    about:blank >/dev/null 2>&1 &
+    about:blank >"$PROFILE_DIR/browser.log" 2>&1 &
 BROWSER_PID=$!
 
-for _ in $(seq 1 100); do
+BROWSER_READY=0
+for _ in $(seq 1 150); do
     if curl -fsS -m 2 "http://127.0.0.1:$DEBUG_PORT/json/version" >/dev/null 2>&1; then
+        BROWSER_READY=1
         break
     fi
     sleep 0.2
 done
+
+if [ "$BROWSER_READY" -ne 1 ]; then
+    echo "browser did not open the debug port on $DEBUG_PORT; last log lines:" >&2
+    tail -20 "$PROFILE_DIR/browser.log" >&2 || true
+    exit 1
+fi
 
 node "$SCRIPT_DIR/test-chrome.mjs" \
     --browser "http://127.0.0.1:$DEBUG_PORT" \
