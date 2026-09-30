@@ -12,7 +12,7 @@ jobs:
       run:
         working-directory: core/translator-service
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -26,7 +26,7 @@ jobs:
       run:
         working-directory: desktop/translator-popup
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev pkg-config
       - uses: Swatinem/rust-cache@v2
@@ -38,8 +38,8 @@ jobs:
     name: Browser extension checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
       - name: Static checks and build
@@ -55,8 +55,8 @@ jobs:
     name: Chrome e2e smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
       - uses: dtolnay/rust-toolchain@stable
