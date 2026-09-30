@@ -1,10 +1,14 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::domain::translation::{TranslationError, TranslationRequest, TranslationResult};
 
 pub mod mock;
+mod timeout;
+
+pub use timeout::TimeoutEngine;
 
 pub type TranslationFuture<'a> = Pin<
     Box<dyn Future<Output = Result<TranslationResult, TranslationError>> + Send + 'a>,
@@ -30,10 +34,12 @@ impl EngineKind {
     }
 }
 
-pub fn build(kind: EngineKind) -> EngineRef {
-    match kind {
+pub fn build(kind: EngineKind, timeout: Duration) -> EngineRef {
+    let engine: EngineRef = match kind {
         EngineKind::Mock => Arc::new(mock::MockEngine),
-    }
+    };
+
+    Arc::new(TimeoutEngine::new(engine, timeout))
 }
 
 #[cfg(test)]
