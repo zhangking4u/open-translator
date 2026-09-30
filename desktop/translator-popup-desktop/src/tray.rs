@@ -18,6 +18,10 @@ mod platform {
     }
 
     impl Tray {
+        pub fn is_supported() -> bool {
+            true
+        }
+
         pub fn new(tooltip: &str) -> Result<Self, String> {
             let menu = Menu::new();
 
@@ -120,6 +124,10 @@ pub struct Tray;
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 impl Tray {
+    pub fn is_supported() -> bool {
+        false
+    }
+
     pub fn new(_tooltip: &str) -> Result<Self, String> {
         Ok(Self)
     }

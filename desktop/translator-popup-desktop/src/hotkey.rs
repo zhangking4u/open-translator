@@ -241,6 +241,10 @@ pub struct Hotkey {
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 impl Hotkey {
+    pub fn is_supported() -> bool {
+        true
+    }
+
     pub fn register(spec: &str) -> Result<Self, String> {
         let hotkey = platform::parse_hotkey(spec)?;
         let manager = global_hotkey::GlobalHotKeyManager::new()
@@ -272,6 +276,10 @@ pub struct Hotkey;
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 impl Hotkey {
+    pub fn is_supported() -> bool {
+        false
+    }
+
     pub fn register(_spec: &str) -> Result<Self, String> {
         Ok(Self)
     }

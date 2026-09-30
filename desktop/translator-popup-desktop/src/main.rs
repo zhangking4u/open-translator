@@ -1,19 +1,22 @@
-use std::path::PathBuf;
-use std::sync::Arc;
-
-use translator_core::args::{Args, read_stdin};
-use translator_core::paths::default_model_path;
-use translator_core::services::bind_addr_from_service_url;
-use translator_core::settings::{FileConfig, load_config};
-use translator_service::domain::prompt::PromptStyle;
-use translator_service::domain::translation::TranslationRequest;
-use translator_service::engine::llama_cpp::LlamaCppEngine;
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
 mod capture;
 mod hotkey;
 mod server;
 mod tray;
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use translator_core::args::{Args, read_stdin};
+use translator_core::models;
+use translator_core::paths::default_model_path;
+use translator_core::services::bind_addr_from_service_url;
+use translator_core::settings::{FileConfig, load_config};
+use translator_service::domain::prompt::PromptStyle;
+use translator_service::domain::translation::TranslationRequest;
+use translator_service::engine::llama_cpp::LlamaCppEngine;
 
 const DEFAULT_N_CTX: u32 = 4096;
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1:17890";
@@ -23,8 +26,9 @@ Usage: translator-popup-desktop [OPTIONS]
 
 Desktop popup for OpenTranslator (Windows / macOS): select text and press
 Ctrl+Alt+T to translate it with the embedded model. The app stays resident;
-Esc hides the window, 退出 quits. While running it also serves the local HTTP
-API on service_url for the browser extension.
+Esc hides the window, 退出 quits. On first run the model is downloaded
+automatically. While running it also serves the local HTTP API on service_url
+for the browser extension.
 
 Options:
   -s, --source <LANG>   Source language tag (default: en)
@@ -46,6 +50,7 @@ Config file (Windows: %APPDATA%\\open-translator\\config, macOS:
   model_path = <path to a .gguf model>      (default: per-user models dir)
   prompt_style = hymt                       (generic / translategemma / hymt)
   serve_extension = true                    (disable to skip the HTTP endpoint)
+  auto_download = true                      (download the model on first run)
 
 Environment overrides: TRANSLATOR_HOTKEY, TRANSLATOR_MODEL_PATH,
 TRANSLATOR_PROMPT_STYLE. Default model location:
@@ -145,16 +150,24 @@ fn main() {
         }
     };
 
-    let engine = LlamaCppEngine::load(
-        model_path.to_string_lossy().as_ref(),
-        prompt_style,
-        DEFAULT_N_CTX,
-    )
-    .map(Arc::new);
+    let auto_download = match config.auto_download.as_deref() {
+        Some(value) => match parse_bool("auto_download", value) {
+            Ok(value) => value,
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
+        None => true,
+    };
 
     if args.print {
-        let engine = match &engine {
-            Ok(engine) => engine.clone(),
+        let engine = match LlamaCppEngine::load(
+            model_path.to_string_lossy().as_ref(),
+            prompt_style,
+            DEFAULT_N_CTX,
+        ) {
+            Ok(engine) => Arc::new(engine),
             Err(error) => {
                 eprintln!("failed to load {}: {error}", model_path.display());
                 std::process::exit(1);
@@ -170,6 +183,29 @@ fn main() {
         std::process::exit(run_headless(&engine, &args, &text));
     }
 
+    let startup = if model_path.is_file() {
+        app::Startup::Loaded(
+            LlamaCppEngine::load(
+                model_path.to_string_lossy().as_ref(),
+                prompt_style,
+                DEFAULT_N_CTX,
+            )
+            .map(Arc::new),
+        )
+    } else if auto_download {
+        app::Startup::Download {
+            dest: model_path.clone(),
+            url: models::DEFAULT_MODEL_URL.to_string(),
+            sha256: models::DEFAULT_MODEL_SHA256.to_string(),
+            prompt_style,
+        }
+    } else {
+        app::Startup::Loaded(Err(format!(
+            "模型文件不存在：{}（可设置 model_path，或开启 auto_download）",
+            model_path.display()
+        )))
+    };
+
     let serve_extension = match config.serve_extension.as_deref() {
         Some(value) => match parse_bool("serve_extension", value) {
             Ok(value) => value,
@@ -181,16 +217,24 @@ fn main() {
         None => true,
     };
 
-    if serve_extension {
-        if let Ok(engine) = &engine {
-            let bind_addr = bind_addr_from_service_url(&args.service_url)
-                .unwrap_or_else(|| DEFAULT_BIND_ADDR.to_string());
-            let model_name = model_path
+    let server_plan = if serve_extension {
+        Some(app::ServerPlan {
+            bind_addr: bind_addr_from_service_url(&args.service_url)
+                .unwrap_or_else(|| DEFAULT_BIND_ADDR.to_string()),
+            model_name: model_path
                 .file_name()
                 .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_default();
+                .unwrap_or_default(),
+        })
+    } else {
+        None
+    };
 
-            if let Err(error) = server::start(engine.clone(), bind_addr, model_name) {
+    if let app::Startup::Loaded(Ok(engine)) = &startup {
+        if let Some(plan) = &server_plan {
+            if let Err(error) =
+                server::start(engine.clone(), plan.bind_addr.clone(), plan.model_name.clone())
+            {
                 eprintln!("extension server disabled: {error}");
             }
         }
@@ -213,7 +257,15 @@ fn main() {
     if let Err(error) = eframe::run_native(
         "OpenTranslator",
         options,
-        Box::new(move |cc| Ok(Box::new(app::PopupApp::new(cc, args, &hotkey_spec, engine)))),
+        Box::new(move |cc| {
+            Ok(Box::new(app::PopupApp::new(
+                cc,
+                args,
+                &hotkey_spec,
+                startup,
+                server_plan,
+            )))
+        }),
     ) {
         eprintln!("failed to start UI: {error}");
         std::process::exit(1);
