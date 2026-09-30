@@ -466,6 +466,25 @@ Verification:
 ---
 
 
+## Milestone: Install Script Fix — Empty Keybinding Array
+
+
+Problem:
+
+- After `--uninstall`, `gsettings get ... custom-keybindings` returns `@as []`; the script's parser turned the type tag `@as` into a bogus path on reinstall, producing `['@as', '/org/.../custom0/']`
+- `gsd-media-keys` crashed on the invalid path (SEGV loop until systemd's "Start request repeated too quickly"), which silently disabled all GNOME custom shortcuts
+
+
+Fix:
+
+- `list_paths()` filters tokens starting with `@`; install normalizes the array when updating an existing shortcut
+- Verified: uninstall → `@as []`; reinstall → clean `['/org/.../custom0/']`; `gsd-media-keys` stays alive
+- Recovery without logout: `systemctl --user reset-failed org.gnome.SettingsDaemon.MediaKeys.service`, then pull the unit in through a transient dependency (`RefuseManualStart` blocks `systemctl --user start`)
+
+
+---
+
+
 # Git History
 
 

@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record chrome mv3 variant
+docs: record install script fix
 
 
 ---
