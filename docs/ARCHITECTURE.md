@@ -162,7 +162,7 @@ Possible implementations:
 
 Current implementation:
 
-MockEngine and OllamaEngine (local inference) behind `engine::build`; every engine is wrapped in a timeout guard. The engine trait is async and fallible. Prompt building and language tag normalization live in the domain layer (`domain::prompt`, `domain::language`).
+MockEngine and OllamaEngine (local inference) behind `engine::build`; every engine is wrapped in a timeout guard. The engine trait is async and fallible. Prompt styles and language tag normalization live in the domain layer (`domain::prompt`, `domain::language`); each prompt style carries its recommended sampling options.
 
 
 ---
@@ -208,7 +208,7 @@ Completed:
 
 In Progress:
 
-- Per-model prompt style and sampling configuration
+- Service hardening (logging, engine warmup and health check)
 
 
 Next:

@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record HY-MT evaluation
+docs: record prompt style and sampling config
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Add per-model prompt style and sampling config (HY-MT official prompt/params)
+1. Service hardening: tracing logs, engine warmup and health check
 
-2. Service hardening: tracing logs, engine warmup and health check
+2. Prepare desktop client integration (Sprint 3)
 
-3. Prepare desktop client integration (Sprint 3)
+3. Plan browser integration
 
 
 ---
@@ -331,11 +331,11 @@ Completed:
 - Live end-to-end translation via local Ollama (qwen2.5:7b, CPU)
 - Model quality evaluation (translategemma:4b + official prompt recommended; qwen2.5:7b fallback)
 - HY-MT evaluation: hy-mt1.5-1.8b / hy-mt2-1.8b imported from ModelScope GGUFs (0.1–0.5s warm, >4× faster than 4B/7B models); hy-mt1.5-1.8b recommended default
+- Per-model prompt styles and sampling (`TRANSLATOR_PROMPT_STYLE=generic|translategemma|hymt`); HY-MT import script in `models/`
 - Tests for invalid input, engine failure, timeout, config parsing, prompt building and Ollama adapter
 
 
 Pending:
 
-- Per-model prompt style and sampling configuration (HY-MT official prompt/params, TranslateGemma template)
 - Service hardening (tracing logs, engine warmup/health check)
 - Desktop client preparation
