@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record desktop core extraction
+docs: record windows desktop client
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Windows desktop client (Phase 2: egui UI, global-hotkey, Ctrl+C selection capture)
+1. Test the Windows client on a real Windows machine (hotkey + Ctrl+C capture)
 
-2. Sprint 5 meeting translation (parked)
+2. macOS desktop adaptation (Phase 3)
 
-3. Extension 0.1.1 signing and install (on hold)
+3. Sprint 5 meeting translation (parked)
 
 
 ---
@@ -403,3 +403,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - `actions/checkout` / `actions/setup-node` bumped to v5
 - Windows: core service tested on `windows-latest` in CI; desktop remains Linux/GNOME-only; browser extension is cross-platform
 - Desktop Phase 1 for Windows/macOS: platform-agnostic `desktop/translator-core` extracted (args/config/translate/service auto-start/per-OS paths); CI matrix tests it on ubuntu, windows and macos
+- Desktop Phase 2: Windows client MVP (`desktop/translator-popup-windows`, eframe + `Ctrl+Alt+T` + Ctrl+C capture) with `desktop/install-windows.ps1`; CI builds it on windows-latest

@@ -617,6 +617,27 @@ Verification:
 ---
 
 
+## Milestone: Windows Desktop Client (Phase 2 MVP)
+
+
+Completed:
+
+- New crate `desktop/translator-popup-windows` (eframe/egui): resident app with a hidden window, `Ctrl+Alt+T` global hotkey (`global-hotkey`), selection capture via simulated Ctrl+C (`enigo`) + clipboard (`arboard`), in-place translation updates, target-language selector, 复制/隐藏/退出, Esc hides
+- Windows-only dependencies gated under `[target.'cfg(windows)'.dependencies]`; on Linux the crate still builds (capture falls back to `wl-paste`, hotkey is a no-op), enabling local checks and smoke tests
+- `desktop/install-windows.ps1`: builds the core service + popup in release and adds a Startup shortcut (`-Uninstall` removes it)
+- CI: `desktop-popup-windows` job on windows-latest (`cargo test` + `cargo build --release`)
+
+
+Verification:
+
+- `cargo check` (Linux) and `cargo check --target x86_64-pc-windows-msvc` both clean; unit test passes
+- Local render smoke on Linux (`--stdin`): the eframe window starts and the service log shows the translation request (`text_chars=12`)
+- Windows runtime behaviour (hotkey registration, Ctrl+C capture) still needs testing on a real Windows machine
+
+
+---
+
+
 # Git History
 
 

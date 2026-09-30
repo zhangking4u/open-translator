@@ -99,10 +99,11 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 |---|---|---|---|
 | 核心服务 | ✅ | ✅（CI `windows-latest` 每提交测试） | 理论可用，未验证 |
 | 浏览器扩展 | ✅ | ✅ | ✅ |
-| 桌面划词 | ✅ GNOME Wayland | ❌ 待平台适配（见下文） | ❌ 待平台适配 |
+| 桌面划词 | ✅ GNOME Wayland | ✅ MVP（`translator-popup-windows`，CI 构建） | ❌ 待适配 |
 
-- Windows 上使用：安装 Ollama for Windows + 运行核心服务（`cargo run --release`，配置同 Linux），再用浏览器扩展即可；HY-MT 导入脚本需要 Git Bash/WSL，或按脚本内的 Modelfile 手动 `ollama create`。
-- Windows/macOS 的桌面划词需要平台适配层：全局热键（Win32 `RegisterHotKey`）、模拟 `Ctrl+C` 读剪贴板、原生弹窗；核心服务与 HTTP 协议无需改动。
+- Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 会构建核心服务与弹窗并加入开机启动；选中文字按 `Ctrl+Alt+T`（通过模拟 `Ctrl+C` + 剪贴板取词，目标应用需支持复制）。`-Uninstall` 卸载。
+- Windows 上也可只用浏览器扩展：安装 Ollama for Windows + 运行核心服务（`cargo run --release`）即可；HY-MT 导入脚本需要 Git Bash/WSL，或按脚本内的 Modelfile 手动 `ollama create`。
+- macOS 的桌面划词仍需适配：`Cmd+C` 取词、`~/Library` 路径、辅助功能权限提示。
 
 ## 常见问题
 
@@ -128,6 +129,7 @@ docs/                      架构、状态、开发日志
 cd core/translator-service && cargo test    # 核心服务
 cd desktop/translator-core && cargo test    # 桌面共享库（跨平台：参数/配置/翻译调用/服务自启）
 cd desktop/translator-popup && cargo test   # 桌面弹窗（Linux/GTK）
+cd desktop/translator-popup-windows && cargo test  # Windows 客户端（eframe；CI 在 windows 上构建）
 ./browser/test.sh                           # Chrome MV3 端到端（服务未运行会自启 mock 引擎）
 ```
 
