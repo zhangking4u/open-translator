@@ -3,6 +3,7 @@
 mod app;
 mod capture;
 mod hotkey;
+mod tray;
 
 use translator_core::args::{Args, read_stdin};
 use translator_core::services::{self, ServiceConfig};
@@ -27,10 +28,16 @@ Options:
 
 Config file (Windows: %APPDATA%\\open-translator\\config, macOS:
 ~/Library/Application Support/open-translator/config) is applied when no CLI
-flag is given; CLI > config file > environment > defaults.
+flag is given; CLI > config file > environment > defaults:
+
+  service_url = http://127.0.0.1:17890
+  source = en
+  target = zh
+  hotkey = Ctrl+Alt+T
 
 Auto-start environment: TRANSLATOR_CORE_BIN, TRANSLATOR_OLLAMA_BIN,
-TRANSLATOR_MODEL, TRANSLATOR_PROMPT_STYLE (same as the Linux popup).
+TRANSLATOR_MODEL, TRANSLATOR_PROMPT_STYLE, TRANSLATOR_HOTKEY (same as the Linux
+popup; TRANSLATOR_HOTKEY overrides the default Ctrl+Alt+T).
 
 The hotkey sends Ctrl+C (Cmd+C on macOS) to the focused window and reads the
 clipboard, so the selection must come from an application that supports copy.
@@ -113,6 +120,12 @@ fn main() {
         std::process::exit(runtime.block_on(run_headless(&args, &text)));
     }
 
+    let hotkey_spec = translator_core::settings::load_config()
+        .hotkey
+        .or_else(|| std::env::var("TRANSLATOR_HOTKEY").ok())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "Ctrl+Alt+T".to_string());
+
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title(format!("OpenTranslator ({} → {})", args.source, args.target))
@@ -124,7 +137,7 @@ fn main() {
     if let Err(error) = eframe::run_native(
         "OpenTranslator",
         options,
-        Box::new(move |cc| Ok(Box::new(app::PopupApp::new(cc, args)))),
+        Box::new(move |cc| Ok(Box::new(app::PopupApp::new(cc, args, &hotkey_spec)))),
     ) {
         eprintln!("failed to start UI: {error}");
         std::process::exit(1);

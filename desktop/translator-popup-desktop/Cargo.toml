@@ -12,3 +12,4 @@ translator-core = { version = "0.1.0", path = "../translator-core" }
 arboard = "3.6.1"
 enigo = "0.6.1"
 global-hotkey = "0.8.0"
+tray-icon = "0.26.0"

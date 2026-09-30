@@ -7,6 +7,13 @@ pub struct FileConfig {
     pub service_url: Option<String>,
     pub source: Option<String>,
     pub target: Option<String>,
+    pub hotkey: Option<String>,
+}
+
+pub fn load_config() -> FileConfig {
+    config_path()
+        .map(|path| load_file_config(&path))
+        .unwrap_or_default()
 }
 
 pub fn load_file_config(path: &Path) -> FileConfig {
@@ -37,6 +44,7 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "service_url" => config.service_url = Some(value.to_string()),
             "source" => config.source = Some(value.to_string()),
             "target" => config.target = Some(value.to_string()),
+            "hotkey" => config.hotkey = Some(value.to_string()),
             _ => {}
         }
     }
@@ -91,7 +99,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nservice_url = \"http://127.0.0.1:1\"\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nunknown = x\n",
         )
         .unwrap();
 
@@ -101,6 +109,7 @@ mod tests {
         assert_eq!(config.source.as_deref(), Some("ja"));
         assert_eq!(config.target.as_deref(), Some("ko"));
         assert_eq!(config.service_url.as_deref(), Some("http://127.0.0.1:1"));
+        assert_eq!(config.hotkey.as_deref(), Some("Ctrl+Shift+T"));
     }
 
     #[test]

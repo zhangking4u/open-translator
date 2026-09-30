@@ -8,6 +8,7 @@ use translator_core::translate;
 
 use crate::capture;
 use crate::hotkey::Hotkey;
+use crate::tray::{Tray, TrayCommand};
 
 pub const LANGUAGES: &[(&str, &str)] = &[
     ("zh", "中文"),
@@ -35,11 +36,12 @@ pub struct PopupApp {
     target: String,
     receiver: Option<Receiver<Progress>>,
     hotkey: Option<Hotkey>,
+    tray: Option<Tray>,
     quit: bool,
 }
 
 impl PopupApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, args: Args) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, args: Args, hotkey_spec: &str) -> Self {
         let mut app = Self {
             target: args.target.clone(),
             args,
@@ -49,12 +51,22 @@ impl PopupApp {
             error: false,
             receiver: None,
             hotkey: None,
+            tray: None,
             quit: false,
         };
 
-        match Hotkey::register() {
+        match Hotkey::register(hotkey_spec) {
             Ok(hotkey) => app.hotkey = Some(hotkey),
             Err(error) => app.show_error(&error),
+        }
+
+        match Tray::new(&format!("OpenTranslator（{hotkey_spec}）")) {
+            Ok(tray) => app.tray = Some(tray),
+            Err(error) => {
+                if !app.error {
+                    app.show_error(&error);
+                }
+            }
         }
 
         let initial = if app.args.stdin {
@@ -121,6 +133,25 @@ impl eframe::App for PopupApp {
             self.trigger();
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+
+        let tray_command = self.tray.as_ref().and_then(|tray| tray.poll());
+
+        match tray_command {
+            Some(TrayCommand::Show) => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            Some(TrayCommand::Translate) => {
+                self.trigger();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            Some(TrayCommand::Quit) => {
+                self.quit = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            None => {}
         }
 
         let messages: Vec<Progress> = self
