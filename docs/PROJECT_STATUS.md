@@ -194,7 +194,7 @@ hello world
 
 Current output:
 
-[TODO] hello world
+[Mock Translation] hello world
 
 
 ---
@@ -204,12 +204,12 @@ Current output:
 
 Current branch:
 
-master
+main
 
 
 Latest commit:
 
-feat: initialize translator core service
+docs: update status docs and agent guide
 
 
 ---
@@ -232,15 +232,13 @@ Introduce Translation Engine abstraction layer.
 ## 9. Next Steps
 
 
-1. Create TranslationEngine trait
+1. Define model engine selection and configuration
 
-2. Implement Mock Translation Engine
+2. Integrate first local translation model adapter (Sprint 2)
 
-3. Refactor API layer
+3. Separate domain layer and infrastructure layer
 
-4. Separate domain layer and infrastructure layer
-
-5. Prepare real local model integration
+4. Prepare desktop client integration
 
 
 ---
@@ -272,9 +270,11 @@ Avoid:
 Completed:
 
 - Created translation domain model
-- Added TranslationEngine trait
+- Added TranslationEngine trait (async, dyn-compatible)
 - Added MockTranslationEngine
 - Integrated API with engine layer
+- Split API layer into `src/api`
+- Added library target (`src/lib.rs`) with unit and integration tests
 
 
 Current runtime flow:
@@ -301,4 +301,4 @@ TranslationResult
 
 Status:
 
-Translation architecture abstraction completed.
+Translation architecture abstraction completed; API layer split and test foundation in place.

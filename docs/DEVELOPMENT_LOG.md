@@ -55,11 +55,34 @@ hello world
 
 Output:
 
-[TODO] hello world
+[Mock Translation] hello world
 
 
 
 ---
+
+# 2026-09-30
+
+
+## Milestone: API Layer Refactor and Test Foundation
+
+
+Completed:
+
+- Moved routes, handlers and DTOs from `main.rs` into `src/api/mod.rs`
+- Added library target (`src/lib.rs`); `main.rs` is now bootstrap only
+- Made `TranslationEngine` async and dyn-compatible; API state is `Arc<dyn TranslationEngine>`
+- Added `MockEngine` unit test and `/health`, `/translate` integration tests (tower `oneshot`)
+- Added dev-dependencies `tower` and `http-body-util`
+
+
+Verification:
+
+cargo test
+
+
+---
+
 
 # Git History
 
@@ -97,7 +120,7 @@ Goal:
 Introduce Translation Engine abstraction.
 
 
-Tasks:
+Tasks (completed 2026-09-30):
 
 
 1. Create domain model
@@ -107,6 +130,8 @@ Tasks:
 3. Implement MockTranslationEngine
 
 4. Refactor API layer
+
+5. Add unit and integration tests
 
 
 ---

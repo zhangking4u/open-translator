@@ -190,16 +190,17 @@ Completed:
 - Rust core service
 - Axum API
 - Basic REST endpoints
+- Translation Engine abstraction (async trait + MockEngine)
+- API layer split (`src/api`) with unit and integration tests
 
 
 In Progress:
 
-Translation Engine abstraction
+- Model adapter and local inference integration (Sprint 2)
 
 
 Next:
 
-- Model adapter
-- Local inference integration
+- Engine selection and configuration
 - Desktop client
 
