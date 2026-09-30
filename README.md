@@ -79,9 +79,9 @@ target = zh
 
 刷新已打开的网页，选中文字 → 右键「翻译选中文本（OpenTranslator）」或 `Alt+Shift+T`；设置页可改服务地址与语言对。
 
-> Firefox 临时加载的扩展在重启后失效；Chrome 开发者模式加载重启后需重新启用。
+> Firefox 的正式版本已按上述流程签名（AMO unlisted，自动审核通过）并在本机永久安装；临时加载仅用于开发调试。
 
-**长期安装（Firefox，AMO 未上架签名）**
+**长期安装（Firefox，AMO unlisted 签名）**
 
 ```bash
 ./browser/build.sh firefox --zip                   # 产出 dist/open-translator-firefox-<version>.zip
@@ -89,7 +89,7 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 ./browser/sign.sh                                  # 签名，产出 browser/dist/signed/*.xpi
 ```
 
-在 `about:addons` → 齿轮 → 「从文件安装附加组件」选择签名后的 `.xpi` 即可永久安装。也可用 Developer Edition/Nightly（`xpinstall.signatures.required=false`）直接安装未签名包（把 zip 改名为 `.xpi`）。
+签完在 `about:addons` → 齿轮 → 「从文件安装附加组件」选择 `.xpi` 即可永久安装（也可在 AMO 开发者页直接下载签名文件）。注意：**版本号不能复用**，再次签名前先提升 manifest 版本；`web-ext sign` 的最后一步才是下载 xpi，终端请等它完整结束。也可用 Developer Edition/Nightly（`xpinstall.signatures.required=false`）安装未签名包。
 
 ## 常见问题
 

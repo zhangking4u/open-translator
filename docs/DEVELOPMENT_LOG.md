@@ -502,6 +502,12 @@ Verification:
 - `./browser/sign.sh` without credentials exits 1 with instructions (actual signing needs the user's AMO API key)
 
 
+Signing result (2026-09-30):
+
+- AMO unlisted signing auto-approved version 0.1.0 (add-on 3082435); the .xpi was installed permanently in Firefox
+- Gotchas: the `web-ext sign` artifact download is the last step (do not interrupt the terminal), and a version number cannot be reused — bump the manifest version before re-signing; alternatively download the signed file from the AMO developer hub
+
+
 ---
 
 

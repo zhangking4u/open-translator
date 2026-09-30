@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record extension packaging
+docs: record firefox extension signing
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Sign and install the Firefox `.xpi` (needs AMO API key; `./browser/sign.sh`)
+1. Sprint 5 meeting translation (parked)
 
-2. Sprint 5 meeting translation (parked)
+2. GitHub remote + CI (optional)
 
-3. GitHub remote + CI (optional)
+3. Portal-based hotkey (optional)
 
 
 ---
@@ -373,12 +373,12 @@ Completed:
 
 Pending:
 
-- Sign and install the Firefox `.xpi` with the user's AMO credentials (user action)
+- (none)
 
 
 Status:
 
-Firefox extension MVP implemented and verified manually (context menu and `Alt+Shift+T`); the invalid host permission (port in match pattern) was fixed during testing. Chrome MV3 verified end-to-end on Chrome 154 and Edge 154 (service worker translation + content-script bubble).
+Firefox extension MVP implemented and verified manually (context menu and `Alt+Shift+T`); the invalid host permission (port in match pattern) was fixed during testing. Chrome MV3 verified end-to-end on Chrome 154 and Edge 154 (service worker translation + content-script bubble). Version 0.1.0 signed via AMO unlisted (auto-approved) and installed permanently in Firefox.
 
 
 ## Consolidation (2026-09-30)
