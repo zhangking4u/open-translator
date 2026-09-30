@@ -579,6 +579,24 @@ Verification:
 ---
 
 
+## Milestone: Windows Support Verification
+
+
+Completed:
+
+- CI: new `core-windows` job (`windows-latest`) runs the core service's `cargo test`, keeping the service portable
+- README: platform support table (core service Linux/Windows, extension all platforms, desktop Linux/GNOME only with the adaptation requirements documented)
+
+
+Verification:
+
+- Code review: `core/translator-service` has no Unix-specific code or path assumptions; dependencies (axum/tokio/reqwest/tracing) are cross-platform
+- CI (pending push): the Windows job is expected green
+
+
+---
+
+
 # Git History
 
 

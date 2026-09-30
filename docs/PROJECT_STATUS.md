@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record browser bubble enhancements
+docs: record windows support status
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Re-sign extension 0.1.1 for Firefox (`./browser/sign.sh`) and install the update
+1. Windows/macOS desktop adaptation layer (optional, medium)
 
 2. Sprint 5 meeting translation (parked)
 
-3. Portal-based hotkey (optional)
+3. Extension 0.1.1 signing and install (on hold)
 
 
 ---
@@ -401,3 +401,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Repeatable browser e2e harness (`browser/test.sh`), 7/7 checks pass locally
 - CI e2e cleanup bug fixed (`rm -rf` racing the browser shutdown overrode the exit status); all jobs green on the second run
 - `actions/checkout` / `actions/setup-node` bumped to v5
+- Windows: core service tested on `windows-latest` in CI; desktop remains Linux/GNOME-only; browser extension is cross-platform

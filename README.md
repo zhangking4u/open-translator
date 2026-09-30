@@ -93,6 +93,17 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 
 签完在 `about:addons` → 齿轮 → 「从文件安装附加组件」选择 `.xpi` 即可永久安装（也可在 AMO 开发者页直接下载签名文件）。注意：**版本号不能复用**，再次签名前先提升 manifest 版本；`web-ext sign` 的最后一步才是下载 xpi，终端请等它完整结束。也可用 Developer Edition/Nightly（`xpinstall.signatures.required=false`）安装未签名包。
 
+## 平台支持
+
+| 组件 | Linux | Windows | macOS |
+|---|---|---|---|
+| 核心服务 | ✅ | ✅（CI `windows-latest` 每提交测试） | 理论可用，未验证 |
+| 浏览器扩展 | ✅ | ✅ | ✅ |
+| 桌面划词 | ✅ GNOME Wayland | ❌ 待平台适配（见下文） | ❌ 待平台适配 |
+
+- Windows 上使用：安装 Ollama for Windows + 运行核心服务（`cargo run --release`，配置同 Linux），再用浏览器扩展即可；HY-MT 导入脚本需要 Git Bash/WSL，或按脚本内的 Modelfile 手动 `ollama create`。
+- Windows/macOS 的桌面划词需要平台适配层：全局热键（Win32 `RegisterHotKey`）、模拟 `Ctrl+C` 读剪贴板、原生弹窗；核心服务与 HTTP 协议无需改动。
+
 ## 常见问题
 
 - **网络**：`ollama.com` 与 HuggingFace 不可达；GitHub release 资产走代理（如 `https://gh-proxy.com/`）；模型从 ModelScope 下载。
