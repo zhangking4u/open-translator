@@ -209,7 +209,7 @@ main
 
 Latest commit:
 
-docs: log error contract and config
+docs: log timeout guard and runtime check
 
 
 ---
@@ -232,11 +232,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Choose model runtime (Ollama / llama.cpp server / in-process)
+1. Install and benchmark a model runtime (Ollama / llama.cpp server)
 
 2. Integrate first local translation model adapter
 
-3. Extend config with model address, model name and timeout
+3. Extend config with model address and model name
 
 4. Prepare desktop client integration
 
@@ -311,11 +311,13 @@ Completed:
 
 - TranslationEngine now returns `Result` with a shared `TranslationError`
 - API maps errors to JSON `{"error":{"kind","message"}}` (400/500/502/504)
-- Env-based config: `TRANSLATOR_BIND_ADDR`, `TRANSLATOR_ENGINE`; engine factory (`engine::build`)
-- Tests for invalid input, engine failure and engine kind parsing
+- Env-based config: `TRANSLATOR_BIND_ADDR`, `TRANSLATOR_ENGINE`, `TRANSLATOR_TIMEOUT_MS`; engine factory (`engine::build`)
+- Timeout guard (`TimeoutEngine`) wrapping every engine; expiry maps to 504
+- Language tag normalization (`domain::language`) and MT prompt builder (`domain::prompt`)
+- Tests for invalid input, engine failure, timeout, config parsing and prompt building
 
 
 Pending:
 
-- Model runtime selection
-- Model adapter and model config (address, model name, timeout)
+- Model runtime installation and selection (none installed on the dev machine)
+- Model adapter and model config (address, model name)

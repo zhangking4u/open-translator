@@ -18,13 +18,14 @@ OpenTranslator: local-first AI translation platform. Only the Rust core service 
 
 `src/lib.rs` exposes `api`, `config`, `domain`, `engine`; `src/main.rs` is bootstrap only (`Config::from_env()` → `engine::build(...)` → `api::router(...)` → bind).
 
-Flow: `src/api/mod.rs` (router + handlers + DTOs + error mapping) → `src/domain/translation.rs` (`TranslationRequest`/`TranslationResult`/`TranslationError`) → `src/engine/mod.rs` (`TranslationEngine` trait, `EngineKind`, `build` factory) → `src/engine/mock.rs` (`MockEngine`).
+Flow: `src/api/mod.rs` (router + handlers + DTOs + error mapping) → `src/domain/` (`translation.rs` types/errors, `language.rs` tag normalization, `prompt.rs` MT prompt) → `src/engine/mod.rs` (`TranslationEngine` trait, `EngineKind`, `build` factory) → `src/engine/mock.rs` / `src/engine/timeout.rs` (`MockEngine`, `TimeoutEngine` wrapper).
 
 - `TranslationEngine::translate` is async and dyn-compatible: it returns `TranslationFuture` (`Pin<Box<dyn Future<Output = Result<TranslationResult, TranslationError>> + Send + '_>>`), and the trait has `Send + Sync` supertraits so API state is `EngineRef` (`Arc<dyn TranslationEngine>`). New engines must use this signature — plain `async fn` in the trait would break `dyn` support.
+- `engine::build` wraps every engine in `TimeoutEngine`; an expired translation becomes `TranslationError::Timeout` → HTTP 504.
 - Errors: engines return `TranslationError::{InvalidRequest, EngineUnavailable, Timeout, Internal}`; `api` implements `IntoResponse` mapping them to 400/502/504/500 with body `{"error":{"kind","message"}}`. Empty/whitespace `text` is rejected in the handler with 400.
 - API: `GET /health` → `{"status":"ok","service":"translator-core"}`; `POST /translate` body `{"text","source","target"}` → `{"translation":"[Mock Translation] <text>"}`.
-- `source`/`target` are accepted but unused by `MockEngine`.
-- Startup config is env-only: `TRANSLATOR_BIND_ADDR` and `TRANSLATOR_ENGINE` (default `mock`); unknown engine kinds abort startup with exit 1.
+- `source`/`target` are accepted but unused by `MockEngine`; adapters should build prompts via `domain::prompt::translation_prompt`.
+- Startup config is env-only: `TRANSLATOR_BIND_ADDR`, `TRANSLATOR_ENGINE` (default `mock`), `TRANSLATOR_TIMEOUT_MS` (default `30000`, must be > 0); invalid values abort startup with exit 1.
 
 ## Conventions
 

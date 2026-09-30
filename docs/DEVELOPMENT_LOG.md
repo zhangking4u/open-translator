@@ -100,6 +100,30 @@ cargo test
 ---
 
 
+## Milestone: Timeout Guard and Prompt Foundation
+
+
+Completed:
+
+- Added `TimeoutEngine`; `engine::build` wraps every engine and returns `TranslationError::Timeout` on expiry (HTTP 504)
+- Added `TRANSLATOR_TIMEOUT_MS` config (default 30000, must be > 0)
+- Added `domain::language` (tag normalization + common language names) and `domain::prompt::translation_prompt`
+- Added tests for timeout mapping, timeout parsing, tag normalization and prompt building
+
+
+Verification:
+
+cargo test
+
+
+Runtime environment check:
+
+- ollama / llama.cpp / docker not installed on the dev machine; model runtime still to be chosen
+
+
+---
+
+
 # Git History
 
 

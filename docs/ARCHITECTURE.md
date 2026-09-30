@@ -162,7 +162,7 @@ Possible implementations:
 
 Current implementation:
 
-MockEngine behind `engine::build`; the engine trait is async and fallible.
+MockEngine behind `engine::build`; every engine is wrapped in a timeout guard. The engine trait is async and fallible. Prompt building and language tag normalization live in the domain layer (`domain::prompt`, `domain::language`).
 
 
 ---
