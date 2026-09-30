@@ -19,6 +19,53 @@ impl PromptStyle {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SamplingOptions {
+    pub temperature: f32,
+    pub top_p: Option<f32>,
+    pub top_k: Option<u32>,
+    pub repeat_penalty: Option<f32>,
+}
+
+impl PromptStyle {
+    pub fn sampling(self) -> SamplingOptions {
+        match self {
+            PromptStyle::HunYuanMt => SamplingOptions {
+                temperature: 0.7,
+                top_p: Some(0.6),
+                top_k: Some(20),
+                repeat_penalty: Some(1.05),
+            },
+            PromptStyle::Generic | PromptStyle::TranslateGemma => SamplingOptions {
+                temperature: 0.0,
+                top_p: None,
+                top_k: None,
+                repeat_penalty: None,
+            },
+        }
+    }
+
+    pub fn stop_strings(self) -> Vec<String> {
+        match self {
+            PromptStyle::HunYuanMt => vec![
+                "<｜hy_place▁holder▁no▁2｜>".to_string(),
+                "<｜hy_end▁of▁sentence｜>".to_string(),
+            ],
+            PromptStyle::Generic | PromptStyle::TranslateGemma => Vec::new(),
+        }
+    }
+
+    /// Wraps a prompt for engines that tokenize raw text (no chat template applied by the runtime).
+    pub fn raw_prompt(self, prompt: &str) -> String {
+        match self {
+            PromptStyle::HunYuanMt => {
+                format!("<｜hy_begin▁of▁sentence｜><｜hy_User｜>{prompt}<｜hy_Assistant｜>")
+            }
+            PromptStyle::Generic | PromptStyle::TranslateGemma => prompt.to_string(),
+        }
+    }
+}
+
 pub fn translation_prompt(
     style: PromptStyle,
     request: &TranslationRequest,
@@ -113,6 +160,30 @@ mod tests {
         );
         assert_eq!(PromptStyle::parse("hymt"), Ok(PromptStyle::HunYuanMt));
         assert!(PromptStyle::parse("nope").is_err());
+    }
+
+    #[test]
+    fn exposes_sampling_and_stop_strings_per_style() {
+        let hymt = PromptStyle::HunYuanMt.sampling();
+        assert_eq!(hymt.temperature, 0.7);
+        assert_eq!(hymt.top_p, Some(0.6));
+        assert_eq!(hymt.top_k, Some(20));
+        assert_eq!(hymt.repeat_penalty, Some(1.05));
+        assert!(!PromptStyle::HunYuanMt.stop_strings().is_empty());
+
+        let generic = PromptStyle::Generic.sampling();
+        assert_eq!(generic.temperature, 0.0);
+        assert_eq!(generic.top_p, None);
+        assert!(PromptStyle::Generic.stop_strings().is_empty());
+    }
+
+    #[test]
+    fn wraps_raw_prompts_per_style() {
+        let wrapped = PromptStyle::HunYuanMt.raw_prompt("hello");
+        assert!(wrapped.starts_with("<｜hy_begin▁of▁sentence｜><｜hy_User｜>"));
+        assert!(wrapped.ends_with("<｜hy_Assistant｜>"));
+
+        assert_eq!(PromptStyle::Generic.raw_prompt("hello"), "hello");
     }
 
     #[test]

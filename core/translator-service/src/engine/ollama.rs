@@ -50,19 +50,13 @@ struct GenerateOptions {
 }
 
 fn sampling_options(style: PromptStyle) -> GenerateOptions {
-    match style {
-        PromptStyle::HunYuanMt => GenerateOptions {
-            temperature: 0.7,
-            top_p: Some(0.6),
-            top_k: Some(20),
-            repeat_penalty: Some(1.05),
-        },
-        PromptStyle::Generic | PromptStyle::TranslateGemma => GenerateOptions {
-            temperature: 0.0,
-            top_p: None,
-            top_k: None,
-            repeat_penalty: None,
-        },
+    let sampling = style.sampling();
+
+    GenerateOptions {
+        temperature: sampling.temperature,
+        top_p: sampling.top_p,
+        top_k: sampling.top_k,
+        repeat_penalty: sampling.repeat_penalty,
     }
 }
 

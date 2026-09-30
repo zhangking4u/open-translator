@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::domain::translation::{TranslationError, TranslationRequest, TranslationResult};
 
+pub mod llama_cpp;
 pub mod mock;
 pub mod ollama;
 mod timeout;
@@ -25,6 +26,7 @@ pub trait TranslationEngine: Send + Sync {
 pub enum EngineKind {
     Mock,
     Ollama,
+    LlamaCpp,
 }
 
 impl EngineKind {
@@ -32,6 +34,7 @@ impl EngineKind {
         match value {
             "mock" => Ok(Self::Mock),
             "ollama" => Ok(Self::Ollama),
+            "llama-cpp" => Ok(Self::LlamaCpp),
             other => Err(format!("unknown engine kind: {other}")),
         }
     }
@@ -40,11 +43,12 @@ impl EngineKind {
         match self {
             Self::Mock => "mock",
             Self::Ollama => "ollama",
+            Self::LlamaCpp => "llama-cpp",
         }
     }
 }
 
-pub fn build(config: &Config) -> EngineRef {
+pub fn build(config: &Config) -> Result<EngineRef, String> {
     let engine: EngineRef = match config.engine {
         EngineKind::Mock => Arc::new(mock::MockEngine),
         EngineKind::Ollama => Arc::new(ollama::OllamaEngine::new(
@@ -53,9 +57,14 @@ pub fn build(config: &Config) -> EngineRef {
             config.prompt_style,
             config.keep_alive.clone(),
         )),
+        EngineKind::LlamaCpp => Arc::new(llama_cpp::LlamaCppEngine::load(
+            &config.model_path,
+            config.prompt_style,
+            config.n_ctx,
+        )?),
     };
 
-    Arc::new(TimeoutEngine::new(engine, config.timeout))
+    Ok(Arc::new(TimeoutEngine::new(engine, config.timeout)))
 }
 
 pub async fn warmup(engine: &EngineRef) {
@@ -88,6 +97,11 @@ mod tests {
     }
 
     #[test]
+    fn parses_llama_cpp_engine_kind() {
+        assert_eq!(EngineKind::parse("llama-cpp"), Ok(EngineKind::LlamaCpp));
+    }
+
+    #[test]
     fn rejects_unknown_engine_kind() {
         assert!(EngineKind::parse("nope").is_err());
     }
@@ -96,6 +110,7 @@ mod tests {
     fn engine_kind_names_match_config() {
         assert_eq!(EngineKind::Mock.as_str(), "mock");
         assert_eq!(EngineKind::Ollama.as_str(), "ollama");
+        assert_eq!(EngineKind::LlamaCpp.as_str(), "llama-cpp");
     }
 
     #[tokio::test]

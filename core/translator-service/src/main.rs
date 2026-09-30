@@ -14,16 +14,31 @@ async fn main() {
         std::process::exit(1);
     });
 
-    let engine_ref = engine::build(&config);
+    let engine_ref = match engine::build(&config) {
+        Ok(engine) => engine,
+        Err(error) => {
+            tracing::error!(error = %error, "failed to initialise engine");
+            std::process::exit(1);
+        }
+    };
 
     if config.warmup {
         engine::warmup(&engine_ref).await;
     }
 
+    let model_display = if config.model.is_empty() {
+        std::path::Path::new(&config.model_path)
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default()
+    } else {
+        config.model.clone()
+    };
+
     let app = api::router(api::AppState::new(
         engine_ref,
         config.engine.as_str(),
-        config.model.clone(),
+        model_display.clone(),
         config.max_chars,
     ));
 
@@ -37,7 +52,7 @@ async fn main() {
     tracing::info!(
         bind_addr = %config.bind_addr,
         engine = config.engine.as_str(),
-        model = %config.model,
+        model = %model_display,
         "OpenTranslator Core started"
     );
 

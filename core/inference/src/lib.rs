@@ -1,6 +1,8 @@
 use std::fmt;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
@@ -18,7 +20,6 @@ const DEFAULT_N_CTX: u32 = 4096;
 pub struct LoadOptions {
     pub n_ctx: u32,
     pub n_gpu_layers: u32,
-    pub void_llama_logs: bool,
 }
 
 impl Default for LoadOptions {
@@ -26,7 +27,6 @@ impl Default for LoadOptions {
         Self {
             n_ctx: DEFAULT_N_CTX,
             n_gpu_layers: 0,
-            void_llama_logs: true,
         }
     }
 }
@@ -81,7 +81,7 @@ impl fmt::Display for InferenceError {
 impl std::error::Error for InferenceError {}
 
 pub struct InferenceEngine {
-    sender: Sender<Request>,
+    sender: Mutex<Sender<Request>>,
 }
 
 struct Request {
@@ -103,7 +103,9 @@ impl InferenceEngine {
             .map_err(|error| InferenceError::Load(format!("failed to spawn worker: {error}")))?;
 
         match ready_rx.recv() {
-            Ok(Ok(())) => Ok(Self { sender }),
+            Ok(Ok(())) => Ok(Self {
+                sender: Mutex::new(sender),
+            }),
             Ok(Err(error)) => Err(error),
             Err(_) => Err(InferenceError::Load(
                 "inference worker exited during startup".to_string(),
@@ -119,7 +121,12 @@ impl InferenceEngine {
     ) -> Result<Generation, InferenceError> {
         let (respond, response) = channel();
 
-        self.sender
+        let sender = self
+            .sender
+            .lock()
+            .map_err(|_| InferenceError::Worker("inference worker lock poisoned".to_string()))?;
+
+        sender
             .send(Request {
                 prompt: prompt.to_string(),
                 stop_strings: stop_strings.to_vec(),
@@ -134,28 +141,47 @@ impl InferenceEngine {
     }
 }
 
+static BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
+
+fn shared_backend() -> Result<&'static LlamaBackend, InferenceError> {
+    let result = BACKEND.get_or_init(|| {
+        LlamaBackend::init()
+            .map(|mut backend| {
+                backend.void_logs();
+                backend
+            })
+            .map_err(|error| error.to_string())
+    });
+
+    result.as_ref().map_err(|error| {
+        InferenceError::Load(format!("failed to init llama backend: {error}"))
+    })
+}
+
 fn worker(
     model_path: PathBuf,
     options: LoadOptions,
     receiver: Receiver<Request>,
     ready: Sender<Result<(), InferenceError>>,
 ) {
-    let mut backend = match LlamaBackend::init() {
+    let backend = match shared_backend() {
         Ok(backend) => backend,
         Err(error) => {
-            let _ = ready.send(Err(InferenceError::Load(format!(
-                "failed to init llama backend: {error}"
-            ))));
+            let _ = ready.send(Err(error));
             return;
         }
     };
 
-    if options.void_llama_logs {
-        backend.void_logs();
+    if !model_path.is_file() {
+        let _ = ready.send(Err(InferenceError::Load(format!(
+            "model file not found: {}",
+            model_path.display()
+        ))));
+        return;
     }
 
     let model = match LlamaModel::load_from_file(
-        &backend,
+        backend,
         &model_path,
         &LlamaModelParams::default().with_n_gpu_layers(options.n_gpu_layers),
     ) {
@@ -172,7 +198,7 @@ fn worker(
     let n_ctx = NonZeroU32::new(options.n_ctx.max(1)).unwrap_or(NonZeroU32::new(DEFAULT_N_CTX).unwrap());
 
     let mut context = match model.new_context(
-        &backend,
+        backend,
         LlamaContextParams::default().with_n_ctx(Some(n_ctx)),
     ) {
         Ok(context) => context,

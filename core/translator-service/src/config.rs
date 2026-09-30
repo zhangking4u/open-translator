@@ -9,6 +9,7 @@ pub const DEFAULT_MODEL_URL: &str = "http://127.0.0.1:11434";
 pub const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 pub const DEFAULT_KEEP_ALIVE: &str = "30m";
 pub const DEFAULT_MAX_CHARS: usize = 1500;
+pub const DEFAULT_N_CTX: u32 = 4096;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -17,6 +18,8 @@ pub struct Config {
     pub timeout: Duration,
     pub model_url: String,
     pub model: String,
+    pub model_path: String,
+    pub n_ctx: u32,
     pub prompt_style: PromptStyle,
     pub warmup: bool,
     pub keep_alive: String,
@@ -40,6 +43,11 @@ impl Config {
 
         let model_url = resolve_model_url(env::var("TRANSLATOR_MODEL_URL").ok())?;
         let model = resolve_model(engine, env::var("TRANSLATOR_MODEL").ok())?;
+        let model_path = resolve_model_path(engine, env::var("TRANSLATOR_MODEL_PATH").ok())?;
+        let n_ctx = match env::var("TRANSLATOR_N_CTX") {
+            Ok(value) => parse_n_ctx(&value)?,
+            Err(_) => DEFAULT_N_CTX,
+        };
 
         let prompt_style = match env::var("TRANSLATOR_PROMPT_STYLE") {
             Ok(value) => PromptStyle::parse(&value)?,
@@ -64,6 +72,8 @@ impl Config {
             timeout,
             model_url,
             model,
+            model_path,
+            n_ctx,
             prompt_style,
             warmup,
             keep_alive,
@@ -135,6 +145,30 @@ fn resolve_model(engine: EngineKind, value: Option<String>) -> Result<String, St
     Ok(model)
 }
 
+fn resolve_model_path(engine: EngineKind, value: Option<String>) -> Result<String, String> {
+    let path = value.unwrap_or_default().trim().to_string();
+
+    if engine == EngineKind::LlamaCpp && path.is_empty() {
+        return Err(
+            "TRANSLATOR_MODEL_PATH is required when TRANSLATOR_ENGINE=llama-cpp".to_string(),
+        );
+    }
+
+    Ok(path)
+}
+
+fn parse_n_ctx(value: &str) -> Result<u32, String> {
+    let n_ctx = value
+        .parse::<u32>()
+        .map_err(|_| format!("invalid TRANSLATOR_N_CTX: {value}"))?;
+
+    if n_ctx == 0 {
+        return Err("TRANSLATOR_N_CTX must be greater than 0".to_string());
+    }
+
+    Ok(n_ctx)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +226,26 @@ mod tests {
             resolve_model(EngineKind::Ollama, Some(" qwen2.5:7b ".to_string())).unwrap(),
             "qwen2.5:7b"
         );
+    }
+
+    #[test]
+    fn requires_model_path_for_llama_cpp_engine() {
+        assert_eq!(resolve_model_path(EngineKind::Mock, None).unwrap(), "");
+        assert!(resolve_model_path(EngineKind::LlamaCpp, None).is_err());
+        assert_eq!(
+            resolve_model_path(
+                EngineKind::LlamaCpp,
+                Some(" /models/hy-mt.gguf ".to_string())
+            )
+            .unwrap(),
+            "/models/hy-mt.gguf"
+        );
+    }
+
+    #[test]
+    fn parses_n_ctx() {
+        assert_eq!(parse_n_ctx("8192").unwrap(), 8192);
+        assert!(parse_n_ctx("abc").is_err());
+        assert!(parse_n_ctx("0").is_err());
     }
 }
