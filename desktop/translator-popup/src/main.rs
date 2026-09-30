@@ -1,10 +1,9 @@
 use std::io::Read;
-use std::process::{Command, Stdio};
-use std::time::Duration;
-
-use serde::{Deserialize, Serialize};
+use std::process::Command;
 
 mod services;
+mod translate;
+mod ui;
 
 const DEFAULT_SERVICE_URL: &str = "http://127.0.0.1:17890";
 
@@ -12,8 +11,8 @@ const HELP: &str = "\
 Usage: translator-popup [OPTIONS]
 
 Reads the Wayland primary selection (or clipboard), sends it to the local
-translator service and shows the translation. Starts ollama and the
-translator service automatically when they are not running.
+translator service and shows the translation in a popup window. Starts ollama
+and the translator service automatically when they are not running.
 
 Options:
   -s, --source <LANG>   Source language tag (default: en)
@@ -37,7 +36,7 @@ Selection reading uses wl-paste from the wl-clipboard package
 (Debian/Ubuntu: sudo apt install wl-clipboard).
 ";
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Args {
     source: String,
     target: String,
@@ -96,7 +95,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
     Ok(parsed)
 }
 
-fn read_selection(clipboard: bool) -> Result<String, String> {
+pub(crate) fn read_selection(clipboard: bool) -> Result<String, String> {
     let mut command = Command::new("wl-paste");
     command.arg("--no-newline");
 
@@ -120,7 +119,7 @@ fn read_selection(clipboard: bool) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn read_stdin() -> Result<String, String> {
+pub(crate) fn read_stdin() -> Result<String, String> {
     let mut text = String::new();
     std::io::stdin()
         .read_to_string(&mut text)
@@ -128,116 +127,42 @@ fn read_stdin() -> Result<String, String> {
     Ok(text.trim().to_string())
 }
 
-#[derive(Serialize)]
-struct TranslateRequest<'a> {
-    text: &'a str,
-    source: &'a str,
-    target: &'a str,
-}
-
-#[derive(Deserialize)]
-struct TranslateResponse {
-    translation: String,
-}
-
-#[derive(Deserialize)]
-struct ErrorResponse {
-    error: ErrorBody,
-}
-
-#[derive(Deserialize)]
-struct ErrorBody {
-    kind: String,
-    message: String,
-}
-
-async fn translate(client: &reqwest::Client, args: &Args, text: &str) -> Result<String, String> {
-    let url = format!("{}/translate", args.service_url.trim_end_matches('/'));
-
-    let response = client
-        .post(&url)
-        .json(&TranslateRequest {
-            text,
-            source: &args.source,
-            target: &args.target,
-        })
-        .send()
-        .await
-        .map_err(|error| format!("cannot reach translator service at {url}: {error}"))?;
-
-    let status = response.status();
-
-    if status.is_success() {
-        let payload: TranslateResponse = response
-            .json()
-            .await
-            .map_err(|error| format!("invalid service response: {error}"))?;
-        return Ok(payload.translation);
-    }
-
-    let body = response.text().await.unwrap_or_default();
-
-    if let Ok(error) = serde_json::from_str::<ErrorResponse>(&body) {
-        return Err(format!("{}: {}", error.error.kind, error.error.message));
-    }
-
-    Err(format!("service returned {status}: {body}"))
-}
-
-fn show_popup(title: &str, text: &str) {
-    let spawned = Command::new("zenity")
-        .args([
-            "--text-info",
-            "--title",
-            title,
-            "--width",
-            "560",
-            "--height",
-            "220",
-        ])
-        .stdin(Stdio::piped())
-        .spawn();
-
-    match spawned {
-        Ok(mut child) => {
-            if let Some(mut stdin) = child.stdin.take() {
-                use std::io::Write;
-                let _ = stdin.write_all(text.as_bytes());
-            }
-            let _ = child.wait();
+async fn run_headless(args: &Args, text: &str) -> i32 {
+    let client = match translate::build_client() {
+        Ok(client) => client,
+        Err(error) => {
+            eprintln!("{error}");
+            return 1;
         }
-        Err(_) => {
-            println!("{text}");
-            let _ = Command::new("notify-send").args([title, text]).status();
+    };
+
+    let config = services::ServiceConfig::from_env(&args.service_url, !args.no_start);
+    if let Err(error) = services::ensure(&client, &config).await {
+        eprintln!("{error}");
+        return 1;
+    }
+
+    match translate::translate(
+        &client,
+        &args.service_url,
+        &args.source,
+        &args.target,
+        text,
+    )
+    .await
+    {
+        Ok(translation) => {
+            println!("{translation}");
+            0
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            1
         }
     }
 }
 
-fn show_error(message: &str) {
-    let _ = Command::new("zenity")
-        .args([
-            "--error",
-            "--title",
-            "OpenTranslator",
-            "--text",
-            message,
-            "--width",
-            "480",
-        ])
-        .status();
-}
-
-fn fail(args: &Args, message: &str) -> ! {
-    if args.print {
-        eprintln!("{message}");
-    } else {
-        show_error(message);
-    }
-    std::process::exit(1);
-}
-
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+fn main() {
     if std::env::args().any(|arg| arg == "--help" || arg == "-h") {
         print!("{HELP}");
         return;
@@ -251,46 +176,38 @@ async fn main() {
         }
     };
 
-    let text = if args.stdin {
-        match read_stdin() {
-            Ok(text) => text,
-            Err(error) => fail(&args, &error),
-        }
-    } else {
-        match read_selection(args.clipboard) {
-            Ok(text) => text,
-            Err(error) => fail(&args, &error),
-        }
-    };
-
-    if text.is_empty() {
-        fail(&args, "No selected text found.");
-    }
-
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-    {
-        Ok(client) => client,
-        Err(error) => fail(&args, &format!("failed to create HTTP client: {error}")),
-    };
-
-    let service_config = services::ServiceConfig::from_env(&args.service_url, !args.no_start);
-    if let Err(error) = services::ensure(&client, &service_config).await {
-        fail(&args, &error);
-    }
-
-    match translate(&client, &args, &text).await {
-        Ok(translation) => {
-            if args.print {
-                println!("{translation}");
-            } else {
-                let title = format!("OpenTranslator ({} → {})", args.source, args.target);
-                show_popup(&title, &translation);
+    if args.print {
+        let text = match if args.stdin {
+            read_stdin()
+        } else {
+            read_selection(args.clipboard)
+        } {
+            Ok(text) if !text.is_empty() => text,
+            Ok(_) => {
+                eprintln!("No selected text found.");
+                std::process::exit(1);
             }
-        }
-        Err(error) => fail(&args, &error),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        };
+
+        let runtime = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                eprintln!("failed to start runtime: {error}");
+                std::process::exit(1);
+            }
+        };
+
+        std::process::exit(runtime.block_on(run_headless(&args, &text)));
     }
+
+    std::process::exit(ui::run(args));
 }
 
 #[cfg(test)]
