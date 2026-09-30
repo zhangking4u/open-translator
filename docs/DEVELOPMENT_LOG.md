@@ -782,6 +782,31 @@ Next:
 ---
 
 
+## Milestone: First-Run Model Download (Phase C1)
+
+
+Completed:
+
+- `translator-core::models::download`: ModelScope HTTP download with resume (`Range`; ModelScope returns 206/`accept-ranges: bytes`), streamed SHA-256 verification, progress callback, `.part` staging renamed on success, stale-partial cleanup on checksum mismatch, restart when the server ignores the range request
+- `download_client()` sets a `User-Agent` — ModelScope's CDN answers 403 without one (reqwest sends none by default); `translator-core`'s reqwest gained the `rustls-tls` feature for the HTTPS source
+- Desktop client first run: when the model file is missing and `auto_download = true` (default), the app downloads with a live progress line (percentage/MB) in the window, verifies the checksum, loads the engine and then starts the extension HTTP endpoint; `TRANSLATOR_MODEL_PATH` and config `model_path` still take precedence
+- Window behaviour fix (found while testing): normal startup stays hidden (only first-run download or errors surface the window; startup no longer grabs the selection), and Esc/X quit the app when no tray/hotkey can restore it (Linux dev builds) instead of hiding it forever
+
+
+Verification:
+
+- Unit tests (translator-core 20): full download + progress + checksum, checksum mismatch removes the partial, resume from a half-written `.part`, restart when the server ignores `Range`
+- Live first-run: the desktop client on an empty models dir downloaded 1.13 GB, verified the SHA-256 (`4383ac0c…`), loaded the engine and served `/health` + `/translate` (kernel panic → 内核崩溃 in 0.28s); the model now lives at the default path for future runs
+
+
+Next:
+
+- Phase C2: installers (NSIS/dmg/deb), code signing decision; real-machine verification of the Windows/macOS clients
+
+
+---
+
+
 # Git History
 
 

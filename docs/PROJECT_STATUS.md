@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record embedded desktop client
+docs: record first-run model download
 
 
 ---
@@ -247,7 +247,7 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Phase C: first-run model download (ModelScope + progress/checksum), installers (NSIS/dmg/deb), code signing (budget decision)
+1. Phase C2: installers (NSIS/dmg/deb) and code signing (budget decision)
 
 2. Real-machine verification: Windows client (hotkey + Ctrl+C) and macOS client (Accessibility + Cmd+C)
 
@@ -410,3 +410,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Phase B1: `core/inference` crate (`translator-inference`) with `InferenceEngine` (actor worker, sampling/stop strings, env-gated real-model test); CI job on ubuntu
 - Phase B2: `EngineKind::LlamaCpp` in the service (`TRANSLATOR_MODEL_PATH`, `TRANSLATOR_N_CTX`); live-verified (kernel panic → 内核崩溃 in 0.26s, no Ollama)
 - Phase B3: desktop client embeds the engine (no Ollama, no service process) and serves the HTTP API in-process for the browser extension; verified with all services stopped
+- Phase C1: first-run model download (ModelScope + resume + SHA-256 + progress) in the desktop client; live-verified end to end (1.13 GB, then `/translate` 0.28s); normal startup stays hidden, and Esc/X quit where no tray/hotkey exists
