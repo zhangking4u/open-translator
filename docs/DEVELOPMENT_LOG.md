@@ -349,7 +349,7 @@ Completed:
 
 - Replaced the zenity dialog with a GTK4 window (`gtk4` crate 0.11): source text, status line, selectable translation, 复制/关闭 buttons, Esc closes; errors shown in-window
 - Popup mode shows the window immediately and runs service self-start + translation on a worker thread, updating the UI through a channel ("正在准备翻译服务…" → "翻译中…" → result)
-- Repeated hotkey presses: GtkApplication's single-instance behavior forwards new launches to the running instance; `activate` now closes the previous window and opens a fresh one (with an application hold guard so closing the last window does not quit the app) and re-reads the selection
+- Repeated hotkey presses: GtkApplication's single-instance behavior forwards new launches to the running instance; the same window is reused — `activate` re-reads the selection and updates the content in place (mainstream single-window interaction). An earlier close-and-reopen revision felt like "a new window opens", especially after changing the target language; the in-place update also removes the application hold-guard workaround
 - `--print` path unchanged; HTTP client and translation moved to `src/translate.rs`, UI in `src/ui.rs`
 - Build requirement added: `libgtk-4-dev` + `pkg-config`
 
@@ -364,6 +364,7 @@ Verification:
 - cargo test (9 tests)
 - Popup smoke tests via `--stdin`: success and error windows both open and stay until closed; `--print` regression passes
 - Refresh check: the same instance survived two quick activations and translated a 3-char, then 10-char, then 16-char selection after each launch (0.03s forwarding)
+- Interaction review (2026-09-30): close-and-reopen revised to in-place updates — one window for all triggers, language changes included
 
 
 Note:
@@ -528,6 +529,32 @@ Verification:
 - `browser/build.sh chrome` → exit 0
 - First CI run: core/desktop/browser jobs green; the e2e job passed all 7 checks but failed on cleanup (`rm -rf` racing the browser shutdown, overriding the exit status) — fixed by waiting for the browser process and preserving the exit code
 - Second CI run green: all four jobs pass (core 14s, browser 21s, Chrome e2e 56s, desktop 34s); `actions/checkout` and `actions/setup-node` bumped to v5 to clear the Node 20 deprecation annotation
+
+
+---
+
+
+## Milestone: Long-Text Guard, Auto Source, Language Switcher
+
+
+Completed:
+
+- Core: `TRANSLATOR_MAX_CHARS` (default 1500) — over-limit requests return 400 `invalid_request` immediately instead of waiting for the 30s timeout (measured: 1799 chars → 400 in 6ms; previously 2249 chars → 504 after 30s)
+- Core: `source=auto` — generic and TranslateGemma prompts get source-less templates; HY-MT's template was already source-agnostic
+- Desktop popup: target-language dropdown (zh/en/ja/ko/fr/de/es/ru, unknown values appended dynamically); changing it re-translates the **source text already shown in the window** (not the current selection), updates the window title and writes `target` back to `~/.config/open-translator/config`
+- Desktop popup: single-window interaction — activation reuses the window and updates in place; language changes and repeated hotkeys never open a second window
+
+
+Verification:
+
+- cargo test: core 36 tests, desktop 15 tests
+- Live: 899 chars translated (200); 1799 chars rejected in 6ms; `source=auto` translated Spanish and French input into Chinese
+- Popup smoke-tested with the new dropdown row (window opens; selection changed by user for the real check)
+
+
+Gotcha:
+
+- `GtkComboBoxText` changes its selection on mouse-wheel events; the popup attaches an `EventControllerScroll` returning `Propagation::Stop` so scrolling over the window never switches the target language
 
 
 ---

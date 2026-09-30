@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record green ci
+docs: record long-text guard and interaction refinements
 
 
 ---
@@ -386,7 +386,10 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 
 - Root `README.md` added (quick start, configuration reference, FAQ)
 - Core: `TRANSLATOR_KEEP_ALIVE` (default `30m`) keeps the model loaded between uses (verified: `UNTIL 29 minutes from now`)
+- Core: `TRANSLATOR_MAX_CHARS` (default 1500) rejects over-limit text instantly; `source=auto` supported
 - Desktop: `~/.config/open-translator/config` for `service_url`/`source`/`target`, with CLI > file > environment > defaults precedence
+- Desktop: in-window target-language dropdown (re-translates and persists the choice)
+- Desktop: single-window interaction — every trigger reuses the window and updates content in place (no close/reopen)
 
 
 ## Release Readiness (2026-09-30)

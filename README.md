@@ -46,6 +46,7 @@ cargo run --release
 | `TRANSLATOR_TIMEOUT_MS` | `30000` | 单次翻译超时（>0） |
 | `TRANSLATOR_WARMUP` | `true` | 启动时预热模型 |
 | `TRANSLATOR_KEEP_ALIVE` | `30m` | 模型空闲卸载时间（Ollama `keep_alive`，如 `5m`/`1h`/`-1`） |
+| `TRANSLATOR_MAX_CHARS` | `1500` | 单次请求最大字符数，超出立刻返回 400（避免长文本等到超时） |
 | `RUST_LOG` | `info` | 日志级别 |
 
 ### 2. 桌面划词（Ubuntu / GNOME Wayland）
@@ -67,6 +68,7 @@ target = zh
 ```
 
 命令行参数 > 配置文件 > 环境变量 > 默认值。其他参数：`--clipboard`（读剪贴板）、`--stdin`/`--print`（脚本化）、`--no-start`。
+弹窗内可直接用「目标语言」下拉切换（支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语，切换后自动重译并写回配置文件）。`source` 可设为 `auto` 自动识别源语言。
 
 ### 3. 浏览器扩展（Firefox / Chrome）
 
