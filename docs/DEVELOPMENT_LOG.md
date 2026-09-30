@@ -485,6 +485,26 @@ Fix:
 ---
 
 
+## Milestone: Extension Packaging and Signing
+
+
+Completed:
+
+- `browser/build.sh` gains `--zip`: packages `dist/open-translator-{firefox,chrome}-<version>.zip` (uses `zip`, falls back to `python3 -m zipfile`)
+- `browser/sign.sh`: signs the Firefox build through `npx web-ext sign --channel unlisted` into `dist/signed/`; requires `WEB_EXT_API_KEY`/`WEB_EXT_API_SECRET` and exits with setup instructions otherwise
+- Firefox manifest: added `browser_specific_settings.gecko.data_collection_permissions.required = ["none"]` and bumped `strict_min_version` to 142.0 (minimum for that key)
+
+
+Verification:
+
+- `./browser/build.sh all --zip` produced both zips; the Firefox zip contains the five expected files at the archive root
+- `npx web-ext lint --source-dir browser/dist/firefox` → 0 errors / 0 notices / 0 warnings
+- `./browser/sign.sh` without credentials exits 1 with instructions (actual signing needs the user's AMO API key)
+
+
+---
+
+
 # Git History
 
 

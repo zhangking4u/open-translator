@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record install script fix
+docs: record extension packaging
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Extension packaging and signing (AMO for Firefox; Chrome Web Store optional)
+1. Sign and install the Firefox `.xpi` (needs AMO API key; `./browser/sign.sh`)
 
 2. Sprint 5 meeting translation (parked)
 
-3. Portal-based hotkey (optional, replaces the install-script shortcut)
+3. GitHub remote + CI (optional)
 
 
 ---
@@ -369,10 +369,11 @@ Completed:
 - Firefox MV2 extension in `browser/extension/`: context menu + `Alt+Shift+T`, in-page bubble (loading/error/copy/Esc), options page (service URL, language pair)
 - Background fetch to the local service through the host permission (no CORS change)
 - Chrome MV3 variant (`manifest.chrome.json`) and `browser/build.sh` producing `browser/dist/{firefox,chrome}`
+- Packaging: `build.sh --zip` plus `browser/sign.sh` (`web-ext`, AMO unlisted); Firefox manifest lint-clean
 
 Pending:
 
-- (none)
+- Sign and install the Firefox `.xpi` with the user's AMO credentials (user action)
 
 
 Status:
