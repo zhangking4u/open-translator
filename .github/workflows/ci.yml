@@ -19,6 +19,20 @@ jobs:
           workspaces: core/translator-service
       - run: cargo test
 
+  core-windows:
+    name: Core service tests (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: core/translator-service
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/translator-service
+      - run: cargo test
+
   desktop:
     name: Desktop popup tests
     runs-on: ubuntu-latest
