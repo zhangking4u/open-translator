@@ -48,7 +48,7 @@ fi
 mkdir -p "$APP_DIR/Contents/MacOS"
 cp "$BIN" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$CORE_BIN" "$APP_DIR/Contents/MacOS/translator-service"
-cp "$SCRIPT_DIR/macos/Info.plist" "$APP_DIR/Contents/Info.plist"
+cp "$SCRIPT_DIR/../packaging/macos/Info.plist" "$APP_DIR/Contents/Info.plist"
 
 mkdir -p "$HOME/Library/LaunchAgents"
 cat > "$PLIST" <<EOF

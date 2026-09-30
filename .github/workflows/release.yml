@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows package
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/translator-popup-desktop
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/translator-popup-desktop
+      - name: Build
+        run: cargo build --release
+      - name: Package zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item target/release/translator-popup-desktop.exe package/
+          Copy-Item ../../packaging/windows/install.ps1 package/
+          Copy-Item ../../packaging/windows/README.txt package/
+          Compress-Archive -Path package/* -DestinationPath OpenTranslator-windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTranslator-windows-x64
+          path: desktop/translator-popup-desktop/OpenTranslator-windows-x64.zip
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${{ github.ref_name }}" *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create "${{ github.ref_name }}" --generate-notes *> $null }
+          gh release upload "${{ github.ref_name }}" "OpenTranslator-windows-x64.zip" --clobber
+
+  macos:
+    name: macOS package
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop/translator-popup-desktop
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/translator-popup-desktop
+      - name: Build
+        run: cargo build --release
+      - name: Package dmg
+        run: |
+          ARCH="$(uname -m)"
+          ../../packaging/macos/make-dmg.sh target/release/translator-popup-desktop "OpenTranslator-macos-$ARCH.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTranslator-macos
+          path: desktop/translator-popup-desktop/OpenTranslator-macos-*.dmg
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || gh release create "${GITHUB_REF_NAME}" --generate-notes || true
+          gh release upload "${GITHUB_REF_NAME}" OpenTranslator-macos-*.dmg --clobber
