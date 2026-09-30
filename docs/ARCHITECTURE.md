@@ -208,10 +208,10 @@ Completed:
 
 In Progress:
 
-- Service hardening (logging, engine warmup and health check)
+- Desktop client preparation (Sprint 3)
 
 
 Next:
 
-- Desktop client
+- Browser integration
 

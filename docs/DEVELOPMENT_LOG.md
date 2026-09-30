@@ -258,6 +258,31 @@ Live end-to-end (`TRANSLATOR_ENGINE=ollama TRANSLATOR_MODEL=hy-mt1.5-1.8b TRANSL
 ---
 
 
+## Milestone: Service Hardening
+
+
+Completed:
+
+- Switched to `tracing` + `tracing-subscriber` (RUST_LOG, default info); request logs carry source/target/text_chars/elapsed_ms and error kind, never the raw text
+- Added startup warmup (`TRANSLATOR_WARMUP`, default true): preloads the model so the first request is warm (live: first request 0.13s vs 1.8s cold); warmup failure logs a warning and does not block startup
+- `/health` now reports `engine` and `model` from config (API state is `AppState { engine, engine_name, model }`)
+- Tests: health fields, warmup failure tolerance, warmup flag parsing
+
+
+Verification:
+
+cargo test (32 tests)
+
+
+Live checks:
+
+- `{"status":"ok","service":"translator-core","engine":"ollama","model":"hy-mt1.5-1.8b"}`
+- Warmup log "engine warmup completed"; with an unreachable model URL the service logs a warning and still starts
+
+
+---
+
+
 # Git History
 
 
@@ -286,21 +311,30 @@ docs: add project status document
 # Current Sprint
 
 
-Sprint 2 (preparation)
+Sprint 3 (preparation)
 
 
 Goal:
 
-Integrate a local translation model.
+Desktop selection translation (Ubuntu / GNOME Wayland).
 
 
 Planned:
 
-1. Choose model runtime (Ollama / llama.cpp server / in-process — TBD)
+1. Choose the desktop integration approach (GNOME Shell extension recommended; Wayland blocks global hotkeys/clipboard injection)
 
-2. Add model adapter behind engine config
+2. Minimal loop: hotkey → selection capture → core `/translate` → popup
 
-3. Extend config with model address, model name and timeout
+
+Sprint 2 (completed 2026-09-30):
+
+1. Ollama runtime installed and benchmarked
+
+2. Ollama engine adapter with configurable model
+
+3. Model evaluation (HY-MT / TranslateGemma) and per-model prompt styles
+
+4. Service hardening (tracing, warmup, health)
 
 
 Sprint 1.2 (completed 2026-09-30):

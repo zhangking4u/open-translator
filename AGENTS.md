@@ -24,9 +24,11 @@ Flow: `src/api/mod.rs` (router + handlers + DTOs + error mapping) → `src/domai
 - `TranslationEngine::translate` is async and dyn-compatible: it returns `TranslationFuture` (`Pin<Box<dyn Future<Output = Result<TranslationResult, TranslationError>> + Send + '_>>`), and the trait has `Send + Sync` supertraits so API state is `EngineRef` (`Arc<dyn TranslationEngine>`). New engines must use this signature — plain `async fn` in the trait would break `dyn` support.
 - `engine::build` wraps every engine in `TimeoutEngine`; an expired translation becomes `TranslationError::Timeout` → HTTP 504.
 - Errors: engines return `TranslationError::{InvalidRequest, EngineUnavailable, Timeout, Internal}`; `api` implements `IntoResponse` mapping them to 400/502/504/500 with body `{"error":{"kind","message"}}`. Empty/whitespace `text` is rejected in the handler with 400.
-- API: `GET /health` → `{"status":"ok","service":"translator-core"}`; `POST /translate` body `{"text","source","target"}` → `{"translation":"[Mock Translation] <text>"}`.
+- API: `GET /health` → `{"status":"ok","service":"translator-core","engine":"<kind>","model":"<model>"}`; `POST /translate` body `{"text","source","target"}` → `{"translation":"[Mock Translation] <text>"}`.
+- Logging uses `tracing` (`RUST_LOG`, default `info`); request logs carry source/target/text_chars/elapsed_ms and error kind but never the raw text.
+- Startup warmup is on by default (`TRANSLATOR_WARMUP=false` to disable); warmup failure warns and does not block startup.
 - `source`/`target` are accepted but unused by `MockEngine`; `OllamaEngine` builds prompts via `domain::prompt::translation_prompt` (styles: `generic`, `translategemma`, `hymt`) and posts to `{TRANSLATOR_MODEL_URL}/api/generate`, mapping HTTP/connection failures to `EngineUnavailable`. Each style sends its recommended sampling options (`hymt`: 0.7/0.6/20/1.05; others: temperature 0).
-- Startup config is env-only: `TRANSLATOR_BIND_ADDR`, `TRANSLATOR_ENGINE` (default `mock`; `ollama` requires `TRANSLATOR_MODEL`), `TRANSLATOR_TIMEOUT_MS` (default `30000`, must be > 0), `TRANSLATOR_MODEL_URL` (default `http://127.0.0.1:11434`), `TRANSLATOR_MODEL`, `TRANSLATOR_PROMPT_STYLE` (default `generic`); invalid values abort startup with exit 1.
+- Startup config is env-only: `TRANSLATOR_BIND_ADDR`, `TRANSLATOR_ENGINE` (default `mock`; `ollama` requires `TRANSLATOR_MODEL`), `TRANSLATOR_TIMEOUT_MS` (default `30000`, must be > 0), `TRANSLATOR_MODEL_URL` (default `http://127.0.0.1:11434`), `TRANSLATOR_MODEL`, `TRANSLATOR_PROMPT_STYLE` (default `generic`), `TRANSLATOR_WARMUP` (`true`/`false`, default `true`); invalid values abort startup with exit 1.
 
 ## Conventions
 
