@@ -114,9 +114,14 @@ docs/                      架构、状态、开发日志
 ```bash
 cd core/translator-service && cargo test    # 核心服务
 cd desktop/translator-popup && cargo test   # 桌面弹窗
-python3 -m json.tool browser/extension/manifest.json && node --check browser/extension/*.js
+./browser/test.sh                           # Chrome MV3 端到端（服务未运行会自启 mock 引擎）
 ```
 
 - 架构设计：`docs/ARCHITECTURE.md`
 - 当前状态与进度：`docs/PROJECT_STATUS.md`
 - 开发日志：`docs/DEVELOPMENT_LOG.md`
+- CI：`.github/workflows/ci.yml`（两个 crate 的测试 + 扩展静态检查/lint + Chrome 端到端）
+
+## 许可证
+
+MIT（见 `LICENSE`）

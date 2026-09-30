@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record firefox extension signing
+docs: add mit license and record release readiness
 
 
 ---
@@ -247,9 +247,9 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Sprint 5 meeting translation (parked)
+1. Add a git remote and push (activates CI)
 
-2. GitHub remote + CI (optional)
+2. Sprint 5 meeting translation (parked)
 
 3. Portal-based hotkey (optional)
 
@@ -387,3 +387,12 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Root `README.md` added (quick start, configuration reference, FAQ)
 - Core: `TRANSLATOR_KEEP_ALIVE` (default `30m`) keeps the model loaded between uses (verified: `UNTIL 29 minutes from now`)
 - Desktop: `~/.config/open-translator/config` for `service_url`/`source`/`target`, with CLI > file > environment > defaults precedence
+
+
+## Release Readiness (2026-09-30)
+
+
+- MIT `LICENSE` added
+- GitHub Actions CI (`.github/workflows/ci.yml`): core/desktop tests, browser static checks + `web-ext lint`, Chrome e2e
+- Repeatable browser e2e harness (`browser/test.sh`), 7/7 checks pass locally
+- Next: add a git remote and push to activate CI

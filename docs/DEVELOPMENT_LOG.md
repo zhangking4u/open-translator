@@ -511,6 +511,26 @@ Signing result (2026-09-30):
 ---
 
 
+## Milestone: Release Readiness — License, CI, Browser E2E
+
+
+Completed:
+
+- `LICENSE`: MIT
+- `.github/workflows/ci.yml`: core and desktop `cargo test` (desktop installs `libgtk-4-dev`), browser static checks + `web-ext lint`, and a Chrome end-to-end job
+- `browser/test.sh` + `browser/test-chrome.mjs` + `browser/test-page.html`: repeatable Chrome/Edge CDP smoke test (loads the MV3 build, exercises the service worker and the content-script bubble; starts a mock service when none is running)
+- Fixed `browser/build.sh` exiting 1 when `--zip` was not passed (a `[ ... ] && ...` as the final statement); the new harness surfaced it
+
+
+Verification:
+
+- `./browser/test.sh` → 7/7 PASS locally against the real model: worker `translate("kernel panic")` → 内核崩溃; bubble → "快速的棕色狐狸跳过了那只懒惰的狗。"
+- `browser/build.sh chrome` → exit 0
+
+
+---
+
+
 # Git History
 
 
