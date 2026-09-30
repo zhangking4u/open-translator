@@ -41,3 +41,4 @@ Flow: `src/api/mod.rs` (router + handlers + DTOs + error mapping) → `src/domai
 - Commits use conventional prefixes: `feat:`, `docs:` (see `git log`).
 - `docs/PROJECT_STATUS.md` and `docs/DEVELOPMENT_LOG.md` are kept as living sprint logs; update them when sprint scope/progress changes, and fix stale statements when touching related code.
 - `docs/ARCHITECTURE.md` is the design intent (modularity, model independence, local-first); keep the core crate model-agnostic and platform-independent.
+- Releases: use the `release` skill (`.kilo/skills/release/SKILL.md`) — pushing a `v*` tag builds the Windows zip + macOS dmg and creates the GitHub release.
