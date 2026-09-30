@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>OpenTranslator 设置</title>
+  <style>
+    body { font: 14px/1.6 system-ui, sans-serif; margin: 24px; max-width: 420px; }
+    label { display: block; margin-bottom: 12px; }
+    input { width: 100%; padding: 4px 6px; font: inherit; }
+    button { font: inherit; padding: 4px 12px; margin-right: 8px; }
+    #status { color: #374151; min-height: 1.6em; }
+  </style>
+</head>
+<body>
+  <h1>OpenTranslator</h1>
+  <form id="form">
+    <label>服务地址
+      <input id="serviceUrl" type="url" required>
+    </label>
+    <label>源语言
+      <input id="source">
+    </label>
+    <label>目标语言
+      <input id="target">
+    </label>
+    <button type="submit">保存</button>
+    <button type="button" id="test">测试连接</button>
+  </form>
+  <p id="status"></p>
+  <script src="options.js"></script>
+</body>
+</html>
