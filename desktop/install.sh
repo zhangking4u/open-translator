@@ -61,7 +61,8 @@ list_paths() {
     gsettings get "$KEYBINDINGS_SCHEMA" "$KEYBINDINGS_KEY" \
         | tr -d "[]' " \
         | tr ',' '\n' \
-        | sed '/^$/d'
+        | sed '/^$/d' \
+        | grep -v '^@' || true
 }
 
 find_path_by_name() {
@@ -137,6 +138,7 @@ if [ -z "$path" ]; then
     echo "created shortcut slot $path"
 else
     echo "updating existing shortcut $path"
+    set_paths $(list_paths)
 fi
 
 gsettings set "$KEYBINDING_PREFIX:$path" name "$NAME"
