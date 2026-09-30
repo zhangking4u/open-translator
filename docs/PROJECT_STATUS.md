@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record browser extension
+docs: add readme and record consolidation
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Chrome MV3 variant of the extension (deferred)
+1. Extension packaging and signing (AMO) — removes the temporary-add-on limitation
 
-2. Plan meeting translation
+2. Chrome MV3 variant of the extension
 
-3. Portal-based hotkey (optional, replaces the install-script shortcut)
+3. Sprint 5 meeting translation (parked)
 
 
 ---
@@ -377,3 +377,11 @@ Pending:
 Status:
 
 Firefox extension MVP implemented and verified manually (context menu and `Alt+Shift+T`); the invalid host permission (port in match pattern) was fixed during testing.
+
+
+## Consolidation (2026-09-30)
+
+
+- Root `README.md` added (quick start, configuration reference, FAQ)
+- Core: `TRANSLATOR_KEEP_ALIVE` (default `30m`) keeps the model loaded between uses (verified: `UNTIL 29 minutes from now`)
+- Desktop: `~/.config/open-translator/config` for `service_url`/`source`/`target`, with CLI > file > environment > defaults precedence

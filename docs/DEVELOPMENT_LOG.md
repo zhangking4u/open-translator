@@ -424,6 +424,27 @@ Note:
 ---
 
 
+## Milestone: Consolidation — README, Keep-Alive, Desktop Config
+
+
+Completed:
+
+- Root `README.md`: quick start (Ollama, core service, desktop, Firefox extension), environment/flag reference tables, FAQ (network, proxy, Wayland limits, logs)
+- Core: `TRANSLATOR_KEEP_ALIVE` (default `30m`) is sent with every Ollama generate request, so the model stays loaded between uses instead of unloading after 5 minutes
+- Desktop: `~/.config/open-translator/config` (`service_url`, `source`, `target`) with CLI > config file > environment > defaults precedence; a commented default config was created on the dev machine
+- `DEVELOPMENT_LOG` "Current Sprint" refreshed (was stale at Sprint 3 preparation)
+
+
+Verification:
+
+- cargo test: core 33 tests, desktop 13 tests
+- `ollama ps` after a translation shows `UNTIL 29 minutes from now` (default was 5 minutes)
+- Config file check: `target = ja` translated "hello" → こんにちは; `--target zh` overrode it; restoring `target = zh` gave 内核崩溃
+
+
+---
+
+
 # Git History
 
 
@@ -452,43 +473,25 @@ docs: add project status document
 # Current Sprint
 
 
-Sprint 3 (preparation)
-
-
-Goal:
-
-Desktop selection translation (Ubuntu / GNOME Wayland).
+Consolidation between sprints (Sprint 5 meeting translation parked).
 
 
 Planned:
 
-1. Choose the desktop integration approach (GNOME Shell extension recommended; Wayland blocks global hotkeys/clipboard injection)
+1. README and user documentation
 
-2. Minimal loop: hotkey → selection capture → core `/translate` → popup
-
-
-Sprint 2 (completed 2026-09-30):
-
-1. Ollama runtime installed and benchmarked
-
-2. Ollama engine adapter with configurable model
-
-3. Model evaluation (HY-MT / TranslateGemma) and per-model prompt styles
-
-4. Service hardening (tracing, warmup, health)
+2. Small UX wins: Ollama keep-alive, desktop config file
 
 
-Sprint 1.2 (completed 2026-09-30):
+Completed sprints:
 
-1. Create domain model
+1. Sprint 1.2: core refactor, engine trait, API layer, tests
 
-2. Define TranslationEngine trait (async, fallible)
+2. Sprint 2: Ollama runtime, model evaluation (HY-MT default), prompt styles, service hardening
 
-3. Implement MockTranslationEngine
+3. Sprint 3: desktop selection popup (Phase 0/1), service self-start, GTK UI, install script
 
-4. Refactor API layer
-
-5. Add unit and integration tests
+4. Sprint 4: Firefox browser extension MVP
 
 
 ---
