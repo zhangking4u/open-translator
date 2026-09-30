@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: add readme and record consolidation
+docs: record chrome mv3 variant
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Extension packaging and signing (AMO) — removes the temporary-add-on limitation
+1. Extension packaging and signing (AMO for Firefox; Chrome Web Store optional)
 
-2. Chrome MV3 variant of the extension
+2. Sprint 5 meeting translation (parked)
 
-3. Sprint 5 meeting translation (parked)
+3. Portal-based hotkey (optional, replaces the install-script shortcut)
 
 
 ---
@@ -368,15 +368,16 @@ Completed:
 
 - Firefox MV2 extension in `browser/extension/`: context menu + `Alt+Shift+T`, in-page bubble (loading/error/copy/Esc), options page (service URL, language pair)
 - Background fetch to the local service through the host permission (no CORS change)
+- Chrome MV3 variant (`manifest.chrome.json`) and `browser/build.sh` producing `browser/dist/{firefox,chrome}`
 
 Pending:
 
-- Chrome MV3 variant (deferred)
+- (none)
 
 
 Status:
 
-Firefox extension MVP implemented and verified manually (context menu and `Alt+Shift+T`); the invalid host permission (port in match pattern) was fixed during testing.
+Firefox extension MVP implemented and verified manually (context menu and `Alt+Shift+T`); the invalid host permission (port in match pattern) was fixed during testing. Chrome MV3 verified end-to-end on Chrome 154 and Edge 154 (service worker translation + content-script bubble).
 
 
 ## Consolidation (2026-09-30)

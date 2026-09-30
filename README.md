@@ -68,13 +68,18 @@ target = zh
 
 命令行参数 > 配置文件 > 环境变量 > 默认值。其他参数：`--clipboard`（读剪贴板）、`--stdin`/`--print`（脚本化）、`--no-start`。
 
-### 3. 浏览器扩展（Firefox）
+### 3. 浏览器扩展（Firefox / Chrome）
 
-1. 打开 `about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选 `browser/extension/manifest.json`
-2. 刷新已打开的网页，选中文字 → 右键「翻译选中文本（OpenTranslator）」或 `Alt+Shift+T`
-3. 设置：`about:addons` → OpenTranslator → 首选项（服务地址/语言对）
+```bash
+./browser/build.sh            # 生成 browser/dist/{firefox,chrome}
+```
 
-> 临时加载的扩展在 Firefox 重启后失效；长期安装需 AMO 签名或 Developer Edition（未签名扩展）。
+- **Firefox**：`about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选 `browser/dist/firefox/manifest.json`
+- **Chrome/Edge**：`chrome://extensions` → 打开「开发者模式」→「加载已解压的扩展程序」→ 选 `browser/dist/chrome`
+
+刷新已打开的网页，选中文字 → 右键「翻译选中文本（OpenTranslator）」或 `Alt+Shift+T`；设置页可改服务地址与语言对。
+
+> Firefox 临时加载的扩展在重启后失效，长期安装需 AMO 签名；Chrome 开发者模式加载重启后需重新启用。
 
 ## 常见问题
 

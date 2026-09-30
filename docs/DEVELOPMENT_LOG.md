@@ -445,6 +445,27 @@ Verification:
 ---
 
 
+## Milestone: Chrome MV3 Variant
+
+
+Completed:
+
+- `browser/extension/manifest.chrome.json`: MV3 manifest (service-worker background, `host_permissions`, no Firefox-only keys)
+- Shared `background.js`/`content.js`/`options.*` unchanged: the `globalThis.browser ?? globalThis.chrome` shim, promise-based calls and `return true` message handling work in both browsers
+- `browser/build.sh` builds `browser/dist/firefox` (MV2) and `browser/dist/chrome` (MV3) from the shared sources; `browser/dist/` is gitignored
+
+
+Verification:
+
+- Both manifests pass `python3 -m json.tool`; all JS passes `node --check`; `bash -n` on the build script
+- `./browser/build.sh` produces both dist directories with the expected files (chrome manifest_version 3, firefox 2)
+- Real-browser test on Chrome 154 and Edge 154 (headless, CDP): extension loaded, service worker `translate("kernel panic")` → `{"ok":true,"translation":"内核崩溃"}`, and the content script showed the bubble "快速的棕色狐狸跳过了那只懒惰的狗。" for a selected page sentence
+- Note: Chrome 137+ ignores `--load-extension`; loading via CDP `Extensions.loadUnpacked` works (a local page server is needed for the content-script leg)
+
+
+---
+
+
 # Git History
 
 
