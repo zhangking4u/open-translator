@@ -39,8 +39,10 @@ cargo run --release
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
 | `TRANSLATOR_BIND_ADDR` | `127.0.0.1:17890` | 监听地址 |
-| `TRANSLATOR_ENGINE` | `mock` | `mock` / `ollama`（ollama 时 `TRANSLATOR_MODEL` 必填） |
+| `TRANSLATOR_ENGINE` | `mock` | `mock` / `ollama`（需 `TRANSLATOR_MODEL`）/ `llama-cpp`（需 `TRANSLATOR_MODEL_PATH`，进程内推理，无需 Ollama） |
 | `TRANSLATOR_MODEL` | — | Ollama 模型名，如 `hy-mt1.5-1.8b` |
+| `TRANSLATOR_MODEL_PATH` | — | `llama-cpp` 引擎的 GGUF 模型路径 |
+| `TRANSLATOR_N_CTX` | `4096` | `llama-cpp` 引擎的上下文长度 |
 | `TRANSLATOR_MODEL_URL` | `http://127.0.0.1:11434` | Ollama 地址 |
 | `TRANSLATOR_PROMPT_STYLE` | `generic` | `generic` / `translategemma` / `hymt` |
 | `TRANSLATOR_TIMEOUT_MS` | `30000` | 单次翻译超时（>0） |

@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record inference crate
+docs: record llama-cpp engine
 
 
 ---
@@ -247,7 +247,7 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Phase B2: `EngineKind::LlamaCpp` in the service (`TRANSLATOR_MODEL_PATH`); B3: embed in the desktop client
+1. Phase B3: embed `core/inference` in the desktop client (no external service) and expose the HTTP endpoint from the app for the browser extension
 
 2. Consumer packaging: first-run model download, installers (NSIS/dmg/deb), code signing (budget decision)
 
@@ -408,3 +408,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Desktop polish: tray/menu-bar icon (显示窗口/立即翻译/退出) and a configurable hotkey (`hotkey` in the config file or `TRANSLATOR_HOTKEY`)
 - In-process llama.cpp spike passed (`llama-cpp-2` + HY-MT GGUF: correct translations, ~29 tok/s, ~1.8 GB RAM, no external service) — the chosen direction for the consumer edition
 - Phase B1: `core/inference` crate (`translator-inference`) with `InferenceEngine` (actor worker, sampling/stop strings, env-gated real-model test); CI job on ubuntu
+- Phase B2: `EngineKind::LlamaCpp` in the service (`TRANSLATOR_MODEL_PATH`, `TRANSLATOR_N_CTX`); live-verified (kernel panic → 内核崩溃 in 0.26s, no Ollama)

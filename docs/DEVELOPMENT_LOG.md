@@ -730,6 +730,32 @@ Next:
 ---
 
 
+## Milestone: LlamaCpp Engine in the Service (Phase B2)
+
+
+Completed:
+
+- `EngineKind::LlamaCpp` (`TRANSLATOR_ENGINE=llama-cpp`, `TRANSLATOR_MODEL_PATH`, `TRANSLATOR_N_CTX` default 4096): the service translates fully in-process through `core/inference`, no Ollama
+- `LlamaCppEngine` builds prompts with the existing `PromptStyle` and runs generation in `spawn_blocking`; `PromptStyle` now owns `sampling()` / `stop_strings()` (shared by the Ollama and llama.cpp engines) and `raw_prompt()` adds the HY-MT chat-template tokens for runtimes that tokenize raw text (llama.cpp) — without this the model hallucinated badly
+- `translator-inference`: the llama backend is now process-wide (`OnceLock`; llama.cpp allows init once), the sender is behind a `Mutex` so the engine is `Sync`, and missing model files return a clean error instead of a debug assertion
+- `engine::build` returns `Result` (model loading can fail); `/health` reports `llama-cpp` and the model file name
+- Tests: `tests/llama_cpp.rs` (missing model always; real translation gated by `TRANSLATOR_TEST_MODEL`)
+
+
+Verification:
+
+- Full suite: service 43 tests, inference 3 tests, 0 warnings
+- Live service with the llama-cpp engine: `/health` → `engine: llama-cpp`; "kernel panic" → 内核崩溃 (0.26s), long sentence → correct Chinese (0.73s), "Break a leg!" → 祝你好运！ (0.35s), no Ollama involved
+
+
+Next:
+
+- B3: embed the engine in the desktop client (drop the external service for end users) and expose the local HTTP endpoint from the app for the browser extension
+
+
+---
+
+
 # Git History
 
 
