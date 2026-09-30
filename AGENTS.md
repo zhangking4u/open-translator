@@ -12,7 +12,7 @@ OpenTranslator: local-first AI translation platform. Only the Rust core service 
 - A root `tests/` dir exists but is not a Cargo test dir — Rust tests belong under `core/translator-service/tests/` or as `#[cfg(test)]` modules.
 - Root `.gitignore` ignores `package.json`, lockfiles, and `node_modules` (legacy template leftovers), so JS tooling files would be silently ignored.
 - Active branch is `main`.
-- Dev-machine runtime (not repo state): Ollama v0.35.0 at `~/.local/opt/ollama` (models in `~/.ollama/models`; start with `~/.local/opt/ollama/bin/ollama serve`). Network quirk: `ollama.com` and HuggingFace are unreachable; GitHub release assets need a proxy such as `https://gh-proxy.com/`.
+- Dev-machine runtime (not repo state): Ollama v0.35.0 at `~/.local/opt/ollama` (models in `~/.ollama/models`; installed: `hy-mt1.5-1.8b`, `hy-mt2-1.8b` — imported from ModelScope GGUFs with official chat template, `translategemma:4b`, `qwen2.5:7b`, `qwen2.5:3b`; start with `~/.local/opt/ollama/bin/ollama serve`). Network quirk: `ollama.com` and HuggingFace are unreachable; ModelScope works and GitHub release assets need a proxy such as `https://gh-proxy.com/`.
 - No CI workflows and no rustfmt/clippy config; verify locally with `cargo test`. Existing sources are not rustfmt-formatted, so don't run repo-wide `cargo fmt` unprompted.
 
 ## Architecture (current state)

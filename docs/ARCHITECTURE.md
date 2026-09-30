@@ -202,12 +202,13 @@ Completed:
 - Basic REST endpoints
 - Translation Engine abstraction (async trait)
 - MockEngine and OllamaEngine (local model adapter)
+- Model evaluation (HY-MT1.5-1.8B recommended default; TranslateGemma 4B quality option)
 - API layer split (`src/api`) with unit and integration tests
 
 
 In Progress:
 
-- Model quality evaluation (Qwen2.5 vs dedicated MT models)
+- Per-model prompt style and sampling configuration
 
 
 Next:

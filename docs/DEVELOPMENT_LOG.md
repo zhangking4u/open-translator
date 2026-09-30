@@ -175,6 +175,64 @@ Live end-to-end (qwen2.5:7b, CPU):
 ---
 
 
+## Milestone: Model Quality Evaluation
+
+
+Setup: 12 cases (10 en→zh, 2 zh→en), temperature 0, four configs — qwen2.5:7b / qwen2.5:3b with the generic prompt, translategemma:4b with its official template and with the generic prompt.
+
+
+Findings:
+
+- translategemma:4b + official prompt wins on quality: correct technical terms ("kernel panic" → 内核崩溃, "segmentation fault" → 段错误) and idiomatic phrasing ("Break a leg!" → 祝您演出成功！, "free lunch" → “天上不会掉馅饼。”)
+- qwen2.5:7b is usable but literal ("kernel panic" → 内核恐慌, "Let me know if you have any questions." → 让我知道如果你有任何问题。)
+- qwen2.5:3b mixes English into terms ("内核 Panic", "段页 fault") — not suitable
+- Warm latency (short text, CPU): 3b ~0.3–0.8s, 4b ~0.8–2.1s, 7b ~0.5–1.8s — all within the target
+- TranslateGemma's official prompt matters for idioms; the generic prompt keeps technical terms but flattens idioms
+
+
+Decision:
+
+- Recommended default: `translategemma:4b` with the model-specific (official) prompt; `qwen2.5:7b` as fallback model
+- Follow-up: the adapter needs a prompt-style option so TranslateGemma can use its official template
+- License note: TranslateGemma is distributed under the Gemma Terms of Use
+
+
+Verification:
+
+- Raw results: `/tmp/kilo/eval_results.json` (ephemeral)
+
+
+---
+
+
+## Milestone: HY-MT Evaluation
+
+
+Setup: HuggingFace is unreachable, so HY-MT GGUFs came from ModelScope (`Tencent-Hunyuan/HY-MT1.5-1.8B-GGUF`, `Tencent-Hunyuan/Hy-MT2-1.8B-GGUF`, ~24 MB/s) and were imported via `ollama create`. Serving HY-MT correctly requires its official chat template (`<｜hy_begin▁of▁sentence｜><｜hy_User｜>…<｜hy_Assistant｜>`, absent from the GGUF) and its recommended sampling (temperature 0.7, top_p 0.6, top_k 20, repetition_penalty 1.05). Prompts use the official Chinese form: 将以下文本翻译为<目标语言>，注意只需要输出翻译后的结果，不要额外解释：
+
+
+Results (12 cases, warm):
+
+- hy-mt1.5-1.8b: 0.11–0.55s, 34–47 tok/s; "kernel panic" → 内核崩溃, "segmentation fault" → 分段错误, natural phrasing on UI/technical strings
+- hy-mt2-1.8b: 0.11–0.51s, 35–48 tok/s; "segmentation fault" → 段错误, "kernel panic" → 内核恐慌; marginally less natural on some sentences
+- Both beat qwen2.5:7b on latency (>4× faster) and quality; translategemma:4b still wins on idioms (free lunch → 天上不会掉馅饼) but is 4–5× slower
+
+
+Decision:
+
+- Recommended default for desktop/low latency: `hy-mt1.5-1.8b` (Q4_K_M)
+- Quality option: `translategemma:4b`; general fallback: `qwen2.5:7b`
+- Follow-up: the adapter needs per-model prompt style and sampling config (currently generic prompt + temperature 0)
+
+
+Verification:
+
+- Raw results: `/tmp/kilo/eval_hymt_results.json` (ephemeral)
+
+
+---
+
+
 # Git History
 
 

@@ -90,7 +90,7 @@ Ollama v0.35.0 (user-space install at `~/.local/opt/ollama`)
 
 Current model:
 
-qwen2.5:7b (GGUF, ~4.7 GB, CPU inference)
+hy-mt1.5-1.8b (recommended default; translategemma:4b quality option)
 
 
 ---
@@ -125,7 +125,7 @@ Ollama (local, CPU inference)
 
 Current model:
 
-qwen2.5:7b
+hy-mt1.5-1.8b (recommended default); translategemma:4b / qwen2.5:7b alternatives
 
 
 Candidate models:
@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record ollama adapter and live verification
+docs: record HY-MT evaluation
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Evaluate dedicated MT models (Hunyuan-MT) against qwen2.5:7b
+1. Add per-model prompt style and sampling config (HY-MT official prompt/params)
 
-2. Prepare desktop client integration
+2. Service hardening: tracing logs, engine warmup and health check
 
-3. Plan browser integration
+3. Prepare desktop client integration (Sprint 3)
 
 
 ---
@@ -329,10 +329,13 @@ Completed:
 - Language tag normalization (`domain::language`) and MT prompt builder (`domain::prompt`)
 - Ollama engine adapter and model config (`TRANSLATOR_MODEL_URL`, `TRANSLATOR_MODEL`)
 - Live end-to-end translation via local Ollama (qwen2.5:7b, CPU)
+- Model quality evaluation (translategemma:4b + official prompt recommended; qwen2.5:7b fallback)
+- HY-MT evaluation: hy-mt1.5-1.8b / hy-mt2-1.8b imported from ModelScope GGUFs (0.1–0.5s warm, >4× faster than 4B/7B models); hy-mt1.5-1.8b recommended default
 - Tests for invalid input, engine failure, timeout, config parsing, prompt building and Ollama adapter
 
 
 Pending:
 
-- Model quality evaluation (dedicated MT models such as Hunyuan-MT)
+- Per-model prompt style and sampling configuration (HY-MT official prompt/params, TranslateGemma template)
+- Service hardening (tracing logs, engine warmup/health check)
 - Desktop client preparation
