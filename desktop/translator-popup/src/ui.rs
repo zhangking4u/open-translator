@@ -11,10 +11,12 @@ use gtk::{
     ScrolledWindow, Separator,
 };
 
-use crate::Args;
-use crate::services::{self, ServiceConfig};
-use crate::translate;
-use crate::{persist_target, read_selection, read_stdin};
+use translator_core::args::{Args, read_stdin};
+use translator_core::services::{self, ServiceConfig};
+use translator_core::settings::persist_target;
+use translator_core::translate;
+
+use crate::read_selection;
 
 const TARGET_LANGUAGES: &[(&str, &str)] = &[
     ("zh", "中文"),

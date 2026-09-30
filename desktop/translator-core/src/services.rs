@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use crate::paths::{default_core_bin, default_ollama_bin, log_path};
+
 const DEFAULT_MODEL_URL: &str = "http://127.0.0.1:11434";
 const DEFAULT_ENGINE: &str = "ollama";
 const DEFAULT_MODEL: &str = "hy-mt1.5-1.8b";
@@ -207,38 +209,6 @@ fn open_log(name: &str) -> Result<File, String> {
         .map_err(|error| format!("failed to open {}: {error}", path.display()))
 }
 
-fn log_path(name: &str) -> PathBuf {
-    state_dir().join(name)
-}
-
-fn state_dir() -> PathBuf {
-    let base = env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| {
-            env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("state"))
-        })
-        .unwrap_or_else(env::temp_dir);
-
-    base.join("open-translator")
-}
-
-fn default_core_bin() -> Option<PathBuf> {
-    let exe = env::current_exe().ok()?;
-    let candidate = core_bin_from_exe(&exe)?;
-    candidate.is_file().then_some(candidate)
-}
-
-fn core_bin_from_exe(exe: &Path) -> Option<PathBuf> {
-    let repo_root = exe.parent()?.parent()?.parent()?.parent()?.parent()?;
-    Some(repo_root.join("core/translator-service/target/release/translator-service"))
-}
-
-fn default_ollama_bin() -> Option<PathBuf> {
-    let home = env::var_os("HOME")?;
-    let candidate = PathBuf::from(home).join(".local/opt/ollama/bin/ollama");
-    candidate.is_file().then_some(candidate)
-}
-
 fn env_or(key: &str, default: &str) -> String {
     env::var(key).unwrap_or_else(|_| default.to_string())
 }
@@ -285,7 +255,10 @@ mod tests {
     fn extracts_url_hosts() {
         assert_eq!(url_host("http://127.0.0.1:17890"), Some("127.0.0.1"));
         assert_eq!(url_host("http://localhost:11434/"), Some("localhost"));
-        assert_eq!(url_host("https://translate.example.com"), Some("translate.example.com"));
+        assert_eq!(
+            url_host("https://translate.example.com"),
+            Some("translate.example.com")
+        );
         assert_eq!(url_host("ftp://example.com"), None);
     }
 
@@ -305,16 +278,6 @@ mod tests {
         );
         assert_eq!(bind_addr_from_service_url("http://127.0.0.1"), None);
         assert_eq!(bind_addr_from_service_url("https://example.com:443"), None);
-    }
-
-    #[test]
-    fn derives_core_binary_from_popup_location() {
-        let exe = Path::new("/repo/desktop/translator-popup/target/release/translator-popup");
-
-        assert_eq!(
-            core_bin_from_exe(exe).unwrap(),
-            PathBuf::from("/repo/core/translator-service/target/release/translator-service")
-        );
     }
 
     #[test]
