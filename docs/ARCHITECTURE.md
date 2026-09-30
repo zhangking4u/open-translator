@@ -167,6 +167,15 @@ MockEngine and OllamaEngine (local inference) behind `engine::build`; every engi
 
 ---
 
+## 3.5 Browser Extension
+
+Status:
+
+MVP implemented: `browser/extension` (Firefox, MV2, plain JS). Context menu / keyboard shortcut → content-script bubble → local `/translate` through the background page (host permission, no CORS changes to the service).
+
+
+---
+
 # 4. Design Principles
 
 
@@ -204,12 +213,13 @@ Completed:
 - MockEngine and OllamaEngine (local model adapter)
 - Model evaluation (HY-MT1.5-1.8B recommended default; TranslateGemma 4B quality option)
 - API layer split (`src/api`) with unit and integration tests
-- Desktop Phase 0: selection popup (`desktop/translator-popup`)
+- Desktop client: selection popup with GTK UI, service self-start, install script
+- Browser extension MVP (Firefox, MV2)
 
 
 In Progress:
 
-- Browser integration (Sprint 4)
+- Browser extension validation (manual Firefox test pending)
 
 
 Next:

@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record install script
+docs: record browser extension
 
 
 ---
@@ -247,7 +247,7 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Browser integration (Sprint 4): extension calling the local service
+1. Chrome MV3 variant of the extension (deferred)
 
 2. Plan meeting translation
 
@@ -354,9 +354,26 @@ Completed:
 Pending:
 
 - Phase 1 complete; portal hotkey deferred (install script covers shortcut setup)
-- Sprint 4: browser integration
 
 
 Status:
 
-Phase 0 popup implemented, bound to a GNOME custom shortcut (Ctrl+Alt+T) and verified with a real selection (wl-clipboard). Phase 1: service self-start (cold start 2.7s), GTK4 popup with copy/loading/error states, close-and-reopen on repeated hotkeys, and a one-command install script (`desktop/install.sh`).
+Desktop Phase 1 complete: install script, GTK4 popup, service self-start, close-and-reopen on repeated hotkeys.
+
+
+## Sprint 4 Progress (Browser Extension)
+
+
+Completed:
+
+- Firefox MV2 extension in `browser/extension/`: context menu + `Alt+Shift+T`, in-page bubble (loading/error/copy/Esc), options page (service URL, language pair)
+- Background fetch to the local service through the host permission (no CORS change)
+
+Pending:
+
+- Chrome MV3 variant (deferred)
+
+
+Status:
+
+Firefox extension MVP implemented and verified manually (context menu and `Alt+Shift+T`); the invalid host permission (port in match pattern) was fixed during testing.

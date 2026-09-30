@@ -393,6 +393,37 @@ Verification:
 ---
 
 
+## Milestone: Browser Extension MVP (Firefox)
+
+
+Completed:
+
+- `browser/extension/` (plain JS, no build step): context menu "翻译选中文本（OpenTranslator）" and `Alt+Shift+T` command → content-script bubble with loading/error/copy states and Esc close
+- Background page posts to `{serviceUrl}/translate` using the `http://127.0.0.1:17890/*` host permission (no service or CORS changes)
+- Options page: service URL and language pair stored in `storage.local`, plus a `/health` connection test
+- Firefox MV2 chosen (host permission granted at install); Chrome MV3 variant deferred
+
+
+Verification:
+
+- `python3 -m json.tool` manifest check and `node --check` for all JS files
+- Manual test in Firefox passed: context menu and `Alt+Shift+T` translate the selection in-page
+
+
+Gotcha:
+
+- WebExtension match patterns do not allow ports; `http://127.0.0.1:17890/*` is invalid and grants nothing. Use `http://127.0.0.1/*` (all ports on that host)
+
+
+Note:
+
+- The extension cannot start local services; the core service must be running (one desktop hotkey press auto-starts it)
+- Temporary add-ons are removed when Firefox restarts; permanent installation needs an AMO-signed package or a Firefox edition that allows unsigned extensions
+
+
+---
+
+
 # Git History
 
 
