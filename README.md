@@ -99,11 +99,11 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 |---|---|---|---|
 | 核心服务 | ✅ | ✅（CI `windows-latest` 每提交测试） | 理论可用，未验证 |
 | 浏览器扩展 | ✅ | ✅ | ✅ |
-| 桌面划词 | ✅ GNOME Wayland | ✅ MVP（`translator-popup-windows`，CI 构建） | ❌ 待适配 |
+| 桌面划词 | ✅ GNOME Wayland | ✅ MVP（`translator-popup-desktop`，CI 构建） | ✅ MVP（同客户端，未真机验证） |
 
 - Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 会构建核心服务与弹窗并加入开机启动；选中文字按 `Ctrl+Alt+T`（通过模拟 `Ctrl+C` + 剪贴板取词，目标应用需支持复制）。`-Uninstall` 卸载。
-- Windows 上也可只用浏览器扩展：安装 Ollama for Windows + 运行核心服务（`cargo run --release`）即可；HY-MT 导入脚本需要 Git Bash/WSL，或按脚本内的 Modelfile 手动 `ollama create`。
-- macOS 的桌面划词仍需适配：`Cmd+C` 取词、`~/Library` 路径、辅助功能权限提示。
+- macOS 桌面划词：`./desktop/install-macos.sh` 构建并安装 `~/Applications/OpenTranslator.app`（内含核心服务）并注册 LaunchAgent 开机启动（`--uninstall` 卸载）。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」中允许 OpenTranslator（模拟 `Cmd+C` 取词所需）；Ollama 可在 GitHub 可达时用 `brew install ollama`。
+- Windows/macOS 上也可只用浏览器扩展：安装 Ollama + 运行核心服务（`cargo run --release`）即可；HY-MT 导入脚本（Windows 需 Git Bash）或按脚本内 Modelfile 手动 `ollama create`。
 
 ## 常见问题
 
@@ -129,7 +129,7 @@ docs/                      架构、状态、开发日志
 cd core/translator-service && cargo test    # 核心服务
 cd desktop/translator-core && cargo test    # 桌面共享库（跨平台：参数/配置/翻译调用/服务自启）
 cd desktop/translator-popup && cargo test   # 桌面弹窗（Linux/GTK）
-cd desktop/translator-popup-windows && cargo test  # Windows 客户端（eframe；CI 在 windows 上构建）
+cd desktop/translator-popup-desktop && cargo test  # 桌面客户端（Windows/macOS，eframe；CI 双平台构建）
 ./browser/test.sh                           # Chrome MV3 端到端（服务未运行会自启 mock 引擎）
 ```
 
