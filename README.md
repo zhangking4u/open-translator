@@ -128,6 +128,7 @@ docs/                      架构、状态、开发日志
 
 ```bash
 cd core/translator-service && cargo test    # 核心服务
+cd core/inference && cargo test             # 进程内推理（构建 llama.cpp 需 cmake + clang/libclang）
 cd desktop/translator-core && cargo test    # 桌面共享库（跨平台：参数/配置/翻译调用/服务自启）
 cd desktop/translator-popup && cargo test   # 桌面弹窗（Linux/GTK）
 cd desktop/translator-popup-desktop && cargo test  # 桌面客户端（Windows/macOS，eframe；CI 双平台构建）

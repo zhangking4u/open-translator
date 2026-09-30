@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record llama.cpp spike results
+docs: record inference crate
 
 
 ---
@@ -247,7 +247,7 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Phase B: `core/inference` crate (in-process llama.cpp engine), then wire into the service and desktop client
+1. Phase B2: `EngineKind::LlamaCpp` in the service (`TRANSLATOR_MODEL_PATH`); B3: embed in the desktop client
 
 2. Consumer packaging: first-run model download, installers (NSIS/dmg/deb), code signing (budget decision)
 
@@ -407,3 +407,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Desktop Phase 3: the same client supports macOS (Cmd+C capture with Accessibility hint, `desktop/install-macos.sh` bundle + LaunchAgent); CI builds it on macos-latest
 - Desktop polish: tray/menu-bar icon (显示窗口/立即翻译/退出) and a configurable hotkey (`hotkey` in the config file or `TRANSLATOR_HOTKEY`)
 - In-process llama.cpp spike passed (`llama-cpp-2` + HY-MT GGUF: correct translations, ~29 tok/s, ~1.8 GB RAM, no external service) — the chosen direction for the consumer edition
+- Phase B1: `core/inference` crate (`translator-inference`) with `InferenceEngine` (actor worker, sampling/stop strings, env-gated real-model test); CI job on ubuntu

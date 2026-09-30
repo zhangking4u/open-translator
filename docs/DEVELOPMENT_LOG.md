@@ -704,6 +704,32 @@ Next:
 ---
 
 
+## Milestone: In-Process Inference Crate (Phase B1)
+
+
+Completed:
+
+- New crate `core/inference` (`translator-inference`): `InferenceEngine::load` + `generate(prompt, stop_strings, GenerateOptions)` around `llama-cpp-2`
+- Actor design: one worker thread owns the backend/model/context; requests are serialized over a channel and the per-request KV cache is cleared between calls (safe Rust, no unsafe impls, no thread-affine misuse)
+- Robustness: prompt/context fit check, greedy sampling when `temperature <= 0`, penalties/top_k/top_p/temp/dist otherwise, stop-string truncation, llama.cpp stderr logs voided by default (`void_llama_logs`)
+- Testing: unit tests run everywhere (missing model, defaults); the real translation test is gated by `TRANSLATOR_TEST_MODEL`
+- CI: new `inference` job on ubuntu-latest
+
+
+Verification:
+
+- `cargo test` → 3 passed (no model required)
+- `TRANSLATOR_TEST_MODEL=/tmp/kilo/hymt/HY-MT1.5-1.8B-Q4_K_M.gguf cargo test translates_with_env_model` → passed in 1.05s
+
+
+Next:
+
+- B2: `EngineKind::LlamaCpp` in the service (`TRANSLATOR_MODEL_PATH`), `spawn_blocking` wrapper; B3: embed in the desktop client
+
+
+---
+
+
 # Git History
 
 
