@@ -85,7 +85,8 @@ Responsibility:
 
 Status:
 
-Phase 0 implemented: `desktop/translator-popup` (Wayland selection → core `/translate` → popup); Phase 1a adds service self-start (checks `/health`, starts ollama + core when down); Phase 1b replaces zenity with a GTK4 window (loading/error states, copy button)
+- Linux/GNOME: `desktop/translator-popup` — Wayland selection → core `/translate` → GTK4 window with target-language switch; checks `/health` and self-starts ollama + core; GNOME shortcut via `desktop/install.sh`
+- Windows/macOS: `desktop/translator-popup-desktop` — eframe app, resident with a tray/menu-bar icon, `Ctrl+Alt+T` (Ctrl+C/Cmd+C capture); embeds the llama.cpp engine (no external service), downloads the model on first run and serves the HTTP API for the browser extension while running
 
 
 ---
@@ -162,7 +163,7 @@ Possible implementations:
 
 Current implementation:
 
-MockEngine and OllamaEngine (local inference) behind `engine::build`; every engine is wrapped in a timeout guard. The engine trait is async and fallible. Prompt styles and language tag normalization live in the domain layer (`domain::prompt`, `domain::language`); each prompt style carries its recommended sampling options. An in-process llama.cpp engine (`llama-cpp-2`, engine kind `LlamaCpp`) is the chosen direction for the consumer edition — the spike passed (HY-MT GGUF: correct output, ~29 tok/s CPU, no external service).
+MockEngine, OllamaEngine and LlamaCppEngine behind `engine::build` (building can fail while loading a model); every engine is wrapped in a timeout guard. The trait is async and fallible. `core/inference` wraps llama.cpp (`llama-cpp-2`) with a serialized worker thread and is the default engine for the consumer edition (embedded in the Windows/macOS desktop client; the service can use it via `TRANSLATOR_ENGINE=llama-cpp`). Prompt styles, sampling options, stop strings and language tag normalization live in the domain layer (`domain::prompt`, `domain::language`).
 
 
 ---
@@ -171,7 +172,7 @@ MockEngine and OllamaEngine (local inference) behind `engine::build`; every engi
 
 Status:
 
-MVP implemented: `browser/extension` (Firefox, MV2, plain JS). Context menu / keyboard shortcut → content-script bubble → local `/translate` through the background page (host permission, no CORS changes to the service).
+Implemented: `browser/extension` (shared JS, no bundler). Firefox ships `manifest.json` (MV2, version 0.1.0 signed on AMO) and Chrome `manifest.chrome.json` (MV3). Context menu / keyboard shortcut → content-script bubble (target-language switch, optional auto-translate, copy) → local `/translate` through the background page (host permission, no CORS changes to the service).
 
 
 ---
@@ -206,24 +207,22 @@ Core logic should remain platform independent.
 
 Completed:
 
-- Rust core service
-- Axum API
-- Basic REST endpoints
-- Translation Engine abstraction (async trait)
-- MockEngine and OllamaEngine (local model adapter)
-- Model evaluation (HY-MT1.5-1.8B recommended default; TranslateGemma 4B quality option)
+- Rust core service (Axum API; engines: Mock / Ollama / in-process llama.cpp via `core/inference`)
+- Model evaluation (HY-MT1.5-1.8B default; TranslateGemma 4B quality option) with per-style prompts/sampling
 - API layer split (`src/api`) with unit and integration tests
-- Desktop client: selection popup with GTK UI, service self-start, install script
-- Browser extension MVP (Firefox, MV2)
+- Linux desktop: GTK popup with service self-start and `desktop/install.sh`
+- Windows/macOS desktop: eframe client embedding the engine, tray/menu-bar, `Ctrl+Alt+T`, first-run model download, in-process HTTP for the extension
+- Browser extension: Firefox MV2 (signed) + Chrome MV3, bubble language switch and auto-translate
+- CI on ubuntu/windows/macos plus a Chrome e2e job; release packaging (Windows zip installer, macOS dmg)
 
 
 In Progress:
 
-- Consumer edition: in-process `core/inference` crate (llama.cpp), first-run model download and installers
+- Distribution: tag `v0.1.0`, real-machine verification, code signing/notarization
 
 
 Next:
 
-- Real-machine verification (Windows/macOS desktop clients)
 - Meeting translation (parked)
+- Mobile client
 

@@ -85,7 +85,8 @@ x86_64
 
 Model Runtime:
 
-Ollama v0.35.0 (user-space install at `~/.local/opt/ollama`)
+- In-process llama.cpp via `core/inference` (build needs cmake + clang/libclang; cmake at `~/.local/opt/cmake`)
+- Ollama v0.35.0 (user-space install at `~/.local/opt/ollama`) for the service/power-user path
 
 
 Current model:
@@ -120,7 +121,8 @@ SQLite
 
 Model Runtime:
 
-Ollama (local, CPU inference)
+- Consumer edition: in-process llama.cpp (`llama-cpp-2`), no external service
+- Service/power users: the same in-process engine (`TRANSLATOR_ENGINE=llama-cpp`) or Ollama
 
 
 Current model:
@@ -143,24 +145,18 @@ Candidate models:
 open-translator/
 
 ├── core/
-
-│   └── translator-service/
-
-│
-
+│   ├── translator-service/   (HTTP service + engines)
+│   └── inference/            (llama.cpp engine, no HTTP)
 ├── desktop/
-
-│
-
-├── models/
-
-│
-
+│   ├── translator-core/          (platform-agnostic desktop lib)
+│   ├── translator-popup/         (Linux/GNOME GTK popup)
+│   ├── translator-popup-desktop/ (Windows/macOS eframe client)
+│   └── install.sh / install-*.ps1
+├── browser/extension/        (Firefox MV2 + Chrome MV3)
+├── packaging/                (installers used by the release workflow)
+├── models/                   (HY-MT → Ollama import script)
 ├── docs/
-
-│
-
-└── tests/
+└── tests/                    (placeholder; Rust tests live in the crates)
 
 
 ---
@@ -184,7 +180,8 @@ Completed:
 - Rust project created
 - Axum HTTP server
 - Health endpoint
-- Translation endpoint (mock and Ollama engines)
+- Translation endpoint (mock, Ollama and in-process llama.cpp engines)
+- Prompt styles/sampling, keep-alive, request length cap, `source=auto`
 
 
 Current APIs:
@@ -224,7 +221,7 @@ main
 
 Latest commit:
 
-docs: record release packaging
+docs: refresh project documentation
 
 
 ---
@@ -232,14 +229,14 @@ docs: record release packaging
 ## 8. Current Development Phase
 
 
-Sprint:
+Phase:
 
-Sprint 2 (preparation)
+Consumer edition packaging (Phase C)
 
 
 Goal:
 
-Integrate a local translation model.
+Ordinary users on Windows/macOS can download, install and use it without technical setup.
 
 
 ---
@@ -247,7 +244,7 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Packaging verification: run the release workflow (`workflow_dispatch`) and inspect artifacts; tag a `v0.1.0` GitHub release
+1. Tag `v0.1.0` and publish the GitHub release (Windows zip + macOS dmg; packaging already verified via `workflow_dispatch`)
 
 2. Code signing / notarization (budget decision)
 

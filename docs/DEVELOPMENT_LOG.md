@@ -857,14 +857,16 @@ docs: add project status document
 # Current Sprint
 
 
-Consolidation between sprints (Sprint 5 meeting translation parked).
+Consumer edition (ordinary users); Sprint 5 meeting translation parked.
 
 
 Planned:
 
-1. README and user documentation
+1. Tag `v0.1.0` and publish the GitHub release
 
-2. Small UX wins: Ollama keep-alive, desktop config file
+2. Real-machine verification on Windows/macOS
+
+3. Code signing / notarization (budget decision)
 
 
 Completed sprints:
@@ -877,30 +879,22 @@ Completed sprints:
 
 4. Sprint 4: Firefox browser extension MVP
 
+5. Consumer edition: desktop core extraction, Windows/macOS clients, in-process llama.cpp engine, first-run model download, release packaging
+
 
 ---
 
 # Future Milestones
 
 
-## Sprint 2
+## Distribution
 
-Integrate local translation model.
-
-
-## Sprint 3
-
-Desktop selection translation.
-
-
-## Sprint 4
-
-Browser integration.
+Tag `v0.1.0`, real-machine verification on Windows/macOS, code signing/notarization.
 
 
 ## Sprint 5
 
-Meeting translation.
+Meeting translation (parked).
 
 
 ## Sprint 6
