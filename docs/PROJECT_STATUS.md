@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record browser e2e cleanup fix
+docs: record green ci
 
 
 ---
@@ -395,5 +395,5 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - MIT `LICENSE` added
 - GitHub Actions CI (`.github/workflows/ci.yml`): core/desktop tests, browser static checks + `web-ext lint`, Chrome e2e
 - Repeatable browser e2e harness (`browser/test.sh`), 7/7 checks pass locally
-- CI e2e cleanup bug fixed (`rm -rf` racing the browser shutdown overrode the exit status); all jobs expected green on the next push
-- Next: push the fix and confirm the CI run
+- CI e2e cleanup bug fixed (`rm -rf` racing the browser shutdown overrode the exit status); all jobs green on the second run
+- `actions/checkout` / `actions/setup-node` bumped to v5
