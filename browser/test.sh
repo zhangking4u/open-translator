@@ -37,10 +37,16 @@ BROWSER_PID=""
 PROFILE_DIR="$(mktemp -d)"
 
 cleanup() {
+    local status=$?
+
     [ -n "$BROWSER_PID" ] && kill "$BROWSER_PID" 2>/dev/null || true
     [ -n "$PAGE_PID" ] && kill "$PAGE_PID" 2>/dev/null || true
     [ -n "$SERVICE_PID" ] && kill "$SERVICE_PID" 2>/dev/null || true
-    rm -rf "$PROFILE_DIR"
+
+    [ -n "$BROWSER_PID" ] && wait "$BROWSER_PID" 2>/dev/null || true
+    rm -rf "$PROFILE_DIR" 2>/dev/null || true
+
+    exit "$status"
 }
 trap cleanup EXIT
 
