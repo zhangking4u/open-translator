@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record llama-cpp engine
+docs: record embedded desktop client
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Phase B3: embed `core/inference` in the desktop client (no external service) and expose the HTTP endpoint from the app for the browser extension
+1. Phase C: first-run model download (ModelScope + progress/checksum), installers (NSIS/dmg/deb), code signing (budget decision)
 
-2. Consumer packaging: first-run model download, installers (NSIS/dmg/deb), code signing (budget decision)
+2. Real-machine verification: Windows client (hotkey + Ctrl+C) and macOS client (Accessibility + Cmd+C)
 
-3. Real-machine verification: Windows client (hotkey + Ctrl+C) and macOS client (Accessibility + Cmd+C)
+3. Sprint 5 meeting translation (parked)
 
 
 ---
@@ -409,3 +409,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - In-process llama.cpp spike passed (`llama-cpp-2` + HY-MT GGUF: correct translations, ~29 tok/s, ~1.8 GB RAM, no external service) — the chosen direction for the consumer edition
 - Phase B1: `core/inference` crate (`translator-inference`) with `InferenceEngine` (actor worker, sampling/stop strings, env-gated real-model test); CI job on ubuntu
 - Phase B2: `EngineKind::LlamaCpp` in the service (`TRANSLATOR_MODEL_PATH`, `TRANSLATOR_N_CTX`); live-verified (kernel panic → 内核崩溃 in 0.26s, no Ollama)
+- Phase B3: desktop client embeds the engine (no Ollama, no service process) and serves the HTTP API in-process for the browser extension; verified with all services stopped

@@ -756,6 +756,32 @@ Next:
 ---
 
 
+## Milestone: Embedded Desktop Client (Phase B3)
+
+
+Completed:
+
+- `desktop/translator-popup-desktop` now embeds `translator-service::engine::llama_cpp`: no Ollama and no external service process; the app loads the GGUF at startup (`TRANSLATOR_MODEL_PATH` → config `model_path` → per-user default models dir from `translator-core::paths::default_model_path`)
+- While running, the app serves the core HTTP API on `service_url` for the browser extension (`src/server.rs`: axum on a background thread with the shared timeout wrapper; `serve_extension = false` disables); port conflicts are non-fatal
+- `LlamaCppEngine` gained `translate_blocking` (the async trait impl now wraps it in `spawn_blocking`), which the popup worker calls directly — no tokio runtime needed for translations
+- New config keys in the shared settings file: `model_path`, `prompt_style` (default `hymt`), `serve_extension` (default `true`); install scripts warn when the model file is missing
+- The GTK Linux popup (`desktop/translator-popup`) keeps the external-service path (Ollama/llama-cpp service or HTTP)
+
+Verification:
+
+- With the service and Ollama stopped: `--print --stdin` translates in-process (`kernel panic` → 内核崩溃 in 1.1s including model load; `Break a leg!` → 祝你好运！)
+- Embedded HTTP: `/health` → `engine: llama-cpp, model: HY-MT1.5-1.8B-Q4_K_M.gguf`; `/translate` → 分段错误 in 0.30s
+- `cargo build --all-targets` and tests (3) clean, 0 warnings. Local cross-target checks of this crate are no longer possible (it compiles llama.cpp); CI covers windows/macos
+
+
+Next:
+
+- Phase C: first-run model download (ModelScope + progress/checksum), installers (NSIS/dmg/deb), code signing
+
+
+---
+
+
 # Git History
 
 
