@@ -1,6 +1,9 @@
 # Rust build output
 target/
 
+# Browser extension build output
+browser/dist/
+
 # IDE
 .vscode/
 .idea/

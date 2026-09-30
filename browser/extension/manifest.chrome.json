@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "OpenTranslator",
+  "version": "0.1.0",
+  "description": "Translate the selected text with the local OpenTranslator service.",
+  "permissions": [
+    "contextMenus",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "commands": {
+    "translate-selection": {
+      "suggested_key": {
+        "default": "Alt+Shift+T"
+      },
+      "description": "翻译选中文本（OpenTranslator）"
+    }
+  },
+  "options_ui": {
+    "page": "options.html"
+  }
+}
