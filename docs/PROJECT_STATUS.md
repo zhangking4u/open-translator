@@ -184,7 +184,7 @@ Completed:
 - Rust project created
 - Axum HTTP server
 - Health endpoint
-- Translation endpoint(mock)
+- Translation endpoint (mock and Ollama engines)
 
 
 Current APIs:
@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record ollama runtime install and benchmark
+docs: record ollama adapter and live verification
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Implement Ollama engine adapter (`EngineKind::Ollama`)
+1. Evaluate dedicated MT models (Hunyuan-MT) against qwen2.5:7b
 
-2. Extend config with model URL and model name
+2. Prepare desktop client integration
 
-3. Prepare desktop client integration
+3. Plan browser integration
 
 
 ---
@@ -327,10 +327,12 @@ Completed:
 - Env-based config: `TRANSLATOR_BIND_ADDR`, `TRANSLATOR_ENGINE`, `TRANSLATOR_TIMEOUT_MS`; engine factory (`engine::build`)
 - Timeout guard (`TimeoutEngine`) wrapping every engine; expiry maps to 504
 - Language tag normalization (`domain::language`) and MT prompt builder (`domain::prompt`)
-- Tests for invalid input, engine failure, timeout, config parsing and prompt building
+- Ollama engine adapter and model config (`TRANSLATOR_MODEL_URL`, `TRANSLATOR_MODEL`)
+- Live end-to-end translation via local Ollama (qwen2.5:7b, CPU)
+- Tests for invalid input, engine failure, timeout, config parsing, prompt building and Ollama adapter
 
 
 Pending:
 
-- Ollama engine adapter and model config (URL, model name)
-- Engine selection wiring (`EngineKind::Ollama`)
+- Model quality evaluation (dedicated MT models such as Hunyuan-MT)
+- Desktop client preparation

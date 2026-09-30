@@ -162,7 +162,7 @@ Possible implementations:
 
 Current implementation:
 
-MockEngine behind `engine::build`; every engine is wrapped in a timeout guard. The engine trait is async and fallible. Prompt building and language tag normalization live in the domain layer (`domain::prompt`, `domain::language`).
+MockEngine and OllamaEngine (local inference) behind `engine::build`; every engine is wrapped in a timeout guard. The engine trait is async and fallible. Prompt building and language tag normalization live in the domain layer (`domain::prompt`, `domain::language`).
 
 
 ---
@@ -200,17 +200,17 @@ Completed:
 - Rust core service
 - Axum API
 - Basic REST endpoints
-- Translation Engine abstraction (async trait + MockEngine)
+- Translation Engine abstraction (async trait)
+- MockEngine and OllamaEngine (local model adapter)
 - API layer split (`src/api`) with unit and integration tests
 
 
 In Progress:
 
-- Model adapter and local inference integration (Sprint 2)
+- Model quality evaluation (Qwen2.5 vs dedicated MT models)
 
 
 Next:
 
-- Engine selection and configuration
 - Desktop client
 

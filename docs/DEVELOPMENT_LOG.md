@@ -149,6 +149,32 @@ Verification:
 ---
 
 
+## Milestone: Ollama Engine Adapter
+
+
+Completed:
+
+- Added `OllamaEngine` (`src/engine/ollama.rs`): posts `domain::prompt::translation_prompt` output to `{TRANSLATOR_MODEL_URL}/api/generate` and parses the `response` field
+- Added `EngineKind::Ollama`; `engine::build` now builds from `Config`
+- New config: `TRANSLATOR_MODEL_URL` (default `http://127.0.0.1:11434`), `TRANSLATOR_MODEL` (required when engine is `ollama`)
+- Added `reqwest` (no default TLS features; local HTTP only)
+- Tests: config resolution, engine kind parsing, stub-server integration (`tests/ollama.rs`) covering success, HTTP errors, invalid JSON and connection failure
+
+
+Verification:
+
+cargo test (24 tests)
+
+
+Live end-to-end (qwen2.5:7b, CPU):
+
+- cold 6.4s (model load), warm en→zh 1.7s, warm zh→en 0.9s
+- Missing `TRANSLATOR_MODEL` aborts startup with exit 1
+
+
+---
+
+
 # Git History
 
 
