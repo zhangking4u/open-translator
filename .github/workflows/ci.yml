@@ -19,6 +19,20 @@ jobs:
           workspaces: core/translator-service
       - run: cargo test
 
+  inference:
+    name: Inference crate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core/inference
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/inference
+      - run: cargo test
+
   core-windows:
     name: Core service tests (Windows)
     runs-on: windows-latest
