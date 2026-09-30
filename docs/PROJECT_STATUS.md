@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record desktop tray and hotkey config
+docs: record llama.cpp spike results
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Real-machine verification: Windows client (hotkey + Ctrl+C) and macOS client (Accessibility + Cmd+C)
+1. Phase B: `core/inference` crate (in-process llama.cpp engine), then wire into the service and desktop client
 
-2. Sprint 5 meeting translation (parked)
+2. Consumer packaging: first-run model download, installers (NSIS/dmg/deb), code signing (budget decision)
 
-3. Extension 0.1.1 signing and install (on hold)
+3. Real-machine verification: Windows client (hotkey + Ctrl+C) and macOS client (Accessibility + Cmd+C)
 
 
 ---
@@ -406,3 +406,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Desktop Phase 2: Windows client MVP (`desktop/translator-popup-desktop`, eframe + `Ctrl+Alt+T` + Ctrl+C capture) with `desktop/install-windows.ps1`; CI builds it on windows-latest
 - Desktop Phase 3: the same client supports macOS (Cmd+C capture with Accessibility hint, `desktop/install-macos.sh` bundle + LaunchAgent); CI builds it on macos-latest
 - Desktop polish: tray/menu-bar icon (显示窗口/立即翻译/退出) and a configurable hotkey (`hotkey` in the config file or `TRANSLATOR_HOTKEY`)
+- In-process llama.cpp spike passed (`llama-cpp-2` + HY-MT GGUF: correct translations, ~29 tok/s, ~1.8 GB RAM, no external service) — the chosen direction for the consumer edition

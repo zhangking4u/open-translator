@@ -676,6 +676,34 @@ Verification:
 ---
 
 
+## Milestone: In-Process llama.cpp Spike (Phase B groundwork)
+
+
+Context:
+
+- Direction decided: target ordinary users with an in-process runtime — one application, no Ollama, no separate service process (the desktop app can expose the HTTP endpoint for the browser extension itself)
+
+
+Spike setup:
+
+- `llama-cpp-2` 0.1.157 (llama.cpp bindings; needs cmake + clang/libclang to build), loading `HY-MT1.5-1.8B-Q4_K_M.gguf` with the official chat template (`<｜hy_begin▁of▁sentence｜><｜hy_User｜>…<｜hy_Assistant｜>`) and sampling temperature 0.7 / top_k 20 / top_p 0.6 / repeat 1.05
+- Dev-machine build deps: cmake at `~/.local/opt/cmake` (user-space), `clang` + `libclang-dev` from apt; build with `PATH="$HOME/.local/opt/cmake/bin:$PATH" LIBCLANG_PATH=/usr/lib/llvm-21/lib`
+
+
+Results (release, CPU i5-14400):
+
+- "kernel panic" → 内核崩溃 (0.07s); graceful-shutdown sentence → correct Chinese (0.48s); ~29 tok/s; model ~1.8 GB resident (1069 MB mapped + 711 MB repack)
+- llama.cpp logs go through tracing and are noisy by default; production code should configure a subscriber/filter
+
+
+Next:
+
+- Phase B: extract this into a `core/inference` crate (`InferenceEngine`: load/generate/stop tokens/sampling/errors, no HTTP, no platform deps), then wire it as `EngineKind::LlamaCpp` for the service and embed it in the desktop client; first-run model download and installers follow
+
+
+---
+
+
 # Git History
 
 

@@ -162,7 +162,7 @@ Possible implementations:
 
 Current implementation:
 
-MockEngine and OllamaEngine (local inference) behind `engine::build`; every engine is wrapped in a timeout guard. The engine trait is async and fallible. Prompt styles and language tag normalization live in the domain layer (`domain::prompt`, `domain::language`); each prompt style carries its recommended sampling options.
+MockEngine and OllamaEngine (local inference) behind `engine::build`; every engine is wrapped in a timeout guard. The engine trait is async and fallible. Prompt styles and language tag normalization live in the domain layer (`domain::prompt`, `domain::language`); each prompt style carries its recommended sampling options. An in-process llama.cpp engine (`llama-cpp-2`, engine kind `LlamaCpp`) is the chosen direction for the consumer edition — the spike passed (HY-MT GGUF: correct output, ~29 tok/s CPU, no external service).
 
 
 ---
@@ -219,10 +219,11 @@ Completed:
 
 In Progress:
 
-- Browser extension validation (manual Firefox test pending)
+- Consumer edition: in-process `core/inference` crate (llama.cpp), first-run model download and installers
 
 
 Next:
 
-- Meeting translation
+- Real-machine verification (Windows/macOS desktop clients)
+- Meeting translation (parked)
 
