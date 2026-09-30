@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core:
+    name: Core service tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core/translator-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/translator-service
+      - run: cargo test
+
+  desktop:
+    name: Desktop popup tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop/translator-popup
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/translator-popup
+      - run: cargo test
+
+  browser:
+    name: Browser extension checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Static checks and build
+        run: |
+          python3 -m json.tool browser/extension/manifest.json > /dev/null
+          python3 -m json.tool browser/extension/manifest.chrome.json > /dev/null
+          for file in browser/extension/*.js; do node --check "$file"; done
+          ./browser/build.sh all
+      - name: web-ext lint
+        run: npx --yes web-ext lint --source-dir browser/dist/firefox
+
+  browser-e2e:
+    name: Chrome e2e smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/translator-service
+      - run: ./browser/test.sh
