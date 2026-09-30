@@ -1,4 +1,5 @@
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod services;
@@ -24,6 +25,13 @@ Options:
                         (default: $TRANSLATOR_SERVICE_URL or http://127.0.0.1:17890)
       --no-start        Do not auto-start services
   -h, --help            Show this help
+
+Config file (~/.config/open-translator/config) is applied when no CLI flag
+is given; CLI > config file > environment > defaults:
+
+  service_url = http://127.0.0.1:17890
+  source = en
+  target = zh
 
 Auto-start configuration (environment):
   TRANSLATOR_CORE_BIN    Path to the translator-service binary (default: derived
@@ -62,27 +70,77 @@ impl Default for Args {
     }
 }
 
-fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
-    let mut parsed = Args::default();
+#[derive(Debug, Default, PartialEq)]
+struct CliArgs {
+    source: Option<String>,
+    target: Option<String>,
+    service_url: Option<String>,
+    clipboard: bool,
+    stdin: bool,
+    print: bool,
+    no_start: bool,
+}
+
+#[derive(Debug, Default, PartialEq)]
+struct FileConfig {
+    service_url: Option<String>,
+    source: Option<String>,
+    target: Option<String>,
+}
+
+impl Args {
+    fn resolve(cli: CliArgs, file: FileConfig) -> Self {
+        let mut args = Args::default();
+
+        if let Some(value) = file.service_url {
+            args.service_url = value;
+        }
+        if let Some(value) = file.source {
+            args.source = value;
+        }
+        if let Some(value) = file.target {
+            args.target = value;
+        }
+
+        if let Some(value) = cli.service_url {
+            args.service_url = value;
+        }
+        if let Some(value) = cli.source {
+            args.source = value;
+        }
+        if let Some(value) = cli.target {
+            args.target = value;
+        }
+
+        args.clipboard = cli.clipboard;
+        args.stdin = cli.stdin;
+        args.print = cli.print;
+        args.no_start = cli.no_start;
+
+        args
+    }
+}
+
+fn parse_args(args: impl Iterator<Item = String>) -> Result<CliArgs, String> {
+    let mut parsed = CliArgs::default();
 
     let mut args = args.peekable();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--source" | "-s" => {
-                parsed.source = args
-                    .next()
-                    .ok_or_else(|| "--source requires a value".to_string())?;
+                parsed.source =
+                    Some(args.next().ok_or_else(|| "--source requires a value".to_string())?);
             }
             "--target" | "-t" => {
-                parsed.target = args
-                    .next()
-                    .ok_or_else(|| "--target requires a value".to_string())?;
+                parsed.target =
+                    Some(args.next().ok_or_else(|| "--target requires a value".to_string())?);
             }
             "--service" => {
-                parsed.service_url = args
-                    .next()
-                    .ok_or_else(|| "--service requires a value".to_string())?;
+                parsed.service_url = Some(
+                    args.next()
+                        .ok_or_else(|| "--service requires a value".to_string())?,
+                );
             }
             "--clipboard" => parsed.clipboard = true,
             "--stdin" => parsed.stdin = true,
@@ -93,6 +151,49 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
     }
 
     Ok(parsed)
+}
+
+fn config_path() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+
+    Some(base.join("open-translator").join("config"))
+}
+
+fn load_file_config(path: &Path) -> FileConfig {
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return FileConfig::default();
+    };
+
+    let mut config = FileConfig::default();
+
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+
+        let key = key.trim();
+        let value = value.trim().trim_matches('"');
+
+        if value.is_empty() {
+            continue;
+        }
+
+        match key {
+            "service_url" => config.service_url = Some(value.to_string()),
+            "source" => config.source = Some(value.to_string()),
+            "target" => config.target = Some(value.to_string()),
+            _ => {}
+        }
+    }
+
+    config
 }
 
 pub(crate) fn read_selection(clipboard: bool) -> Result<String, String> {
@@ -168,13 +269,18 @@ fn main() {
         return;
     }
 
-    let args = match parse_args(std::env::args().skip(1)) {
-        Ok(args) => args,
+    let cli = match parse_args(std::env::args().skip(1)) {
+        Ok(cli) => cli,
         Err(error) => {
             eprintln!("{error}\n\n{HELP}");
             std::process::exit(2);
         }
     };
+
+    let file_config = config_path()
+        .map(|path| load_file_config(&path))
+        .unwrap_or_default();
+    let args = Args::resolve(cli, file_config);
 
     if args.print {
         let text = match if args.stdin {
@@ -214,21 +320,55 @@ fn main() {
 mod tests {
     use super::*;
 
-    fn args(values: &[&str]) -> Result<Args, String> {
+    fn cli(values: &[&str]) -> Result<CliArgs, String> {
         parse_args(values.iter().map(|value| value.to_string()))
     }
 
     #[test]
-    fn uses_defaults() {
-        let parsed = args(&[]).unwrap();
-        let expected = Args::default();
+    fn resolves_defaults() {
+        let args = Args::resolve(CliArgs::default(), FileConfig::default());
 
-        assert_eq!(parsed, expected);
+        assert_eq!(args, Args::default());
+    }
+
+    #[test]
+    fn config_file_fills_missing_values() {
+        let file = FileConfig {
+            service_url: Some("http://127.0.0.1:9999".to_string()),
+            source: Some("fr".to_string()),
+            target: Some("de".to_string()),
+        };
+
+        let args = Args::resolve(CliArgs::default(), file);
+
+        assert_eq!(args.service_url, "http://127.0.0.1:9999");
+        assert_eq!(args.source, "fr");
+        assert_eq!(args.target, "de");
+    }
+
+    #[test]
+    fn cli_overrides_config_file() {
+        let cli = CliArgs {
+            source: Some("ja".to_string()),
+            print: true,
+            ..CliArgs::default()
+        };
+        let file = FileConfig {
+            service_url: None,
+            source: Some("fr".to_string()),
+            target: Some("de".to_string()),
+        };
+
+        let args = Args::resolve(cli, file);
+
+        assert_eq!(args.source, "ja");
+        assert_eq!(args.target, "de");
+        assert!(args.print);
     }
 
     #[test]
     fn parses_flags() {
-        let parsed = args(&[
+        let parsed = cli(&[
             "--source",
             "zh",
             "-t",
@@ -242,22 +382,50 @@ mod tests {
         ])
         .unwrap();
 
-        assert_eq!(parsed.source, "zh");
-        assert_eq!(parsed.target, "en");
+        assert_eq!(parsed.source.as_deref(), Some("zh"));
+        assert_eq!(parsed.target.as_deref(), Some("en"));
         assert!(parsed.clipboard);
         assert!(parsed.stdin);
         assert!(parsed.print);
         assert!(parsed.no_start);
-        assert_eq!(parsed.service_url, "http://127.0.0.1:9999/");
+        assert_eq!(parsed.service_url.as_deref(), Some("http://127.0.0.1:9999/"));
     }
 
     #[test]
     fn rejects_unknown_arguments() {
-        assert!(args(&["--nope"]).is_err());
+        assert!(cli(&["--nope"]).is_err());
     }
 
     #[test]
     fn rejects_missing_values() {
-        assert!(args(&["--source"]).is_err());
+        assert!(cli(&["--source"]).is_err());
+    }
+
+    #[test]
+    fn parses_config_file() {
+        let path = std::env::temp_dir().join(format!(
+            "open-translator-config-test-{}.conf",
+            std::process::id()
+        ));
+
+        std::fs::write(
+            &path,
+            "# comment\nsource = ja\n\ntarget=ko\nservice_url = \"http://127.0.0.1:1\"\nunknown = x\n",
+        )
+        .unwrap();
+
+        let config = load_file_config(&path);
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(config.source.as_deref(), Some("ja"));
+        assert_eq!(config.target.as_deref(), Some("ko"));
+        assert_eq!(config.service_url.as_deref(), Some("http://127.0.0.1:1"));
+    }
+
+    #[test]
+    fn missing_config_file_is_empty() {
+        let config = load_file_config(Path::new("/nonexistent/open-translator/config"));
+
+        assert_eq!(config, FileConfig::default());
     }
 }
