@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record desktop phase 0
+docs: note phase 0 shortcut verification
 
 
 ---
@@ -353,10 +353,9 @@ Completed:
 
 Pending:
 
-- Bind a GNOME custom shortcut to the popup binary (user setup)
 - Phase 1: portal-based hotkey, GTK popup, service startup checks
 
 
 Status:
 
-Phase 0 popup implemented and verified with a real selection (wl-clipboard).
+Phase 0 popup implemented, bound to a GNOME custom shortcut (Ctrl+Alt+T) and verified with a real selection (wl-clipboard).

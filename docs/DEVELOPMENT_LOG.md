@@ -310,7 +310,8 @@ Real selection verification (2026-09-30, wl-clipboard installed):
 
 - `wl-copy --primary "kernel panic"` + `translator-popup --print` → 内核崩溃
 - `wl-copy "Break a leg!"` + `translator-popup --clipboard --print` → 祝你好运！
-- A GNOME custom shortcut should point at `desktop/translator-popup/target/release/translator-popup`
+- GNOME custom shortcut "translator-popup" (`Ctrl+Alt+T`, no conflict with the empty default terminal binding) points at `desktop/translator-popup/target/release/translator-popup`
+- Release binary re-verified with a real selection: graceful-shutdown sentence translated in 0.64s
 
 
 ---
