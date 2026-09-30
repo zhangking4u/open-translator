@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use axum::{
     extract::State,
     http::StatusCode,
@@ -10,17 +12,36 @@ use serde::{Deserialize, Serialize};
 use crate::domain::translation::{TranslationError, TranslationRequest};
 use crate::engine::EngineRef;
 
-pub fn router(engine: EngineRef) -> Router {
+#[derive(Clone)]
+pub struct AppState {
+    pub engine: EngineRef,
+    pub engine_name: String,
+    pub model: String,
+}
+
+impl AppState {
+    pub fn new(engine: EngineRef, engine_name: impl Into<String>, model: impl Into<String>) -> Self {
+        Self {
+            engine,
+            engine_name: engine_name.into(),
+            model: model.into(),
+        }
+    }
+}
+
+pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/translate", post(translate))
-        .with_state(engine)
+        .with_state(state)
 }
 
-async fn health() -> Json<HealthResponse> {
+async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
         service: "translator-core",
+        engine: state.engine_name,
+        model: state.model,
     })
 }
 
@@ -28,6 +49,8 @@ async fn health() -> Json<HealthResponse> {
 struct HealthResponse {
     status: &'static str,
     service: &'static str,
+    engine: String,
+    model: String,
 }
 
 #[derive(Deserialize)]
@@ -43,7 +66,7 @@ struct TranslateResponse {
 }
 
 async fn translate(
-    State(engine): State<EngineRef>,
+    State(state): State<AppState>,
     Json(payload): Json<TranslateRequest>,
 ) -> Result<Json<TranslateResponse>, TranslationError> {
     if payload.text.trim().is_empty() {
@@ -52,18 +75,42 @@ async fn translate(
         ));
     }
 
-    println!("Translate request: {}", payload.text);
+    let started = Instant::now();
+    let text_chars = payload.text.chars().count();
+    let source = payload.source;
+    let target = payload.target;
 
-    let request = TranslationRequest {
-        text: payload.text,
-        source: payload.source,
-        target: payload.target,
-    };
+    let result = state
+        .engine
+        .translate(TranslationRequest {
+            text: payload.text,
+            source: source.clone(),
+            target: target.clone(),
+        })
+        .await;
 
-    let result = engine.translate(request).await?;
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+
+    match &result {
+        Ok(_) => tracing::info!(
+            source = %source,
+            target = %target,
+            text_chars,
+            elapsed_ms,
+            "translation completed"
+        ),
+        Err(error) => tracing::warn!(
+            source = %source,
+            target = %target,
+            text_chars,
+            elapsed_ms,
+            error = %error,
+            "translation failed"
+        ),
+    }
 
     Ok(Json(TranslateResponse {
-        translation: result.translated_text,
+        translation: result?.translated_text,
     }))
 }
 

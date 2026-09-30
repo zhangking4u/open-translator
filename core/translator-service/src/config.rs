@@ -16,6 +16,7 @@ pub struct Config {
     pub model_url: String,
     pub model: String,
     pub prompt_style: PromptStyle,
+    pub warmup: bool,
 }
 
 impl Config {
@@ -41,6 +42,11 @@ impl Config {
             Err(_) => PromptStyle::Generic,
         };
 
+        let warmup = match env::var("TRANSLATOR_WARMUP") {
+            Ok(value) => parse_bool(&value)?,
+            Err(_) => true,
+        };
+
         Ok(Self {
             bind_addr,
             engine,
@@ -48,6 +54,7 @@ impl Config {
             model_url,
             model,
             prompt_style,
+            warmup,
         })
     }
 }
@@ -62,6 +69,14 @@ fn parse_timeout_ms(value: &str) -> Result<Duration, String> {
     }
 
     Ok(Duration::from_millis(milliseconds))
+}
+
+fn parse_bool(value: &str) -> Result<bool, String> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        other => Err(format!("invalid TRANSLATOR_WARMUP: {other}")),
+    }
 }
 
 fn resolve_model_url(value: Option<String>) -> Result<String, String> {
@@ -100,6 +115,13 @@ mod tests {
     fn rejects_invalid_timeout() {
         assert!(parse_timeout_ms("abc").is_err());
         assert!(parse_timeout_ms("0").is_err());
+    }
+
+    #[test]
+    fn parses_warmup_flag() {
+        assert!(parse_bool("true").unwrap());
+        assert!(!parse_bool("false").unwrap());
+        assert!(parse_bool("yes").is_err());
     }
 
     #[test]

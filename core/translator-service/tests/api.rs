@@ -7,15 +7,19 @@ use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
 
-use translator_service::api;
+use translator_service::api::{self, AppState};
 use translator_service::domain::translation::{
     TranslationError, TranslationRequest, TranslationResult,
 };
 use translator_service::engine::mock::MockEngine;
-use translator_service::engine::{TimeoutEngine, TranslationEngine, TranslationFuture};
+use translator_service::engine::{EngineRef, TimeoutEngine, TranslationEngine, TranslationFuture};
+
+fn router_for(engine: EngineRef) -> axum::Router {
+    api::router(AppState::new(engine, "mock", ""))
+}
 
 fn app() -> axum::Router {
-    api::router(Arc::new(MockEngine))
+    router_for(Arc::new(MockEngine))
 }
 
 struct FailingEngine;
@@ -31,7 +35,7 @@ impl TranslationEngine for FailingEngine {
 }
 
 fn failing_app() -> axum::Router {
-    api::router(Arc::new(FailingEngine))
+    router_for(Arc::new(FailingEngine))
 }
 
 struct SlowEngine;
@@ -73,6 +77,8 @@ async fn health_returns_service_status() {
     let json = body_json(response).await;
     assert_eq!(json["status"], "ok");
     assert_eq!(json["service"], "translator-core");
+    assert_eq!(json["engine"], "mock");
+    assert_eq!(json["model"], "");
 }
 
 #[tokio::test]
@@ -122,15 +128,17 @@ async fn engine_failure_returns_bad_gateway() {
 
 #[tokio::test]
 async fn slow_engine_returns_gateway_timeout() {
-    let response = api::router(Arc::new(TimeoutEngine::new(
+    let slow: EngineRef = Arc::new(TimeoutEngine::new(
         Arc::new(SlowEngine),
         Duration::from_millis(10),
-    )))
-    .oneshot(translate_request(
-        r#"{"text":"hello","source":"en","target":"zh"}"#,
-    ))
-    .await
-    .unwrap();
+    ));
+
+    let response = router_for(slow)
+        .oneshot(translate_request(
+            r#"{"text":"hello","source":"en","target":"zh"}"#,
+        ))
+        .await
+        .unwrap();
 
     assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
 
