@@ -83,6 +83,16 @@ Architecture:
 x86_64
 
 
+Model Runtime:
+
+Ollama v0.35.0 (user-space install at `~/.local/opt/ollama`)
+
+
+Current model:
+
+qwen2.5:7b (GGUF, ~4.7 GB, CPU inference)
+
+
 ---
 
 ## 4. Technology Stack
@@ -110,7 +120,12 @@ SQLite
 
 Model Runtime:
 
-To be determined.
+Ollama (local, CPU inference)
+
+
+Current model:
+
+qwen2.5:7b
 
 
 Candidate models:
@@ -209,7 +224,7 @@ main
 
 Latest commit:
 
-docs: log timeout guard and runtime check
+docs: record ollama runtime install and benchmark
 
 
 ---
@@ -232,13 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Install and benchmark a model runtime (Ollama / llama.cpp server)
+1. Implement Ollama engine adapter (`EngineKind::Ollama`)
 
-2. Integrate first local translation model adapter
+2. Extend config with model URL and model name
 
-3. Extend config with model address and model name
-
-4. Prepare desktop client integration
+3. Prepare desktop client integration
 
 
 ---
@@ -319,5 +332,5 @@ Completed:
 
 Pending:
 
-- Model runtime installation and selection (none installed on the dev machine)
-- Model adapter and model config (address, model name)
+- Ollama engine adapter and model config (URL, model name)
+- Engine selection wiring (`EngineKind::Ollama`)

@@ -124,6 +124,31 @@ Runtime environment check:
 ---
 
 
+## Milestone: Local Model Runtime (Ollama) and Benchmark
+
+
+Completed:
+
+- Installed Ollama v0.35.0 user-space at `~/.local/opt/ollama` (release asset fetched via gh-proxy; ollama.com and GitHub release-assets are unreachable from this network)
+- Started `ollama serve` and pulled `qwen2.5:7b` (4.7 GB, from registry.ollama.ai)
+- Benchmarked on i5-14400 CPU only: cold start 6.1s (4.5s model load); warm short en→zh 0.45s total; 113-char sentence 2.1s; generation ~9.5–12 tok/s
+
+
+Notes:
+
+- Loaded model uses ~5.1 GB RAM, 100% CPU, 4096 context
+- Qwen2.5-7B quality is acceptable but can be literal ("kernel panic" → 内核恐慌, expected 内核崩溃); a dedicated MT model (e.g. Hunyuan-MT) can be swapped in later since the model name will be configurable
+
+
+Verification:
+
+- `curl http://127.0.0.1:11434/api/generate` with prompts in `domain::prompt` format
+- `cargo test` unaffected (service still Mock-only)
+
+
+---
+
+
 # Git History
 
 
