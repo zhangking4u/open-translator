@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: confirm windows ci green
+docs: record desktop core extraction
 
 
 ---
@@ -247,7 +247,7 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Windows/macOS desktop adaptation layer (optional, medium)
+1. Windows desktop client (Phase 2: egui UI, global-hotkey, Ctrl+C selection capture)
 
 2. Sprint 5 meeting translation (parked)
 
@@ -402,3 +402,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - CI e2e cleanup bug fixed (`rm -rf` racing the browser shutdown overrode the exit status); all jobs green on the second run
 - `actions/checkout` / `actions/setup-node` bumped to v5
 - Windows: core service tested on `windows-latest` in CI; desktop remains Linux/GNOME-only; browser extension is cross-platform
+- Desktop Phase 1 for Windows/macOS: platform-agnostic `desktop/translator-core` extracted (args/config/translate/service auto-start/per-OS paths); CI matrix tests it on ubuntu, windows and macos

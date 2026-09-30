@@ -597,6 +597,26 @@ Verification:
 ---
 
 
+## Milestone: Desktop Core Extraction (Phase 1 for Windows/macOS)
+
+
+Completed:
+
+- New crate `desktop/translator-core` (platform-agnostic, no GTK): CLI args + config-file precedence, settings persistence, HTTP translate client, service health checks and auto-start
+- Per-OS paths in `paths.rs`: Linux XDG, Windows `%APPDATA%`/`%LOCALAPPDATA%` (plus `translator-service.exe`/`ollama.exe` discovery), macOS `~/Library`
+- `desktop/translator-popup` now depends on `translator-core` by path; the `wl-paste` selection reader and GTK UI stay Linux-specific in the popup
+- CI: `desktop-core` matrix job runs the lib's tests on ubuntu, windows and macos
+
+
+Verification:
+
+- `cargo test` in `translator-core` → 15 tests; popup builds and its `--print` path still works ("hello" → 嗨)
+- `browser/test.sh` regression → 10/10 PASS
+
+
+---
+
+
 # Git History
 
 

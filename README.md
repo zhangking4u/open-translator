@@ -126,7 +126,8 @@ docs/                      架构、状态、开发日志
 
 ```bash
 cd core/translator-service && cargo test    # 核心服务
-cd desktop/translator-popup && cargo test   # 桌面弹窗
+cd desktop/translator-core && cargo test    # 桌面共享库（跨平台：参数/配置/翻译调用/服务自启）
+cd desktop/translator-popup && cargo test   # 桌面弹窗（Linux/GTK）
 ./browser/test.sh                           # Chrome MV3 端到端（服务未运行会自启 mock 引擎）
 ```
 
