@@ -317,6 +317,31 @@ Real selection verification (2026-09-30, wl-clipboard installed):
 ---
 
 
+## Milestone: Desktop 1a — Service Self-Start
+
+
+Completed:
+
+- Popup now checks the core `/health` before translating; if down it starts ollama (when the model URL is local) and the core release binary, polling until ready
+- Detached spawn with logs under `~/.local/state/open-translator/` (`ollama.log`, `translator-service.log`); the child processes survive the popup exiting
+- Paths derive from the repo layout (`core/translator-service/target/release/translator-service`, `~/.local/opt/ollama/bin/ollama`) and can be overridden with `TRANSLATOR_CORE_BIN` / `TRANSLATOR_OLLAMA_BIN`; `--no-start` disables auto-start
+- Started core inherits `TRANSLATOR_BIND_ADDR` derived from `--service` when the URL is local
+
+
+Verification:
+
+cargo test (9 tests)
+
+
+Live cold start (both services stopped):
+
+- `echo "kernel panic" | translator-popup --stdin --print` → 内核崩溃 in 2.7s (starts ollama + core, waits for warmup)
+- Warm path 0.24s; `--no-start` and remote-URL errors exit 1 with actionable messages
+
+
+---
+
+
 # Git History
 
 

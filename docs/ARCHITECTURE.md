@@ -85,7 +85,7 @@ Responsibility:
 
 Status:
 
-Phase 0 implemented: `desktop/translator-popup` (Wayland selection → core `/translate` → popup)
+Phase 0 implemented: `desktop/translator-popup` (Wayland selection → core `/translate` → popup); Phase 1a adds service self-start (checks `/health`, starts ollama + core when down)
 
 
 ---
@@ -209,7 +209,7 @@ Completed:
 
 In Progress:
 
-- Desktop client polish (hotkey setup, popup UX, service startup)
+- Desktop client polish (popup UX, portal hotkey)
 
 
 Next:
