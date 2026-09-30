@@ -26,11 +26,24 @@ pub fn translation_prompt(
     let source = normalize_tag(&request.source).map_err(TranslationError::InvalidRequest)?;
     let target = normalize_tag(&request.target).map_err(TranslationError::InvalidRequest)?;
 
+    let automatic = source == "auto";
+
     Ok(match style {
+        PromptStyle::Generic if automatic => generic_auto_prompt(request, &target),
         PromptStyle::Generic => generic_prompt(request, &source, &target),
+        PromptStyle::TranslateGemma if automatic => translategemma_auto_prompt(request, &target),
         PromptStyle::TranslateGemma => translategemma_prompt(request, &source, &target),
         PromptStyle::HunYuanMt => hunyuan_mt_prompt(request, &target),
     })
+}
+
+fn generic_auto_prompt(request: &TranslationRequest, target: &str) -> String {
+    format!(
+        "Translate the following text into {} ({target}).\n\
+         Return only the translation without explanations.\n\n{}",
+        display_name(target),
+        request.text
+    )
 }
 
 fn generic_prompt(request: &TranslationRequest, source: &str, target: &str) -> String {
@@ -54,6 +67,19 @@ fn translategemma_prompt(request: &TranslationRequest, source: &str, target: &st
          cultural sensitivities.\nProduce only the {target_name} translation, without any \
          additional explanations or commentary. Please translate the following {source_name} \
          text into {target_name}:\n\n\n{}",
+        request.text
+    )
+}
+
+fn translategemma_auto_prompt(request: &TranslationRequest, target: &str) -> String {
+    let target_name = display_name(target);
+
+    format!(
+        "You are a professional translator. Your goal is to accurately convey the meaning \
+         and nuances of the original text while adhering to {target_name} grammar, vocabulary, \
+         and cultural sensitivities.\nProduce only the {target_name} translation, without any \
+         additional explanations or commentary. Translate the following text into {target_name} \
+         ({target}):\n\n\n{}",
         request.text
     )
 }
@@ -115,6 +141,24 @@ mod tests {
 
         assert!(prompt.contains("将以下文本翻译为中文"));
         assert!(prompt.contains("hello"));
+    }
+
+    #[test]
+    fn builds_auto_source_prompts() {
+        let generic =
+            translation_prompt(PromptStyle::Generic, &request("hello", "auto", "zh")).unwrap();
+        assert!(generic.contains("into Chinese (zh)"));
+        assert!(!generic.contains("from"));
+
+        let gemma =
+            translation_prompt(PromptStyle::TranslateGemma, &request("hello", "auto", "zh"))
+                .unwrap();
+        assert!(gemma.contains("professional translator"));
+        assert!(!gemma.contains(" from "));
+
+        let hymt =
+            translation_prompt(PromptStyle::HunYuanMt, &request("hello", "auto", "zh")).unwrap();
+        assert!(hymt.contains("将以下文本翻译为中文"));
     }
 
     #[test]

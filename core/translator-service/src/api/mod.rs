@@ -17,14 +17,21 @@ pub struct AppState {
     pub engine: EngineRef,
     pub engine_name: String,
     pub model: String,
+    pub max_chars: usize,
 }
 
 impl AppState {
-    pub fn new(engine: EngineRef, engine_name: impl Into<String>, model: impl Into<String>) -> Self {
+    pub fn new(
+        engine: EngineRef,
+        engine_name: impl Into<String>,
+        model: impl Into<String>,
+        max_chars: usize,
+    ) -> Self {
         Self {
             engine,
             engine_name: engine_name.into(),
             model: model.into(),
+            max_chars,
         }
     }
 }
@@ -75,8 +82,15 @@ async fn translate(
         ));
     }
 
-    let started = Instant::now();
     let text_chars = payload.text.chars().count();
+    if text_chars > state.max_chars {
+        return Err(TranslationError::InvalidRequest(format!(
+            "text is too long: {text_chars} chars (max {})",
+            state.max_chars
+        )));
+    }
+
+    let started = Instant::now();
     let source = payload.source;
     let target = payload.target;
 

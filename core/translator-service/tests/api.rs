@@ -15,7 +15,7 @@ use translator_service::engine::mock::MockEngine;
 use translator_service::engine::{EngineRef, TimeoutEngine, TranslationEngine, TranslationFuture};
 
 fn router_for(engine: EngineRef) -> axum::Router {
-    api::router(AppState::new(engine, "mock", ""))
+    api::router(AppState::new(engine, "mock", "", 1500))
 }
 
 fn app() -> axum::Router {
@@ -101,6 +101,24 @@ async fn empty_text_is_rejected() {
     let response = app()
         .oneshot(translate_request(
             r#"{"text":"   ","source":"en","target":"zh"}"#,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let json = body_json(response).await;
+    assert_eq!(json["error"]["kind"], "invalid_request");
+}
+
+#[tokio::test]
+async fn oversized_text_is_rejected() {
+    let small: EngineRef = Arc::new(MockEngine);
+    let app = api::router(AppState::new(small, "mock", "", 10));
+
+    let response = app
+        .oneshot(translate_request(
+            r#"{"text":"this text is definitely longer than ten chars","source":"en","target":"zh"}"#,
         ))
         .await
         .unwrap();

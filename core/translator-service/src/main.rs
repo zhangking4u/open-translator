@@ -24,6 +24,7 @@ async fn main() {
         engine_ref,
         config.engine.as_str(),
         config.model.clone(),
+        config.max_chars,
     ));
 
     let listener = tokio::net::TcpListener::bind(&config.bind_addr)

@@ -8,6 +8,7 @@ pub const DEFAULT_BIND_ADDR: &str = "127.0.0.1:17890";
 pub const DEFAULT_MODEL_URL: &str = "http://127.0.0.1:11434";
 pub const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 pub const DEFAULT_KEEP_ALIVE: &str = "30m";
+pub const DEFAULT_MAX_CHARS: usize = 1500;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -19,6 +20,7 @@ pub struct Config {
     pub prompt_style: PromptStyle,
     pub warmup: bool,
     pub keep_alive: String,
+    pub max_chars: usize,
 }
 
 impl Config {
@@ -51,6 +53,11 @@ impl Config {
 
         let keep_alive = resolve_keep_alive(env::var("TRANSLATOR_KEEP_ALIVE").ok())?;
 
+        let max_chars = match env::var("TRANSLATOR_MAX_CHARS") {
+            Ok(value) => parse_max_chars(&value)?,
+            Err(_) => DEFAULT_MAX_CHARS,
+        };
+
         Ok(Self {
             bind_addr,
             engine,
@@ -60,6 +67,7 @@ impl Config {
             prompt_style,
             warmup,
             keep_alive,
+            max_chars,
         })
     }
 }
@@ -93,6 +101,18 @@ fn resolve_keep_alive(value: Option<String>) -> Result<String, String> {
     }
 
     Ok(keep_alive)
+}
+
+fn parse_max_chars(value: &str) -> Result<usize, String> {
+    let max_chars = value
+        .parse::<usize>()
+        .map_err(|_| format!("invalid TRANSLATOR_MAX_CHARS: {value}"))?;
+
+    if max_chars == 0 {
+        return Err("TRANSLATOR_MAX_CHARS must be greater than 0".to_string());
+    }
+
+    Ok(max_chars)
 }
 
 fn resolve_model_url(value: Option<String>) -> Result<String, String> {
@@ -145,6 +165,13 @@ mod tests {
         assert_eq!(resolve_keep_alive(None).unwrap(), DEFAULT_KEEP_ALIVE);
         assert_eq!(resolve_keep_alive(Some(" 1h ".to_string())).unwrap(), "1h");
         assert!(resolve_keep_alive(Some("".to_string())).is_err());
+    }
+
+    #[test]
+    fn parses_max_chars() {
+        assert_eq!(parse_max_chars("2000").unwrap(), 2000);
+        assert!(parse_max_chars("abc").is_err());
+        assert!(parse_max_chars("0").is_err());
     }
 
     #[test]
