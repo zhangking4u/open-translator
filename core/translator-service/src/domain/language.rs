@@ -23,9 +23,7 @@ pub fn normalize_tag(input: &str) -> Result<String, String> {
 }
 
 pub fn display_name(tag: &str) -> String {
-    let base = tag.split('-').next().unwrap_or(tag);
-
-    match base {
+    match base_tag(tag) {
         "ar" => "Arabic",
         "de" => "German",
         "en" => "English",
@@ -43,6 +41,31 @@ pub fn display_name(tag: &str) -> String {
         _ => tag,
     }
     .to_string()
+}
+
+pub fn display_name_zh(tag: &str) -> String {
+    match base_tag(tag) {
+        "ar" => "阿拉伯语",
+        "de" => "德语",
+        "en" => "英语",
+        "es" => "西班牙语",
+        "fr" => "法语",
+        "hi" => "印地语",
+        "it" => "意大利语",
+        "ja" => "日语",
+        "ko" => "韩语",
+        "pt" => "葡萄牙语",
+        "ru" => "俄语",
+        "th" => "泰语",
+        "vi" => "越南语",
+        "zh" => "中文",
+        _ => tag,
+    }
+    .to_string()
+}
+
+fn base_tag(tag: &str) -> &str {
+    tag.split('-').next().unwrap_or(tag)
 }
 
 #[cfg(test)]
@@ -72,5 +95,12 @@ mod tests {
         assert_eq!(display_name("zh-hans"), "Chinese");
         assert_eq!(display_name("en"), "English");
         assert_eq!(display_name("xx"), "xx");
+    }
+
+    #[test]
+    fn maps_common_languages_to_chinese_names() {
+        assert_eq!(display_name_zh("zh-hans"), "中文");
+        assert_eq!(display_name_zh("en"), "英语");
+        assert_eq!(display_name_zh("xx"), "xx");
     }
 }

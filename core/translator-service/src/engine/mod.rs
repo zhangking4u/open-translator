@@ -43,6 +43,7 @@ pub fn build(config: &Config) -> EngineRef {
         EngineKind::Ollama => Arc::new(ollama::OllamaEngine::new(
             config.model_url.clone(),
             config.model.clone(),
+            config.prompt_style,
         )),
     };
 

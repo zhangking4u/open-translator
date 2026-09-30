@@ -1,6 +1,7 @@
 use std::env;
 use std::time::Duration;
 
+use crate::domain::prompt::PromptStyle;
 use crate::engine::EngineKind;
 
 pub const DEFAULT_BIND_ADDR: &str = "127.0.0.1:17890";
@@ -14,6 +15,7 @@ pub struct Config {
     pub timeout: Duration,
     pub model_url: String,
     pub model: String,
+    pub prompt_style: PromptStyle,
 }
 
 impl Config {
@@ -34,12 +36,18 @@ impl Config {
         let model_url = resolve_model_url(env::var("TRANSLATOR_MODEL_URL").ok())?;
         let model = resolve_model(engine, env::var("TRANSLATOR_MODEL").ok())?;
 
+        let prompt_style = match env::var("TRANSLATOR_PROMPT_STYLE") {
+            Ok(value) => PromptStyle::parse(&value)?,
+            Err(_) => PromptStyle::Generic,
+        };
+
         Ok(Self {
             bind_addr,
             engine,
             timeout,
             model_url,
             model,
+            prompt_style,
         })
     }
 }

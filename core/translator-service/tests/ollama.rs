@@ -6,6 +6,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde_json::{Value, json};
 
+use translator_service::domain::prompt::PromptStyle;
 use translator_service::domain::translation::{TranslationError, TranslationRequest};
 use translator_service::engine::TranslationEngine;
 use translator_service::engine::ollama::OllamaEngine;
@@ -42,7 +43,11 @@ async fn spawn_stub(recorder: Recorder, response: Value, status: u16) -> String 
 }
 
 fn engine(base_url: &str) -> OllamaEngine {
-    OllamaEngine::new(base_url.to_string(), "test-model".to_string())
+    OllamaEngine::new(
+        base_url.to_string(),
+        "test-model".to_string(),
+        PromptStyle::Generic,
+    )
 }
 
 fn request() -> TranslationRequest {
@@ -66,11 +71,41 @@ async fn translates_via_ollama_generate_api() {
     let payload = recorded.first().expect("request was recorded");
     assert_eq!(payload["model"], "test-model");
     assert_eq!(payload["stream"], false);
+    assert_eq!(payload["options"]["temperature"], 0.0);
+    assert!(payload["options"]["top_p"].is_null());
 
     let prompt = payload["prompt"].as_str().unwrap();
     assert!(prompt.contains("English (en)"));
     assert!(prompt.contains("Chinese (zh)"));
     assert!(prompt.contains("kernel panic"));
+}
+
+#[tokio::test]
+async fn sends_hymt_prompt_style_and_sampling() {
+    let recorder = Recorder::default();
+    let base_url = spawn_stub(recorder.clone(), json!({ "response": "内核崩溃" }), 200).await;
+
+    let engine = OllamaEngine::new(
+        base_url,
+        "hy-mt1.5-1.8b".to_string(),
+        PromptStyle::HunYuanMt,
+    );
+    let result = engine.translate(request()).await.unwrap();
+
+    assert_eq!(result.translated_text, "内核崩溃");
+
+    let recorded = recorder.requests.lock().unwrap();
+    let payload = recorded.first().expect("request was recorded");
+    assert_eq!(payload["options"]["temperature"], 0.7);
+    assert_eq!(payload["options"]["top_p"], 0.6);
+    assert_eq!(payload["options"]["top_k"], 20);
+    assert_eq!(payload["options"]["repeat_penalty"], 1.05);
+    assert!(
+        payload["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("将以下文本翻译为中文")
+    );
 }
 
 #[tokio::test]
