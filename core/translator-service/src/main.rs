@@ -7,7 +7,7 @@ async fn main() {
         std::process::exit(1);
     });
 
-    let app = api::router(engine::build(config.engine, config.timeout));
+    let app = api::router(engine::build(&config));
 
     let listener = tokio::net::TcpListener::bind(&config.bind_addr)
         .await

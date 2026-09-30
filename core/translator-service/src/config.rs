@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::engine::EngineKind;
 
 pub const DEFAULT_BIND_ADDR: &str = "127.0.0.1:17890";
+pub const DEFAULT_MODEL_URL: &str = "http://127.0.0.1:11434";
 pub const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 
 #[derive(Debug, Clone)]
@@ -11,6 +12,8 @@ pub struct Config {
     pub bind_addr: String,
     pub engine: EngineKind,
     pub timeout: Duration,
+    pub model_url: String,
+    pub model: String,
 }
 
 impl Config {
@@ -28,10 +31,15 @@ impl Config {
             Err(_) => Duration::from_millis(DEFAULT_TIMEOUT_MS),
         };
 
+        let model_url = resolve_model_url(env::var("TRANSLATOR_MODEL_URL").ok())?;
+        let model = resolve_model(engine, env::var("TRANSLATOR_MODEL").ok())?;
+
         Ok(Self {
             bind_addr,
             engine,
             timeout,
+            model_url,
+            model,
         })
     }
 }
@@ -46,6 +54,26 @@ fn parse_timeout_ms(value: &str) -> Result<Duration, String> {
     }
 
     Ok(Duration::from_millis(milliseconds))
+}
+
+fn resolve_model_url(value: Option<String>) -> Result<String, String> {
+    let url = value.unwrap_or_else(|| DEFAULT_MODEL_URL.to_string());
+
+    if url.starts_with("http://") || url.starts_with("https://") {
+        Ok(url.trim_end_matches('/').to_string())
+    } else {
+        Err(format!("invalid TRANSLATOR_MODEL_URL: {url}"))
+    }
+}
+
+fn resolve_model(engine: EngineKind, value: Option<String>) -> Result<String, String> {
+    let model = value.unwrap_or_default().trim().to_string();
+
+    if engine == EngineKind::Ollama && model.is_empty() {
+        return Err("TRANSLATOR_MODEL is required when TRANSLATOR_ENGINE=ollama".to_string());
+    }
+
+    Ok(model)
 }
 
 #[cfg(test)]
@@ -64,5 +92,25 @@ mod tests {
     fn rejects_invalid_timeout() {
         assert!(parse_timeout_ms("abc").is_err());
         assert!(parse_timeout_ms("0").is_err());
+    }
+
+    #[test]
+    fn resolves_model_url_with_default_and_validation() {
+        assert_eq!(resolve_model_url(None).unwrap(), DEFAULT_MODEL_URL);
+        assert_eq!(
+            resolve_model_url(Some("http://localhost:1234/".to_string())).unwrap(),
+            "http://localhost:1234"
+        );
+        assert!(resolve_model_url(Some("localhost:1234".to_string())).is_err());
+    }
+
+    #[test]
+    fn requires_model_for_ollama_engine() {
+        assert_eq!(resolve_model(EngineKind::Mock, None).unwrap(), "");
+        assert!(resolve_model(EngineKind::Ollama, None).is_err());
+        assert_eq!(
+            resolve_model(EngineKind::Ollama, Some(" qwen2.5:7b ".to_string())).unwrap(),
+            "qwen2.5:7b"
+        );
     }
 }
