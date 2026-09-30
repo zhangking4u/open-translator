@@ -51,6 +51,21 @@ jobs:
           workspaces: desktop/translator-core
       - run: cargo test
 
+  desktop-popup-windows:
+    name: Windows desktop client
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/translator-popup-windows
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/translator-popup-windows
+      - run: cargo test
+      - run: cargo build --release
+
   desktop:
     name: Desktop popup tests
     runs-on: ubuntu-latest
