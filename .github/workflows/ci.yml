@@ -33,6 +33,24 @@ jobs:
           workspaces: core/translator-service
       - run: cargo test
 
+  desktop-core:
+    name: Desktop core lib (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop/translator-core
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/translator-core
+      - run: cargo test
+
   desktop:
     name: Desktop popup tests
     runs-on: ubuntu-latest
