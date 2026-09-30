@@ -101,8 +101,9 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 | 浏览器扩展 | ✅ | ✅ | ✅ |
 | 桌面划词 | ✅ GNOME Wayland | ✅ MVP（`translator-popup-desktop`，CI 构建） | ✅ MVP（同客户端，未真机验证） |
 
-- Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 会构建核心服务与弹窗并加入开机启动；选中文字按 `Ctrl+Alt+T`（通过模拟 `Ctrl+C` + 剪贴板取词，目标应用需支持复制）。`-Uninstall` 卸载。
-- macOS 桌面划词：`./desktop/install-macos.sh` 构建并安装 `~/Applications/OpenTranslator.app`（内含核心服务）并注册 LaunchAgent 开机启动（`--uninstall` 卸载）。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」中允许 OpenTranslator（模拟 `Cmd+C` 取词所需）；Ollama 可在 GitHub 可达时用 `brew install ollama`。
+- Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 会构建核心服务与弹窗并加入开机启动；选中文字按 `Ctrl+Alt+T`（通过模拟 `Ctrl+C` + 剪贴板取词，目标应用需支持复制）。托盘菜单提供「显示窗口 / 立即翻译 / 退出」。`-Uninstall` 卸载。
+- macOS 桌面划词：`./desktop/install-macos.sh` 构建并安装 `~/Applications/OpenTranslator.app`（内含核心服务）并注册 LaunchAgent 开机启动（`--uninstall` 卸载）。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」中允许 OpenTranslator（模拟 `Cmd+C` 取词所需）；菜单栏图标提供「显示窗口 / 立即翻译 / 退出」；Ollama 可在 GitHub 可达时用 `brew install ollama`。
+- 热键与语言对可在配置文件中改（Windows `%APPDATA%\open-translator\config`、macOS `~/Library/Application Support/open-translator/config`），键位：`hotkey = Ctrl+Alt+T`（也支持 `Ctrl+Shift+Space`、`Alt+F2` 等，辅助键可用 Ctrl/Alt/Shift/Meta，主键支持字母数字/空格/回车/Tab/F1–F12）；临时覆盖用环境变量 `TRANSLATOR_HOTKEY`。
 - Windows/macOS 上也可只用浏览器扩展：安装 Ollama + 运行核心服务（`cargo run --release`）即可；HY-MT 导入脚本（Windows 需 Git Bash）或按脚本内 Modelfile 手动 `ollama create`。
 
 ## 常见问题

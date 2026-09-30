@@ -658,6 +658,24 @@ Verification:
 ---
 
 
+## Milestone: Desktop Tray Icon and Configurable Hotkey
+
+
+Completed:
+
+- Tray/menu-bar icon on Windows and macOS (`tray-icon`): menu 显示窗口 / 立即翻译选中文本 / 退出, so the resident app is visible and quit-able (macOS keeps `LSUIElement`); a small generated icon (blue circle with two white bars) avoids an image dependency
+- Configurable hotkey: `hotkey` key in the config file or `TRANSLATOR_HOTKEY`; parser (`src/hotkey.rs`) accepts Ctrl/Alt/Shift/Meta + letters/digits/space/enter/tab/F1–F12 and is unit-tested on every platform
+
+
+Verification:
+
+- `cargo test` on Linux (3 tests, including the hotkey parser), `cargo check` clean for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`, 0 warnings on all targets
+- Runtime tray/hotkey behaviour still needs a real Windows/macOS machine
+
+
+---
+
+
 # Git History
 
 
