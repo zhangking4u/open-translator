@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record long-text guard and interaction refinements
+docs: record browser bubble enhancements
 
 
 ---
@@ -247,7 +247,7 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Add a git remote and push (activates CI)
+1. Re-sign extension 0.1.1 for Firefox (`./browser/sign.sh`) and install the update
 
 2. Sprint 5 meeting translation (parked)
 
@@ -367,6 +367,7 @@ Desktop Phase 1 complete: install script, GTK4 popup, service self-start, close-
 Completed:
 
 - Firefox MV2 extension in `browser/extension/`: context menu + `Alt+Shift+T`, in-page bubble (loading/error/copy/Esc), options page (service URL, language pair)
+- Bubble target-language switch and optional auto-translate; extension version 0.1.1
 - Background fetch to the local service through the host permission (no CORS change)
 - Chrome MV3 variant (`manifest.chrome.json`) and `browser/build.sh` producing `browser/dist/{firefox,chrome}`
 - Packaging: `build.sh --zip` plus `browser/sign.sh` (`web-ext`, AMO unlisted); Firefox manifest lint-clean

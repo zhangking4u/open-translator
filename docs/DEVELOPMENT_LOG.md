@@ -560,6 +560,25 @@ Gotcha:
 ---
 
 
+## Milestone: Browser Bubble Enhancements — Language Switch and Auto-Translate
+
+
+Completed:
+
+- Bubble footer gains a target-language selector (zh/en/ja/ko/fr/de/es/ru plus dynamic values); switching it persists `target` to `storage.local` and re-translates the current text in place
+- Optional auto-translate (`autoTranslate`, default off): a 400ms-debounced `mouseup` after a selection triggers translation; input/textarea/contenteditable and bubble interactions are ignored; configurable in the options page
+- Extension version bumped to 0.1.1 (0.1.0 is signed on AMO and version numbers cannot be reused)
+
+
+Verification:
+
+- `browser/test.sh` 10/10 PASS locally against the real model: after switching the bubble to Japanese the sentence re-translated in place, the target persisted, and a simulated `mouseup` auto-translated the selection
+- Static checks (`node --check`, manifest JSON) pass
+
+
+---
+
+
 # Git History
 
 
