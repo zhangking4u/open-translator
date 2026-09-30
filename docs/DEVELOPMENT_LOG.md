@@ -807,6 +807,28 @@ Next:
 ---
 
 
+## Milestone: Release Packaging (Phase C2)
+
+
+Completed:
+
+- `.github/workflows/release.yml`: triggered by tags (`v*`) or manual `workflow_dispatch`; builds the desktop client on Windows and macOS and produces:
+  - `OpenTranslator-windows-x64.zip` (exe + `packaging/windows/install.ps1` per-user installer + README)
+  - `OpenTranslator-macos-<arch>.dmg` (`packaging/macos/make-dmg.sh` builds the `.app` bundle from `packaging/macos/Info.plist` and calls `hdiutil`)
+- Tag runs also create/update the GitHub release and upload the artifacts; dispatch runs only upload workflow artifacts (no tag needed to test)
+- `packaging/windows/install.ps1`: copies the exe into `%LOCALAPPDATA%\Programs\OpenTranslator`, adds a Startup shortcut, `-Uninstall` removes both (no admin required)
+- `desktop/macos/Info.plist` moved to `packaging/macos/Info.plist` (single source, used by `install-macos.sh` and the dmg script)
+
+
+Verification:
+
+- YAML and shell syntax checks locally; packaging logic verified by running the workflow via `workflow_dispatch` and inspecting the downloaded artifacts (see CI logs)
+- Signing/notarization still pending (budget decision); macOS Gatekeeper and Windows SmartScreen warnings are documented in the README
+
+
+---
+
+
 # Git History
 
 

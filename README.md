@@ -12,6 +12,21 @@
 
 ## 快速开始
 
+### 普通用户（Windows / macOS）
+
+从 [Releases](https://github.com/zhangking4u/open-translator/releases) 下载安装包：
+
+- **Windows**：解压 `OpenTranslator-windows-x64.zip` → 右键 `install.ps1` →「使用 PowerShell 运行」。程序装入 `%LOCALAPPDATA%\Programs\OpenTranslator` 并加入开机启动。
+- **macOS**：打开 `OpenTranslator-macos-*.dmg`，把 `OpenTranslator.app` 拖入「应用程序」。首次打开如被 Gatekeeper 拦截，右键 →「打开」或在「系统设置 → 隐私与安全性」中允许（当前未签名）；使用取词功能还需在「辅助功能」中授权。
+
+首次运行会自动从 ModelScope 下载模型（约 1.1GB，带进度与断点续传）。之后任意应用选中文字按 `Ctrl+Alt+T` 即可翻译；托盘/菜单栏图标提供 显示窗口 / 立即翻译 / 退出。
+
+> 安装包由 CI 在打 tag 时生成（`git tag v0.1.0 && git push --tags` 即创建 Release）。
+
+### 开发 / 进阶用户
+
+按下面的步骤从源码运行（Linux 桌面目前走"核心服务 + GTK 弹窗"路径）。
+
 ### 0. 运行时与模型（Ollama）
 
 ```bash

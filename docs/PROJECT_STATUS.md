@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record first-run model download
+docs: record release packaging
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Phase C2: installers (NSIS/dmg/deb) and code signing (budget decision)
+1. Packaging verification: run the release workflow (`workflow_dispatch`) and inspect artifacts; tag a `v0.1.0` GitHub release
 
-2. Real-machine verification: Windows client (hotkey + Ctrl+C) and macOS client (Accessibility + Cmd+C)
+2. Code signing / notarization (budget decision)
 
-3. Sprint 5 meeting translation (parked)
+3. Real-machine verification: Windows client (hotkey + Ctrl+C) and macOS client (Accessibility + Cmd+C)
 
 
 ---
@@ -411,3 +411,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Phase B2: `EngineKind::LlamaCpp` in the service (`TRANSLATOR_MODEL_PATH`, `TRANSLATOR_N_CTX`); live-verified (kernel panic → 内核崩溃 in 0.26s, no Ollama)
 - Phase B3: desktop client embeds the engine (no Ollama, no service process) and serves the HTTP API in-process for the browser extension; verified with all services stopped
 - Phase C1: first-run model download (ModelScope + resume + SHA-256 + progress) in the desktop client; live-verified end to end (1.13 GB, then `/translate` 0.28s); normal startup stays hidden, and Esc/X quit where no tray/hotkey exists
+- Phase C2: release workflow produces a Windows zip installer and a macOS dmg (tag `v*` or manual dispatch); README has an ordinary-user download section; code signing/notarization still pending
