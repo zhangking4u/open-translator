@@ -1,7 +1,10 @@
 use std::io::Read;
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+mod services;
 
 const DEFAULT_SERVICE_URL: &str = "http://127.0.0.1:17890";
 
@@ -9,7 +12,8 @@ const HELP: &str = "\
 Usage: translator-popup [OPTIONS]
 
 Reads the Wayland primary selection (or clipboard), sends it to the local
-translator service and shows the translation.
+translator service and shows the translation. Starts ollama and the
+translator service automatically when they are not running.
 
 Options:
   -s, --source <LANG>   Source language tag (default: en)
@@ -19,7 +23,15 @@ Options:
       --print           Print the translation to stdout instead of a popup
       --service <URL>   Service base URL
                         (default: $TRANSLATOR_SERVICE_URL or http://127.0.0.1:17890)
+      --no-start        Do not auto-start services
   -h, --help            Show this help
+
+Auto-start configuration (environment):
+  TRANSLATOR_CORE_BIN    Path to the translator-service binary (default: derived
+                         from the popup location, core/translator-service/target/release)
+  TRANSLATOR_OLLAMA_BIN  Path to the ollama binary (default: ~/.local/opt/ollama/bin/ollama)
+  TRANSLATOR_MODEL       Model for the started service (default: hy-mt1.5-1.8b)
+  TRANSLATOR_PROMPT_STYLE  Prompt style (default: hymt)
 
 Selection reading uses wl-paste from the wl-clipboard package
 (Debian/Ubuntu: sudo apt install wl-clipboard).
@@ -32,6 +44,7 @@ struct Args {
     clipboard: bool,
     stdin: bool,
     print: bool,
+    no_start: bool,
     service_url: String,
 }
 
@@ -43,6 +56,7 @@ impl Default for Args {
             clipboard: false,
             stdin: false,
             print: false,
+            no_start: false,
             service_url: std::env::var("TRANSLATOR_SERVICE_URL")
                 .unwrap_or_else(|_| DEFAULT_SERVICE_URL.to_string()),
         }
@@ -74,6 +88,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--clipboard" => parsed.clipboard = true,
             "--stdin" => parsed.stdin = true,
             "--print" => parsed.print = true,
+            "--no-start" => parsed.no_start = true,
             other => return Err(format!("unknown argument: {other}")),
         }
     }
@@ -252,7 +267,18 @@ async fn main() {
         fail(&args, "No selected text found.");
     }
 
-    let client = reqwest::Client::new();
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => fail(&args, &format!("failed to create HTTP client: {error}")),
+    };
+
+    let service_config = services::ServiceConfig::from_env(&args.service_url, !args.no_start);
+    if let Err(error) = services::ensure(&client, &service_config).await {
+        fail(&args, &error);
+    }
 
     match translate(&client, &args, &text).await {
         Ok(translation) => {
@@ -293,6 +319,7 @@ mod tests {
             "--clipboard",
             "--stdin",
             "--print",
+            "--no-start",
             "--service",
             "http://127.0.0.1:9999/",
         ])
@@ -303,6 +330,7 @@ mod tests {
         assert!(parsed.clipboard);
         assert!(parsed.stdin);
         assert!(parsed.print);
+        assert!(parsed.no_start);
         assert_eq!(parsed.service_url, "http://127.0.0.1:9999/");
     }
 
