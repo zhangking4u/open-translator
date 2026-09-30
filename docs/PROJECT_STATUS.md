@@ -224,7 +224,7 @@ main
 
 Latest commit:
 
-docs: record gtk popup
+docs: record install script
 
 
 ---
@@ -247,11 +247,11 @@ Integrate a local translation model.
 ## 9. Next Steps
 
 
-1. Desktop Phase 1: portal-based hotkey, GTK popup, service startup checks
+1. Browser integration (Sprint 4): extension calling the local service
 
-2. Plan browser integration
+2. Plan meeting translation
 
-3. Plan meeting translation
+3. Portal-based hotkey (optional, replaces the install-script shortcut)
 
 
 ---
@@ -353,9 +353,10 @@ Completed:
 
 Pending:
 
-- Phase 1c: portal-based hotkey (ashpd) and removing the manual shortcut setup
+- Phase 1 complete; portal hotkey deferred (install script covers shortcut setup)
+- Sprint 4: browser integration
 
 
 Status:
 
-Phase 0 popup implemented, bound to a GNOME custom shortcut (Ctrl+Alt+T) and verified with a real selection (wl-clipboard). Phase 1a: the popup auto-starts ollama and the core service when they are down (cold start 2.7s). Phase 1b: GTK4 window with source/translation, copy button, loading and error states.
+Phase 0 popup implemented, bound to a GNOME custom shortcut (Ctrl+Alt+T) and verified with a real selection (wl-clipboard). Phase 1: service self-start (cold start 2.7s), GTK4 popup with copy/loading/error states, close-and-reopen on repeated hotkeys, and a one-command install script (`desktop/install.sh`).

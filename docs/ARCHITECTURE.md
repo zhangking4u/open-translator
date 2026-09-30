@@ -209,10 +209,10 @@ Completed:
 
 In Progress:
 
-- Desktop client polish (portal hotkey)
+- Browser integration (Sprint 4)
 
 
 Next:
 
-- Browser integration
+- Meeting translation
 

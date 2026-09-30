@@ -374,6 +374,25 @@ Note:
 ---
 
 
+## Milestone: Desktop Install Script
+
+
+Completed:
+
+- `desktop/install.sh`: builds both release binaries and registers/updates the GNOME custom shortcut (default `Ctrl+Alt+T`), with `--binding`, `--name`, `--uninstall` options
+- Idempotent: finds an existing shortcut with the same name and updates it in place, otherwise picks the first free `customN` slot
+- Warns about duplicate bindings and a missing `wl-paste`
+
+
+Verification:
+
+- Install updated the existing shortcut; `--uninstall` emptied the keybinding array and reset the schema; reinstall restored it
+- `bash -n` syntax check and `--help` output
+
+
+---
+
+
 # Git History
 
 
