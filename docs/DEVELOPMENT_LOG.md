@@ -1024,6 +1024,32 @@ Verification:
 ---
 
 
+## Milestone: Desktop UI Polish (State Machine + Modern Visuals)
+
+
+Completed:
+
+- `translator-core::languages` holds the shared language list + `label()` lookup; both clients dropped their duplicated tables
+- Windows/macOS client (`translator-popup-desktop`): `ModelState` (Downloading/Ready/Failed) and `TranslationState` (Idle/Empty/Waiting/Running/Done/Failed) replace the `status: String` + `error: bool` pair
+- Selections captured before the model is ready are queued (`Waiting`) and translated automatically on `StartupEvent::Ready` instead of being dropped
+- Frameless transparent window (520×420, not resizable) with a rounded card, drop shadow, custom draggable header and a light/dark theme following the system; no OS title bar
+- Body split into a dimmed source card and a prominent translation card; model download shows a spinner + progress bar; failures render an error card with a 重试 button; copy button shows 已复制 for 1.5 s
+- Update and notice banners (hotkey/tray/extension-server warnings) are dismissible; Ctrl+Enter re-translates, Ctrl+Shift+C copies the translation; × hides when a tray/hotkey can restore the window, otherwise quits
+- Linux/GNOME popup (`translator-popup`): same state machine with a CSS-styled card layout, spinner, download progress bar (pulse when the total is unknown), error card + 重新翻译 button, and 2 s copy feedback; Ctrl+Enter / Ctrl+Shift+C shortcuts; dismissible update banner; default window 560×380
+- Hotkey/extension-server failures no longer masquerade as model errors in the Windows/macOS client
+- Both clients size the window to the translation: it grows with the content up to 70% of the monitor height and only then scrolls, so short results shrink the window instead of leaving empty space (egui sends `ViewportCommand::InnerSize`; GTK uses `propagate_natural_height` + `max_content_height` and `set_default_size`)
+
+
+Verification:
+
+- `cargo test --locked` in `desktop/translator-core` (33 passed), `desktop/translator-popup` and `desktop/translator-popup-desktop` (hotkey parser tests) all green; `cargo check` clean for both UI crates
+- Adaptive height measured on the live GNOME/Wayland session (1920x1080, 70% cap = 756px): GTK window 333px for a short translation, 397px for the error card, 756px for a 1300-character translation; egui window 240px short and 752px long, with `ViewportCommand::InnerSize` confirmed via `content_rect`
+- egui visual rendering still needs a real Windows/macOS pass; the Linux run exercises the layout/state logic only (capture/hotkey/tray are stubs)
+
+
+---
+
+
 # Git History
 
 

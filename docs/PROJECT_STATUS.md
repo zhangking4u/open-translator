@@ -255,6 +255,8 @@ Status:
 
 3. (Done 2026-10-01) v0.1.0 re-released with the Linux deb and the startup update check (three assets); Windows real-machine re-verification passed (selection capture, CJK fonts, single instance)
 
+4. Real-machine visual pass of the redesigned desktop UIs (Windows/macOS); window geometry/position memory and an in-app settings panel are candidates for the next polish round
+
 
 ---
 
@@ -450,3 +452,14 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 
 - The original v0.1.0 release and tags were deleted and re-tagged at `fd18fc2` so the release includes the Linux deb and the startup update check; release run 36813116437 passed all package jobs
 - Assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`; notes cover Linux install, shortcut auto-registration, glibc/GTK baseline and the update check
+
+
+## Desktop UI Polish (2026-10-01)
+
+
+- `translator-core::languages` now owns the shared language list and `label()` lookup; both clients dropped their duplicated tables
+- Windows/macOS client: `ModelState` + `TranslationState` state machines replace the string status/error pair; selections made while the model is downloading are queued and translated automatically once it is ready
+- Windows/macOS client: frameless transparent rounded-card window (custom draggable header, system light/dark theme), dimmed source card + prominent translation card, model-download progress bar, error card with retry, 1.5 s copy feedback, dismissible update/notice banners, Ctrl+Enter re-translate and Ctrl+Shift+C copy
+- Linux/GNOME popup: the same state machine drives a CSS card layout with spinner, download progress bar, error card + retry, 2 s copy feedback and the same shortcuts
+- Both clients adapt the window height to the translation (cap: 70% of the monitor, then scroll), so long results no longer stay hidden behind a fixed scroll area and short results do not leave empty space
+- Pending: visual pass on Windows/macOS real hardware (the egui UI is compile-verified only on the Linux dev box)

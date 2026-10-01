@@ -265,7 +265,11 @@ fn main() {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title(format!("OpenTranslator ({} → {})", args.source, args.target))
-            .with_inner_size([560.0, 320.0])
+            .with_inner_size(app::WINDOW_SIZE)
+            .with_decorations(false)
+            .with_transparent(true)
+            .with_has_shadow(false)
+            .with_resizable(false)
             .with_visible(false),
         ..Default::default()
     };

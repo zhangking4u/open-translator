@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::time::{Duration, Instant};
 
 use eframe::egui;
 use translator_core::args::{Args, read_stdin};
+use translator_core::languages;
 use translator_core::settings::persist_target;
 use translator_core::update::ReleaseInfo;
 use translator_service::domain::prompt::PromptStyle;
@@ -14,16 +16,15 @@ use crate::capture;
 use crate::hotkey::Hotkey;
 use crate::tray::{Tray, TrayCommand};
 
-pub const LANGUAGES: &[(&str, &str)] = &[
-    ("zh", "中文"),
-    ("en", "英语"),
-    ("ja", "日语"),
-    ("ko", "韩语"),
-    ("fr", "法语"),
-    ("de", "德语"),
-    ("es", "西班牙语"),
-    ("ru", "俄语"),
-];
+pub const WINDOW_SIZE: [f32; 2] = [520.0, 420.0];
+const WINDOW_WIDTH: f32 = WINDOW_SIZE[0];
+const MIN_WINDOW_HEIGHT: f32 = 240.0;
+const MAX_WINDOW_FRACTION: f32 = 0.7;
+const CARD_CHROME: f32 = 60.0;
+const FOOTER_SPACE: f32 = 44.0;
+const ACCENT: egui::Color32 = egui::Color32::from_rgb(79, 124, 255);
+const CARD_RADIUS: u8 = 16;
+const COPIED_FEEDBACK: Duration = Duration::from_millis(1500);
 
 #[derive(Clone)]
 pub struct ServerPlan {
@@ -52,21 +53,59 @@ enum Progress {
     Error(String),
 }
 
+/// Progress and health of the embedded model, independent from translation.
+enum ModelState {
+    Downloading { downloaded: u64, total: Option<u64> },
+    Ready,
+    Failed(String),
+}
+
+/// Lifecycle of the current selection translation.
+enum TranslationState {
+    Idle,
+    Empty,
+    Waiting { text: String },
+    Running { text: String, started: Instant },
+    Done {
+        text: String,
+        translation: String,
+        elapsed: Duration,
+    },
+    Failed {
+        text: String,
+        message: String,
+    },
+}
+
+#[derive(Default)]
+struct Actions {
+    close_window: bool,
+    quit: bool,
+    retranslate: bool,
+    copy: Option<String>,
+    dismiss_update: bool,
+    dismiss_notice: bool,
+    open_url: Option<String>,
+}
+
 pub struct PopupApp {
     args: Args,
     engine: Option<Arc<LlamaCppEngine>>,
     startup_receiver: Option<Receiver<StartupEvent>>,
     server_plan: Option<ServerPlan>,
     server_started: bool,
-    source_text: String,
-    translation: String,
-    status: String,
-    error: bool,
+    model: ModelState,
+    translation: TranslationState,
     target: String,
     receiver: Option<Receiver<Progress>>,
     update: Option<ReleaseInfo>,
     update_receiver: Option<Receiver<ReleaseInfo>>,
+    update_dismissed: bool,
+    copied_at: Option<Instant>,
+    notice: Option<String>,
+    requested_height: Option<f32>,
     hotkey: Option<Hotkey>,
+    hotkey_label: String,
     tray: Option<Tray>,
     quit: bool,
 }
@@ -133,6 +172,78 @@ fn install_cjk_font(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
+fn configure_style(ctx: &egui::Context) {
+    ctx.set_theme(egui::ThemePreference::System);
+
+    ctx.style_mut_of(egui::Theme::Dark, |style| tune_style(style, true));
+    ctx.style_mut_of(egui::Theme::Light, |style| tune_style(style, false));
+}
+
+fn tune_style(style: &mut egui::Style, dark: bool) {
+    style.spacing.item_spacing = egui::vec2(8.0, 10.0);
+    style.spacing.button_padding = egui::vec2(12.0, 6.0);
+    style.spacing.interact_size.y = 30.0;
+    style.spacing.menu_margin = egui::Margin::same(6);
+
+    style.visuals.window_corner_radius = egui::CornerRadius::same(CARD_RADIUS);
+    style.visuals.menu_corner_radius = egui::CornerRadius::same(10);
+    style.visuals.selection.bg_fill = ACCENT.gamma_multiply(0.35);
+    style.visuals.hyperlink_color = ACCENT;
+    style.visuals.button_frame = true;
+
+    let widgets = &mut style.visuals.widgets;
+    widgets.noninteractive.corner_radius = egui::CornerRadius::same(8);
+    widgets.inactive.corner_radius = egui::CornerRadius::same(8);
+    widgets.hovered.corner_radius = egui::CornerRadius::same(8);
+    widgets.active.corner_radius = egui::CornerRadius::same(8);
+    widgets.open.corner_radius = egui::CornerRadius::same(8);
+
+    if dark {
+        style.visuals.panel_fill = egui::Color32::from_rgb(0x15, 0x17, 0x1B);
+        style.visuals.window_fill = egui::Color32::from_rgb(0x1E, 0x21, 0x27);
+        style.visuals.faint_bg_color = egui::Color32::from_rgb(0x26, 0x2A, 0x31);
+        style.visuals.extreme_bg_color = egui::Color32::from_rgb(0x12, 0x14, 0x17);
+        style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(0x2E, 0x33, 0x3C);
+        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0x33, 0x39, 0x44);
+        style.visuals.widgets.active.bg_fill = ACCENT.gamma_multiply(0.85);
+        style.visuals.widgets.active.weak_bg_fill = ACCENT.gamma_multiply(0.85);
+        style.visuals.window_stroke =
+            egui::Stroke::new(1.0, egui::Color32::from_white_alpha(18));
+    } else {
+        style.visuals.panel_fill = egui::Color32::from_rgb(0xF3, 0xF4, 0xF6);
+        style.visuals.window_fill = egui::Color32::WHITE;
+        style.visuals.faint_bg_color = egui::Color32::from_rgb(0xF3, 0xF4, 0xF7);
+        style.visuals.extreme_bg_color = egui::Color32::from_rgb(0xEC, 0xEE, 0xF1);
+        style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(0xE9, 0xEC, 0xF1);
+        style.visuals.window_stroke =
+            egui::Stroke::new(1.0, egui::Color32::from_black_alpha(22));
+    }
+}
+
+fn card_frame(ui: &egui::Ui) -> egui::Frame {
+    let visuals = ui.visuals();
+
+    egui::Frame::new()
+        .fill(visuals.window_fill)
+        .stroke(visuals.window_stroke)
+        .corner_radius(CARD_RADIUS)
+        .inner_margin(egui::Margin::same(16))
+        .outer_margin(egui::Margin::same(14))
+        .shadow(egui::epaint::Shadow {
+            offset: [0, 6],
+            blur: 20,
+            spread: 0,
+            color: egui::Color32::from_black_alpha(if visuals.dark_mode { 110 } else { 40 }),
+        })
+}
+
+fn max_window_height(ctx: &egui::Context) -> f32 {
+    ctx.input(|input| input.viewport().monitor_size)
+        .map(|size| size.y * MAX_WINDOW_FRACTION)
+        .unwrap_or(760.0)
+        .max(MIN_WINDOW_HEIGHT)
+}
+
 impl PopupApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
@@ -143,6 +254,7 @@ impl PopupApp {
         check_updates: bool,
     ) -> Self {
         install_cjk_font(&cc.egui_ctx);
+        configure_style(&cc.egui_ctx);
 
         let mut app = Self {
             target: args.target.clone(),
@@ -151,14 +263,17 @@ impl PopupApp {
             startup_receiver: None,
             server_plan,
             server_started: false,
-            source_text: String::new(),
-            translation: String::new(),
-            status: String::new(),
-            error: false,
+            model: ModelState::Ready,
+            translation: TranslationState::Idle,
             receiver: None,
             update: None,
             update_receiver: None,
+            update_dismissed: false,
+            copied_at: None,
+            notice: None,
+            requested_height: None,
             hotkey: None,
+            hotkey_label: hotkey_spec.to_string(),
             tray: None,
             quit: false,
         };
@@ -177,7 +292,7 @@ impl PopupApp {
                 app.maybe_start_server();
             }
             Startup::Loaded(Err(error)) => {
-                app.show_error(&format!("模型加载失败：{error}"));
+                app.model = ModelState::Failed(format!("模型加载失败：{error}"));
                 show_on_start = true;
             }
             Startup::Download {
@@ -188,7 +303,10 @@ impl PopupApp {
             } => {
                 let (sender, receiver) = channel();
                 app.startup_receiver = Some(receiver);
-                app.status = "正在下载模型…".to_string();
+                app.model = ModelState::Downloading {
+                    downloaded: 0,
+                    total: None,
+                };
                 spawn_startup(dest, url, sha256, prompt_style, sender);
                 show_on_start = true;
             }
@@ -196,18 +314,14 @@ impl PopupApp {
 
         match Hotkey::register(hotkey_spec) {
             Ok(hotkey) => app.hotkey = Some(hotkey),
-            Err(error) => {
-                if !app.error {
-                    app.show_error(&error);
-                }
-            }
+            Err(error) => app.notice = Some(error),
         }
 
         match Tray::new(&format!("OpenTranslator（{hotkey_spec}）")) {
             Ok(tray) => app.tray = Some(tray),
             Err(error) => {
-                if !app.error {
-                    app.show_error(&error);
+                if app.notice.is_none() {
+                    app.notice = Some(error);
                 }
             }
         }
@@ -233,28 +347,37 @@ impl PopupApp {
 
     fn trigger(&mut self) {
         match capture::capture_selection() {
+            Ok(text) if text.trim().is_empty() => {
+                self.receiver = None;
+                self.translation = TranslationState::Empty;
+            }
             Ok(text) => self.begin_translation(text),
-            Err(error) => self.show_error(&error),
+            Err(error) => {
+                self.receiver = None;
+                self.translation = TranslationState::Failed {
+                    text: String::new(),
+                    message: error,
+                };
+            }
         }
     }
 
     fn begin_translation(&mut self, text: String) {
         let Some(engine) = self.engine.clone() else {
-            self.source_text = text;
-            self.translation.clear();
-
-            if !self.status.starts_with("正在下载模型") {
-                self.status = "模型尚未就绪，请稍候…".to_string();
-                self.error = false;
-            }
-
+            self.translation = match &self.model {
+                ModelState::Failed(message) => TranslationState::Failed {
+                    text: String::new(),
+                    message: message.clone(),
+                },
+                _ => TranslationState::Waiting { text },
+            };
             return;
         };
 
-        self.source_text = text.clone();
-        self.translation.clear();
-        self.status = "翻译中…".to_string();
-        self.error = false;
+        self.translation = TranslationState::Running {
+            text: text.clone(),
+            started: Instant::now(),
+        };
 
         let (sender, receiver) = channel();
         self.receiver = Some(receiver);
@@ -268,13 +391,50 @@ impl PopupApp {
         );
     }
 
-    fn show_error(&mut self, message: &str) {
-        self.status = message.to_string();
-        self.error = true;
+    fn retranslate(&mut self) {
+        let text = match &self.translation {
+            TranslationState::Done { text, .. } => Some(text.clone()),
+            TranslationState::Failed { text, .. } if !text.is_empty() => Some(text.clone()),
+            _ => None,
+        };
+
+        if let Some(text) = text {
+            self.begin_translation(text);
+        }
+    }
+
+    fn can_retranslate(&self) -> bool {
+        match &self.translation {
+            TranslationState::Done { .. } => true,
+            TranslationState::Failed { text, .. } => !text.is_empty(),
+            _ => false,
+        }
+    }
+
+    fn change_target(&mut self, target: String) {
+        if self.target == target {
+            return;
+        }
+
+        self.target = target.clone();
+        persist_target(&target);
+
+        if self.last_text().is_some() {
+            self.retranslate();
+        }
     }
 
     fn hide(&mut self, ctx: &egui::Context) {
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+    }
+
+    fn close_window(&mut self, ctx: &egui::Context) {
+        if self.can_restore() {
+            self.hide(ctx);
+        } else {
+            self.quit = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
     }
 
     fn maybe_start_server(&mut self) {
@@ -289,13 +449,10 @@ impl PopupApp {
         match crate::server::start(engine, plan.bind_addr, plan.model_name) {
             Ok(()) => self.server_started = true,
             Err(crate::server::ServerError::AddrInUse(address)) => {
-                self.status = format!("扩展服务未启动：{address} 已被其他服务占用");
-                self.error = false;
+                self.notice = Some(format!("扩展服务未启动：{address} 已被其他服务占用"));
             }
             Err(error) => {
-                if !self.error {
-                    self.show_error(&format!("扩展服务启动失败：{error}"));
-                }
+                self.notice = Some(format!("扩展服务启动失败：{error}"));
             }
         }
     }
@@ -305,12 +462,84 @@ impl PopupApp {
             || (self.tray.is_some() && Tray::is_supported())
     }
 
+    fn tray_active(&self) -> bool {
+        self.tray.is_some() && Tray::is_supported()
+    }
+
     fn title(&self) -> String {
         format!("OpenTranslator ({} → {})", self.args.source, self.target)
+    }
+
+    fn source_text(&self) -> Option<&str> {
+        match &self.translation {
+            TranslationState::Idle | TranslationState::Empty => None,
+            TranslationState::Waiting { text }
+            | TranslationState::Running { text, .. }
+            | TranslationState::Done { text, .. }
+            | TranslationState::Failed { text, .. } => {
+                if text.is_empty() {
+                    None
+                } else {
+                    Some(text)
+                }
+            }
+        }
+    }
+
+    fn last_text(&self) -> Option<&str> {
+        match &self.translation {
+            TranslationState::Waiting { text }
+            | TranslationState::Running { text, .. }
+            | TranslationState::Done { text, .. }
+            | TranslationState::Failed { text, .. } => {
+                if text.is_empty() {
+                    None
+                } else {
+                    Some(text)
+                }
+            }
+            TranslationState::Idle | TranslationState::Empty => None,
+        }
+    }
+
+    fn translation_text(&self) -> Option<&str> {
+        match &self.translation {
+            TranslationState::Done { translation, .. } if !translation.is_empty() => {
+                Some(translation)
+            }
+            _ => None,
+        }
+    }
+
+    fn status_text(&self) -> Option<String> {
+        match &self.translation {
+            TranslationState::Waiting { .. } => Some("模型准备中，就绪后自动翻译".to_string()),
+            TranslationState::Running { text, .. } => {
+                Some(format!("翻译中… {} 字符", text.chars().count()))
+            }
+            TranslationState::Done {
+                text, elapsed, ..
+            } => Some(format!(
+                "{} 字符 · {:.0} ms",
+                text.chars().count(),
+                elapsed.as_secs_f64() * 1000.0
+            )),
+            _ => None,
+        }
+    }
+
+    fn copied_recently(&self) -> bool {
+        self.copied_at
+            .map(|at| at.elapsed() < COPIED_FEEDBACK)
+            .unwrap_or(false)
     }
 }
 
 impl eframe::App for PopupApp {
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        egui::Rgba::TRANSPARENT.to_array()
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let hotkey_pressed = self
             .hotkey
@@ -369,11 +598,28 @@ impl eframe::App for PopupApp {
         for message in messages {
             match message {
                 Progress::Done(translation) => {
-                    self.translation = translation;
-                    self.status.clear();
-                    self.error = false;
+                    let (text, elapsed) = match &self.translation {
+                        TranslationState::Running { text, started } => {
+                            (text.clone(), started.elapsed())
+                        }
+                        TranslationState::Waiting { text } => (text.clone(), Duration::ZERO),
+                        _ => (String::new(), Duration::ZERO),
+                    };
+
+                    self.translation = TranslationState::Done {
+                        text,
+                        translation,
+                        elapsed,
+                    };
                 }
-                Progress::Error(error) => self.show_error(&error),
+                Progress::Error(error) => {
+                    let text = self.last_text().unwrap_or_default().to_string();
+                    let retryable = !text.is_empty();
+                    self.translation = TranslationState::Failed {
+                        text: if retryable { text } else { String::new() },
+                        message: error,
+                    };
+                }
             }
         }
 
@@ -386,17 +632,22 @@ impl eframe::App for PopupApp {
         for message in startup_messages {
             match message {
                 StartupEvent::Progress { downloaded, total } => {
-                    self.error = false;
-                    self.status =
-                        translator_core::models::format_download_status(downloaded, total);
+                    self.model = ModelState::Downloading { downloaded, total };
                 }
                 StartupEvent::Ready(engine) => {
                     self.engine = Some(engine);
-                    self.status.clear();
-                    self.error = false;
+                    self.model = ModelState::Ready;
                     self.maybe_start_server();
+
+                    if let TranslationState::Waiting { text } =
+                        std::mem::replace(&mut self.translation, TranslationState::Idle)
+                    {
+                        self.begin_translation(text);
+                    }
                 }
-                StartupEvent::Failed(error) => self.show_error(&error),
+                StartupEvent::Failed(error) => {
+                    self.model = ModelState::Failed(error);
+                }
             }
         }
 
@@ -410,122 +661,474 @@ impl eframe::App for PopupApp {
         }
 
         if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-            if self.can_restore() {
-                self.hide(ctx);
-            } else {
-                self.quit = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.close_window(ctx);
+        }
+
+        if ctx.input(|input| {
+            input.modifiers.command && input.key_pressed(egui::Key::Enter)
+        }) {
+            self.retranslate();
+        }
+
+        if ctx.input(|input| {
+            input.modifiers.command
+                && input.modifiers.shift
+                && input.key_pressed(egui::Key::C)
+        }) {
+            if let Some(text) = self.translation_text().map(str::to_string) {
+                ctx.copy_text(text);
+                self.copied_at = Some(Instant::now());
             }
         }
 
         // Keep polling while the window is hidden (hotkey events arrive via `logic`).
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        ctx.request_repaint_after(Duration::from_millis(100));
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let mut change_target: Option<String> = None;
-        let mut copy: Option<String> = None;
-        let mut hide = false;
-        let mut quit = false;
-
-        egui::CentralPanel::default().show(ui, |ui| {
-            if let Some(info) = self.update.clone() {
-                ui.horizontal(|ui| {
-                    ui.label(format!("有新版本 v{}", info.version));
-
-                    if ui.button("查看下载").clicked() {
-                        open_url(&info.url);
-                    }
-                });
-
-                ui.separator();
-            }
-
-            ui.horizontal(|ui| {
-                ui.label("目标语言");
-
-                let selected = target_label(&self.target).to_string();
-                egui::ComboBox::from_id_salt("target")
-                    .selected_text(selected)
-                    .show_ui(ui, |ui| {
-                        for (code, name) in LANGUAGES {
-                            let is_selected = self.target == *code;
-                            if ui.selectable_label(is_selected, *name).clicked() && !is_selected {
-                                change_target = Some((*code).to_string());
-                            }
-                        }
-                    });
-            });
-
-            ui.separator();
-
-            ui.add(
-                egui::Label::new(egui::RichText::new(&self.source_text).weak()).selectable(false),
-            );
-
-            ui.separator();
-
-            let text = if !self.translation.is_empty() {
-                egui::RichText::new(&self.translation)
-            } else if self.error {
-                egui::RichText::new(&self.status).color(egui::Color32::RED)
-            } else if !self.status.is_empty() {
-                egui::RichText::new(&self.status).weak()
-            } else {
-                egui::RichText::new("等待划词…").weak()
-            };
-
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.add(egui::Label::new(text).selectable(true).wrap());
-            });
-
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                if ui.button("复制").clicked() && !self.translation.is_empty() {
-                    copy = Some(self.translation.clone());
-                }
-                if ui.button("隐藏").clicked() {
-                    hide = true;
-                }
-                if ui.button("退出").clicked() {
-                    quit = true;
-                }
-            });
-        });
-
         let ctx = ui.ctx().clone();
+        let mut actions = Actions::default();
+        let mut change_target: Option<String> = None;
+        let max_window_height = max_window_height(&ctx);
+        let mut content_height = 0.0_f32;
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(egui::Color32::TRANSPARENT))
+            .show(ui, |ui| {
+                card_frame(ui).show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
+
+                    change_target = self.header(ui, &ctx, &mut actions);
+                    self.banners(ui, &mut actions);
+                    content_height = self.body(ui, &mut actions, max_window_height);
+                });
+            });
+
+        let desired_height = (content_height + CARD_CHROME)
+            .clamp(MIN_WINDOW_HEIGHT, max_window_height);
+
+        if (desired_height - self.requested_height.unwrap_or(-1.0)).abs() > 2.0 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                WINDOW_WIDTH,
+                desired_height,
+            )));
+            self.requested_height = Some(desired_height);
+        }
 
         if let Some(target) = change_target {
-            self.target = target;
-            persist_target(&self.target);
+            self.change_target(target);
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
-
-            if !self.source_text.is_empty() {
-                let text = self.source_text.clone();
-                self.begin_translation(text);
-            }
         }
 
-        if let Some(text) = copy {
+        if actions.retranslate {
+            self.retranslate();
+        }
+
+        if let Some(text) = actions.copy {
             ctx.copy_text(text);
+            self.copied_at = Some(Instant::now());
         }
-        if hide {
-            self.hide(&ctx);
+
+        if actions.dismiss_update {
+            self.update_dismissed = true;
         }
-        if quit {
+
+        if actions.dismiss_notice {
+            self.notice = None;
+        }
+
+        if let Some(url) = actions.open_url {
+            open_url(&url);
+        }
+
+        if actions.close_window {
+            self.close_window(&ctx);
+        }
+
+        if actions.quit {
             self.quit = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
 }
 
-fn target_label(target: &str) -> &str {
-    LANGUAGES
-        .iter()
-        .find(|(code, _)| *code == target)
-        .map(|(_, name)| *name)
-        .unwrap_or(target)
+impl PopupApp {
+    fn header(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        actions: &mut Actions,
+    ) -> Option<String> {
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), 34.0),
+            egui::Sense::drag(),
+        );
+
+        if response.drag_started() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
+
+        let mut change_target = None;
+
+        let mut header = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        header.spacing_mut().item_spacing.x = 8.0;
+
+        header.label(
+            egui::RichText::new("●")
+                .size(11.0)
+                .color(self.status_color()),
+        );
+        header.label(egui::RichText::new("OpenTranslator").strong().size(15.0));
+        header.label(
+            egui::RichText::new(format!("{} →", self.args.source))
+                .weak()
+                .size(12.0),
+        );
+
+        let selected = languages::label(&self.target).to_string();
+        egui::ComboBox::from_id_salt("target_lang")
+            .selected_text(egui::RichText::new(selected).size(13.0))
+            .width(104.0)
+            .show_ui(&mut header, |ui| {
+                for (code, name) in languages::LANGUAGES {
+                    let is_selected = self.target == *code;
+                    if ui.selectable_label(is_selected, *name).clicked() && !is_selected {
+                        change_target = Some((*code).to_string());
+                    }
+                }
+            });
+
+        header.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let close = ui.add(
+                egui::Button::new(egui::RichText::new("×").size(17.0).weak())
+                    .frame(false)
+                    .min_size(egui::vec2(26.0, 26.0)),
+            );
+
+            if close.on_hover_text("隐藏").clicked() {
+                actions.close_window = true;
+            }
+        });
+
+        change_target
+    }
+
+    fn status_color(&self) -> egui::Color32 {
+        match &self.model {
+            ModelState::Failed(_) => egui::Color32::from_rgb(0xE0, 0x5A, 0x5A),
+            ModelState::Downloading { .. } => egui::Color32::from_rgb(0xE0, 0xA5, 0x3C),
+            ModelState::Ready => match &self.translation {
+                TranslationState::Failed { .. } => egui::Color32::from_rgb(0xE0, 0x5A, 0x5A),
+                TranslationState::Running { .. } | TranslationState::Waiting { .. } => ACCENT,
+                _ => egui::Color32::from_rgb(0x3D, 0xB5, 0x7A),
+            },
+        }
+    }
+
+    fn banners(&self, ui: &mut egui::Ui, actions: &mut Actions) {
+        if let Some(notice) = &self.notice {
+            egui::Frame::new()
+                .fill(ui.visuals().warn_fg_color.gamma_multiply(0.12))
+                .corner_radius(10)
+                .inner_margin(egui::Margin::symmetric(12, 6))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(notice).size(12.5))
+                                .wrap(),
+                        );
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("忽略").clicked() {
+                                actions.dismiss_notice = true;
+                            }
+                        });
+                    });
+                });
+
+            ui.add_space(4.0);
+        }
+
+        if self.update_dismissed {
+            return;
+        }
+
+        let Some(info) = self.update.clone() else {
+            return;
+        };
+
+        egui::Frame::new()
+            .fill(ACCENT.gamma_multiply(0.14))
+            .corner_radius(10)
+            .inner_margin(egui::Margin::symmetric(12, 6))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("发现新版本 v{}", info.version))
+                            .strong()
+                            .size(13.0),
+                    );
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("忽略").clicked() {
+                            actions.dismiss_update = true;
+                        }
+
+                        if ui.small_button("查看").clicked() {
+                            actions.open_url = Some(info.url.clone());
+                        }
+                    });
+                });
+            });
+
+        ui.add_space(4.0);
+    }
+
+    fn body(&mut self, ui: &mut egui::Ui, actions: &mut Actions, max_window_height: f32) -> f32 {
+        let source = self.source_text().map(str::to_string);
+
+        if let Some(source) = source {
+            egui::Frame::new()
+                .fill(ui.visuals().faint_bg_color)
+                .corner_radius(10)
+                .inner_margin(egui::Margin::symmetric(12, 8))
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("source_scroll")
+                        .max_height(56.0)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(source).weak().size(13.0),
+                                )
+                                .selectable(false)
+                                .wrap(),
+                            );
+                        });
+                });
+
+            ui.add_space(6.0);
+        }
+
+        let above = ui.min_rect().height();
+        let translation_max =
+            (max_window_height - CARD_CHROME - above - FOOTER_SPACE).max(96.0);
+
+        let mut translation_height = 0.0_f32;
+
+        egui::ScrollArea::vertical()
+            .id_salt("translation_scroll")
+            .auto_shrink([false, true])
+            .max_height(translation_max)
+            .show(ui, |ui| {
+                self.translation_area(ui, actions);
+                translation_height = ui.min_rect().height();
+            });
+
+        let translation_height = translation_height.min(translation_max);
+
+        ui.add_space(6.0);
+        let footer_top = ui.min_rect().height();
+        self.footer(ui, actions);
+        let footer_height = ui.min_rect().height() - footer_top;
+
+        above + translation_height + 6.0 + footer_height
+    }
+
+    fn translation_area(&mut self, ui: &mut egui::Ui, actions: &mut Actions) {
+        match &self.translation {
+            TranslationState::Done { translation, .. } => {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(translation).size(17.0).line_height(Some(24.0)),
+                    )
+                    .selectable(true)
+                    .wrap(),
+                );
+            }
+            TranslationState::Running { .. } => {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(18.0);
+                    ui.spinner();
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("翻译中…").weak());
+                });
+            }
+            TranslationState::Failed { text, message } => {
+                self.error_card(ui, message, !text.is_empty(), actions);
+            }
+            TranslationState::Waiting { .. }
+            | TranslationState::Idle
+            | TranslationState::Empty => match &self.model {
+                ModelState::Downloading { downloaded, total } => {
+                    self.download_card(ui, *downloaded, *total);
+                }
+                ModelState::Failed(message) => {
+                    let message = message.clone();
+                    self.error_card(ui, &message, false, actions);
+                }
+                ModelState::Ready => match &self.translation {
+                    TranslationState::Empty => {
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(18.0);
+                            ui.label(egui::RichText::new("未选中文本").size(15.0));
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new("请在其它应用中选中要翻译的内容")
+                                    .weak()
+                                    .size(12.0),
+                            );
+                        });
+                    }
+                    _ => {
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(18.0);
+                            ui.label(egui::RichText::new("等待划词").size(15.0).weak());
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "按 {} 翻译选中文本",
+                                    self.hotkey_label
+                                ))
+                                .weak()
+                                .size(12.0),
+                            );
+                        });
+                    }
+                },
+            },
+        }
+    }
+
+    fn download_card(&self, ui: &mut egui::Ui, downloaded: u64, total: Option<u64>) {
+        const MB: f64 = 1_000_000.0;
+
+        ui.vertical_centered(|ui| {
+            ui.add_space(12.0);
+            ui.spinner();
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new("正在下载模型").strong().size(14.0));
+            ui.add_space(4.0);
+
+            match total.filter(|total| *total > 0) {
+                Some(total) => {
+                    let fraction = (downloaded as f32 / total as f32).clamp(0.0, 1.0);
+                    ui.add(
+                        egui::ProgressBar::new(fraction)
+                            .show_percentage()
+                            .animate(true)
+                            .desired_width(ui.available_width().min(320.0)),
+                    );
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{:.0} / {:.0} MB · 完成后自动翻译",
+                            downloaded as f64 / MB,
+                            total as f64 / MB
+                        ))
+                        .weak()
+                        .size(12.0),
+                    );
+                }
+                None => {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "已下载 {:.0} MB · 完成后自动翻译",
+                            downloaded as f64 / MB
+                        ))
+                        .weak()
+                        .size(12.0),
+                    );
+                }
+            }
+        });
+    }
+
+    fn error_card(
+        &self,
+        ui: &mut egui::Ui,
+        message: &str,
+        retryable: bool,
+        actions: &mut Actions,
+    ) {
+        egui::Frame::new()
+            .fill(ui.visuals().error_fg_color.gamma_multiply(0.12))
+            .corner_radius(10)
+            .inner_margin(egui::Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new("出错了")
+                        .strong()
+                        .size(13.0)
+                        .color(ui.visuals().error_fg_color),
+                );
+                ui.add_space(2.0);
+                ui.label(egui::RichText::new(message).size(13.0));
+
+                if retryable {
+                    ui.add_space(6.0);
+
+                    if ui.button("重试").clicked() {
+                        actions.retranslate = true;
+                    }
+                }
+            });
+    }
+
+    fn footer(&mut self, ui: &mut egui::Ui, actions: &mut Actions) {
+        ui.add_space(4.0);
+
+        ui.horizontal(|ui| {
+            if let Some(status) = self.status_text() {
+                ui.label(egui::RichText::new(status).weak().size(12.0));
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let copied = self.copied_recently();
+                let enabled = self.translation_text().is_some();
+
+                let label = if copied { "已复制 ✓" } else { "复制译文" };
+                let copy = egui::Button::new(egui::RichText::new(label).size(13.0).color(
+                    if enabled {
+                        egui::Color32::WHITE
+                    } else {
+                        ui.visuals().weak_text_color()
+                    },
+                ))
+                .fill(if enabled {
+                    ACCENT
+                } else {
+                    ui.visuals().faint_bg_color
+                });
+
+                if ui.add_enabled(enabled, copy).clicked() {
+                    actions.copy = self.translation_text().map(str::to_string);
+                }
+
+                if self.can_retranslate()
+                    && ui
+                        .add(egui::Button::new(
+                            egui::RichText::new("重新翻译").size(13.0),
+                        ))
+                        .clicked()
+                {
+                    actions.retranslate = true;
+                }
+
+                if !self.tray_active()
+                    && ui
+                        .add(egui::Button::new(egui::RichText::new("退出").size(13.0)))
+                        .clicked()
+                {
+                    actions.quit = true;
+                }
+            });
+        });
+    }
 }
 
 fn spawn_startup(
@@ -636,16 +1239,4 @@ fn spawn_worker(
             Err(error) => sender.send(Progress::Error(error.to_string())),
         };
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maps_known_target_labels() {
-        assert_eq!(target_label("zh"), "中文");
-        assert_eq!(target_label("ja"), "日语");
-        assert_eq!(target_label("xx"), "xx");
-    }
 }
