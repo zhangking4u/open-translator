@@ -16,7 +16,9 @@ use translator_core::args::{Args, read_stdin};
 use translator_core::detect;
 use translator_core::languages;
 use translator_core::services::{self, ServiceConfig};
-use translator_core::settings::{load_config, persist_source, persist_target};
+use translator_core::settings::{
+    load_config, persist_recent_targets, persist_source, persist_target,
+};
 use translator_core::translate;
 use translator_core::update::{self, ReleaseInfo};
 
@@ -364,6 +366,11 @@ struct Ui {
     state: Rc<RefCell<TranslationState>>,
     source: RefCell<String>,
     target: RefCell<String>,
+    detected_source: RefCell<Option<&'static str>>,
+    recent_targets: RefCell<Vec<String>>,
+    source_combo: ComboBoxText,
+    target_combo: ComboBoxText,
+    swap_button: Button,
     args: Args,
     mode: Mode,
 }
@@ -516,8 +523,12 @@ fn build_ui(
     scroll_controller.connect_scroll(|_, _, _| glib::Propagation::Stop);
     language_combo.add_controller(scroll_controller);
 
-    let arrow = Label::new(Some("→"));
-    arrow.add_css_class("ot-dim");
+    let swap_button = Button::from_icon_name("object-flip-horizontal-symbolic");
+    swap_button.set_tooltip_text(Some("互换源语言与目标语言"));
+    swap_button.add_css_class("flat");
+    swap_button.set_sensitive(
+        args.source != languages::AUTO_CODE && args.source != args.target,
+    );
 
     let language_box = GtkBox::new(Orientation::Horizontal, 6);
     let spacer = GtkBox::new(Orientation::Horizontal, 0);
@@ -526,7 +537,7 @@ fn build_ui(
     language_box.append(&source_caption);
     language_box.append(&source_combo);
     language_box.append(&source_hint);
-    language_box.append(&arrow);
+    language_box.append(&swap_button);
     language_box.append(&target_caption);
     language_box.append(&language_combo);
 
@@ -751,70 +762,32 @@ fn build_ui(
 
     source_combo.connect_changed({
         let state = state.clone();
-        let window = window.clone();
 
         move |combo| {
             let Some(source) = combo.active_id() else {
                 return;
             };
-            let source = source.to_string();
 
-            let (source_text, target) = {
-                let slot = state.borrow();
-                let Some(ui) = slot.as_ref() else {
-                    return;
-                };
-                ui.source.replace(source.clone());
-                (ui.source_text(), ui.target.borrow().clone())
-            };
-
-            persist_source(&source);
-            window.set_title(Some(&format!(
-                "OpenTranslator ({} → {})",
-                languages::source_label(&source),
-                languages::label(&target)
-            )));
-
-            if source_text.is_empty() {
-                refresh(&state);
-            } else {
-                begin_translation(&state, source_text);
-            }
+            change_source(&state, source.to_string());
         }
     });
 
     language_combo.connect_changed({
         let state = state.clone();
-        let window = window.clone();
 
         move |combo| {
             let Some(target) = combo.active_id() else {
                 return;
             };
-            let target = target.to_string();
 
-            let (source_text, source) = {
-                let slot = state.borrow();
-                let Some(ui) = slot.as_ref() else {
-                    return;
-                };
-                ui.target.replace(target.clone());
-                (ui.source_text(), ui.source.borrow().clone())
-            };
-
-            persist_target(&target);
-            window.set_title(Some(&format!(
-                "OpenTranslator ({} → {})",
-                languages::source_label(&source),
-                languages::label(&target)
-            )));
-
-            if source_text.is_empty() {
-                refresh(&state);
-            } else {
-                begin_translation(&state, source_text);
-            }
+            change_target(&state, target.to_string());
         }
+    });
+
+    swap_button.connect_clicked({
+        let state = state.clone();
+
+        move |_| swap_languages(&state)
     });
 
     let key_controller = EventControllerKey::new();
@@ -843,6 +816,27 @@ fn build_ui(
                     window.clipboard().set_text(&text);
                 }
                 glib::Propagation::Stop
+            } else if modifiers.contains(control)
+                && !modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK)
+                && !modifiers.contains(gtk::gdk::ModifierType::ALT_MASK)
+            {
+                let index = if key == gtk::gdk::Key::_1 {
+                    Some(0)
+                } else if key == gtk::gdk::Key::_2 {
+                    Some(1)
+                } else if key == gtk::gdk::Key::_3 {
+                    Some(2)
+                } else {
+                    None
+                };
+
+                match index {
+                    Some(index) => {
+                        select_recent_target(&state, index);
+                        glib::Propagation::Stop
+                    }
+                    None => glib::Propagation::Proceed,
+                }
             } else {
                 glib::Propagation::Proceed
             }
@@ -909,6 +903,14 @@ fn build_ui(
         state: translated,
         source: RefCell::new(args.source.clone()),
         target: RefCell::new(args.target.clone()),
+        detected_source: RefCell::new(None),
+        recent_targets: RefCell::new(languages::recent_target_list(
+            &args.recent_targets,
+            &args.target,
+        )),
+        source_combo: source_combo.clone(),
+        target_combo: language_combo.clone(),
+        swap_button,
         args: args.clone(),
         mode: mode.clone(),
     }
@@ -947,6 +949,199 @@ fn state_text_opt(state: &Rc<RefCell<Option<Ui>>>) -> Option<String> {
 impl Ui {
     fn source_text(&self) -> String {
         state_text(&self.state.borrow())
+    }
+
+    fn remember_target(&self, previous: &str) {
+        let target = self.target.borrow().clone();
+
+        if previous == target {
+            return;
+        }
+
+        let mut recents = self.recent_targets.borrow_mut();
+        recents.retain(|entry| entry != &target && entry != previous);
+        recents.insert(0, previous.to_string());
+        recents.truncate(3);
+        persist_recent_targets(&recents);
+    }
+}
+
+fn update_title(state: &Rc<RefCell<Option<Ui>>>) {
+    let slot = state.borrow();
+    let Some(ui) = slot.as_ref() else {
+        return;
+    };
+
+    let title = format!(
+        "OpenTranslator ({} → {})",
+        languages::source_label(&ui.source.borrow()),
+        languages::label(&ui.target.borrow())
+    );
+
+    ui.window.set_title(Some(&title));
+}
+
+fn update_swap(state: &Rc<RefCell<Option<Ui>>>) {
+    let slot = state.borrow();
+    let Some(ui) = slot.as_ref() else {
+        return;
+    };
+
+    let source = ui.source.borrow();
+    let target = ui.target.borrow();
+
+    let enabled = if *source == languages::AUTO_CODE {
+        ui.detected_source
+            .borrow()
+            .map(|tag| tag != target.as_str())
+            .unwrap_or(false)
+    } else {
+        source.as_str() != target.as_str()
+    };
+
+    ui.swap_button.set_sensitive(enabled);
+}
+
+fn change_source(state: &Rc<RefCell<Option<Ui>>>, source: String) {
+    let source_text = {
+        let slot = state.borrow();
+        let Some(ui) = slot.as_ref() else {
+            return;
+        };
+
+        if *ui.source.borrow() == source {
+            return;
+        }
+
+        ui.source.replace(source.clone());
+        ui.source_text()
+    };
+
+    {
+        let slot = state.borrow();
+        if let Some(ui) = slot.as_ref() {
+            ui.source_combo.set_active_id(Some(&source));
+        }
+    }
+
+    persist_source(&source);
+    update_title(state);
+    update_swap(state);
+
+    if source_text.is_empty() {
+        refresh(state);
+    } else {
+        begin_translation(state, source_text);
+    }
+}
+
+fn change_target(state: &Rc<RefCell<Option<Ui>>>, target: String) {
+    let source_text = {
+        let slot = state.borrow();
+        let Some(ui) = slot.as_ref() else {
+            return;
+        };
+
+        if *ui.target.borrow() == target {
+            return;
+        }
+
+        let previous = ui.target.replace(target.clone());
+        ui.remember_target(&previous);
+        ui.source_text()
+    };
+
+    {
+        let slot = state.borrow();
+        if let Some(ui) = slot.as_ref() {
+            ui.target_combo.set_active_id(Some(&target));
+        }
+    }
+
+    persist_target(&target);
+    update_title(state);
+    update_swap(state);
+
+    if source_text.is_empty() {
+        refresh(state);
+    } else {
+        begin_translation(state, source_text);
+    }
+}
+
+fn select_recent_target(state: &Rc<RefCell<Option<Ui>>>, index: usize) {
+    let target = {
+        let slot = state.borrow();
+        let Some(ui) = slot.as_ref() else {
+            return;
+        };
+
+        ui.recent_targets.borrow().get(index).cloned()
+    };
+
+    if let Some(target) = target {
+        change_target(state, target);
+    }
+}
+
+fn swap_languages(state: &Rc<RefCell<Option<Ui>>>) {
+    // Swapping exchanges the languages *and* feeds the translation back as the
+    // new source text, so the result is translated into the original language.
+    let outcome = {
+        let slot = state.borrow();
+        let Some(ui) = slot.as_ref() else {
+            return;
+        };
+
+        let source = ui.source.borrow().clone();
+        let target = ui.target.borrow().clone();
+        let detected = *ui.detected_source.borrow();
+
+        let Some((next_source, next_target)) = languages::swapped_pair(&source, &target, detected)
+        else {
+            return;
+        };
+
+        let translated = match &*ui.state.borrow() {
+            TranslationState::Done { translation, .. } if !translation.trim().is_empty() => {
+                Some(translation.clone())
+            }
+            _ => None,
+        };
+
+        (next_source, next_target, translated, ui.source_text())
+    };
+
+    let (next_source, next_target, translated, source_text) = outcome;
+
+    {
+        let slot = state.borrow();
+        let Some(ui) = slot.as_ref() else {
+            return;
+        };
+
+        let old_target = ui.target.replace(next_target.clone());
+        ui.source.replace(next_source.clone());
+        ui.detected_source.replace(None);
+        ui.remember_target(&old_target);
+    }
+
+    {
+        let slot = state.borrow();
+        if let Some(ui) = slot.as_ref() {
+            ui.source_combo.set_active_id(Some(&next_source));
+            ui.target_combo.set_active_id(Some(&next_target));
+        }
+    }
+
+    persist_source(&next_source);
+    persist_target(&next_target);
+    update_title(state);
+
+    if let Some(translation) = translated {
+        begin_translation(state, translation);
+    } else if !source_text.is_empty() {
+        begin_translation(state, source_text);
     }
 }
 
@@ -1017,6 +1212,15 @@ fn begin_translation(state: &Rc<RefCell<Option<Ui>>>, text: String) {
 
     let (source, detected) = detect::resolve_source(&source, &text);
     widgets.set_source_hint(detected);
+
+    {
+        let slot = state.borrow();
+        if let Some(ui) = slot.as_ref() {
+            ui.detected_source.replace(detected);
+        }
+    }
+
+    update_swap(state);
 
     widgets.apply(&snapshot);
     spawn_worker(&args, &source, &target, text, sender);

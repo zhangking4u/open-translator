@@ -1180,6 +1180,25 @@ Verification:
 ---
 
 
+## Milestone: GTK Language Swap + Recent Targets
+
+
+Completed:
+
+- `translator-core::languages::recent_target_list` and `swapped_pair` are shared by both desktop clients (the Windows/macOS client dropped its private copy and its two tests moved to translator-core); `swapped_pair` returns the swapped tag pair, using the detected tag for `auto` and refusing identical/unknown pairs
+- `desktop/translator-popup`: a flat swap-icon button (`object-flip-horizontal-symbolic`) between the selectors exchanges the language pair, replaces the source text with the previous translation and re-translates it back (parity with the Windows/macOS client); it is disabled when both sides match or auto detection is unknown
+- `desktop/translator-popup`: the previous target is remembered on every change (up to 3, persisted as `recent_targets`) and Ctrl+1/2/3 switch to it, re-translating in place
+
+
+Verification:
+
+- `translator-core`: 47 tests passed (2 for `recent_target_list`, 3 for `swapped_pair`); `desktop/translator-popup-desktop`: 9 tests passed; `desktop/translator-popup` builds with `cargo build --locked`
+- The swap button and Ctrl+1/2/3 are compile-verified only; visual pass on GNOME still pending
+
+
+---
+
+
 # Git History
 
 Commit:

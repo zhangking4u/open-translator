@@ -449,22 +449,6 @@ fn clamp_to_work_area(
     fit_to_work_area((cursor.0 + margin, cursor.1 + margin), size, work, margin)
 }
 
-fn recent_target_list(recents: &[String], current: &str) -> Vec<String> {
-    let mut list: Vec<String> = Vec::new();
-
-    for entry in recents {
-        if entry != current && languages::is_supported(entry) && !list.contains(entry) {
-            list.push(entry.clone());
-        }
-
-        if list.len() == 3 {
-            break;
-        }
-    }
-
-    list
-}
-
 impl PopupApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
@@ -487,7 +471,7 @@ impl PopupApp {
             enable_native_window_style(hwnd);
         }
 
-        let recent_targets = recent_target_list(&args.recent_targets, &args.target);
+        let recent_targets = languages::recent_target_list(&args.recent_targets, &args.target);
 
         let mut app = Self {
             source: args.source.clone(),
@@ -776,21 +760,11 @@ impl PopupApp {
     }
 
     fn swap_languages(&mut self) {
-        let new_source = if self.source == languages::AUTO_CODE {
-            let Some(tag) = self.detected_source else {
-                return;
-            };
-
-            tag.to_string()
-        } else {
-            self.source.clone()
-        };
-
-        let new_target = self.target.clone();
-
-        if new_source == new_target {
+        let Some((next_source, next_target)) =
+            languages::swapped_pair(&self.source, &self.target, self.detected_source)
+        else {
             return;
-        }
+        };
 
         let translated = match &self.translation {
             TranslationState::Done { translation, .. } if !translation.trim().is_empty() => {
@@ -799,8 +773,8 @@ impl PopupApp {
             _ => None,
         };
 
-        let old_target = std::mem::replace(&mut self.target, new_source);
-        self.source = new_target;
+        let old_target = std::mem::replace(&mut self.target, next_target);
+        self.source = next_source;
         persist_source(&self.source);
         persist_target(&self.target);
         self.remember_target(&old_target);
@@ -1896,41 +1870,5 @@ mod placement_tests {
         let (x, y) = clamp_to_work_area((-1800.0, 100.0), egui::vec2(400.0, 300.0), work, 12.0);
 
         assert_eq!((x, y), (-1788.0, 112.0));
-    }
-}
-
-#[cfg(test)]
-mod recent_tests {
-    use super::recent_target_list;
-
-    #[test]
-    fn excludes_the_current_and_duplicate_targets() {
-        let recents = vec![
-            "zh".to_string(),
-            "en".to_string(),
-            "zh".to_string(),
-            "ja".to_string(),
-        ];
-
-        assert_eq!(
-            recent_target_list(&recents, "zh"),
-            vec!["en".to_string(), "ja".to_string()]
-        );
-    }
-
-    #[test]
-    fn caps_the_list_at_three_supported_targets() {
-        let recents = vec![
-            "en".to_string(),
-            "de".to_string(),
-            "fr".to_string(),
-            "ja".to_string(),
-            "xx".to_string(),
-        ];
-
-        assert_eq!(
-            recent_target_list(&recents, "zh"),
-            vec!["en".to_string(), "de".to_string(), "fr".to_string()]
-        );
     }
 }

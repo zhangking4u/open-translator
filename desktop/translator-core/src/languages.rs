@@ -46,6 +46,41 @@ pub fn is_supported(code: &str) -> bool {
     LANGUAGES.iter().any(|(candidate, _)| *candidate == code)
 }
 
+/// Most recent targets first, excluding the current one and unsupported or
+/// duplicate entries, capped at three.
+pub fn recent_target_list(recents: &[String], current: &str) -> Vec<String> {
+    let mut list: Vec<String> = Vec::new();
+
+    for entry in recents {
+        if entry != current && is_supported(entry) && !list.contains(entry) {
+            list.push(entry.clone());
+        }
+
+        if list.len() == 3 {
+            break;
+        }
+    }
+
+    list
+}
+
+/// Language pair after a swap: the old target becomes the new source and the
+/// language of the original text (the detected tag for `auto`) becomes the new
+/// target. Returns `None` when the pair cannot be swapped.
+pub fn swapped_pair(
+    source: &str,
+    target: &str,
+    detected: Option<&str>,
+) -> Option<(String, String)> {
+    let next_target = if source == AUTO_CODE { detected? } else { source };
+
+    if next_target == target || !is_supported(next_target) || !is_supported(target) {
+        return None;
+    }
+
+    Some((target.to_string(), next_target.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +109,60 @@ mod tests {
         assert!(is_supported("zh"));
         assert!(!is_supported("auto"));
         assert!(!is_supported("xx"));
+    }
+
+    #[test]
+    fn excludes_the_current_and_duplicate_targets() {
+        let recents = vec![
+            "zh".to_string(),
+            "en".to_string(),
+            "zh".to_string(),
+            "ja".to_string(),
+        ];
+
+        assert_eq!(
+            recent_target_list(&recents, "zh"),
+            vec!["en".to_string(), "ja".to_string()]
+        );
+    }
+
+    #[test]
+    fn caps_the_recent_targets_at_three_supported_entries() {
+        let recents = vec![
+            "en".to_string(),
+            "de".to_string(),
+            "fr".to_string(),
+            "ja".to_string(),
+            "xx".to_string(),
+        ];
+
+        assert_eq!(
+            recent_target_list(&recents, "zh"),
+            vec!["en".to_string(), "de".to_string(), "fr".to_string()]
+        );
+    }
+
+    #[test]
+    fn swaps_explicit_language_pairs() {
+        assert_eq!(
+            swapped_pair("en", "zh", None),
+            Some(("zh".to_string(), "en".to_string()))
+        );
+    }
+
+    #[test]
+    fn swaps_auto_source_using_the_detected_tag() {
+        assert_eq!(
+            swapped_pair("auto", "zh", Some("en")),
+            Some(("zh".to_string(), "en".to_string()))
+        );
+    }
+
+    #[test]
+    fn refuses_to_swap_identical_or_unknown_pairs() {
+        assert_eq!(swapped_pair("auto", "zh", None), None);
+        assert_eq!(swapped_pair("zh", "zh", None), None);
+        assert_eq!(swapped_pair("xx", "zh", None), None);
+        assert_eq!(swapped_pair("auto", "zh", Some("zh")), None);
     }
 }
