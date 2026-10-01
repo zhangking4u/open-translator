@@ -497,3 +497,4 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 
 - The Windows/macOS client no longer shows its window at launch: first-run download and model errors used to force it visible, so the window sat on screen after login; progress/errors now live in the tray tooltip and the window appears only on hotkey/tray/`--stdin`
 - Follow-up to v0.2.0 — installed users need the next release to pick up the fix
+- Shipped in v0.2.1 (`26f292f`, release run 36862981211, three assets)

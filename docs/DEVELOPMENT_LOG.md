@@ -1272,6 +1272,18 @@ Verification:
 ---
 
 
+## Milestone: v0.2.1 Release
+
+
+Released:
+
+- Tag `v0.2.1` at `26f292f` (CI run 36862376875 green first); release run 36862981211 passed the Linux (5m15s), macOS (6m12s) and Windows (10m33s) jobs and published the three assets; the dmg reports version 0.2.1
+- Patch release carrying the silent-autostart fix; release notes document the fix plus update steps (Windows re-run `install.ps1`, macOS replace the app, Linux `apt install` upgrade in place)
+
+
+---
+
+
 # Git History
 
 Commit:
