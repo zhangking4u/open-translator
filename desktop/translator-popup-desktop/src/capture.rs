@@ -1,3 +1,48 @@
+#[cfg(target_os = "macos")]
+fn wait_for_modifiers_released() {
+    use std::time::{Duration, Instant};
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGEventSourceKeyState(state: i32, key: u16) -> u8;
+    }
+
+    const HID_SYSTEM_STATE: i32 = 1;
+    const COMMAND_LEFT: u16 = 0x37;
+    const COMMAND_RIGHT: u16 = 0x36;
+    const SHIFT_LEFT: u16 = 0x38;
+    const SHIFT_RIGHT: u16 = 0x3C;
+    const OPTION_LEFT: u16 = 0x3A;
+    const OPTION_RIGHT: u16 = 0x3D;
+    const CONTROL_LEFT: u16 = 0x3B;
+    const CONTROL_RIGHT: u16 = 0x3E;
+
+    const MODIFIER_KEYS: [u16; 8] = [
+        COMMAND_LEFT,
+        COMMAND_RIGHT,
+        SHIFT_LEFT,
+        SHIFT_RIGHT,
+        OPTION_LEFT,
+        OPTION_RIGHT,
+        CONTROL_LEFT,
+        CONTROL_RIGHT,
+    ];
+
+    let deadline = Instant::now() + Duration::from_millis(750);
+
+    while Instant::now() < deadline {
+        let held = MODIFIER_KEYS
+            .iter()
+            .any(|key| unsafe { CGEventSourceKeyState(HID_SYSTEM_STATE, *key) } != 0);
+
+        if !held {
+            return;
+        }
+
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn wait_for_modifiers_released() {
     use std::time::{Duration, Instant};
@@ -38,7 +83,7 @@ pub fn capture_selection() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     let before = clipboard.get_text().ok();
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     wait_for_modifiers_released();
 
     #[cfg(target_os = "windows")]
