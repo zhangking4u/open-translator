@@ -854,6 +854,27 @@ Verification:
 ---
 
 
+## Milestone: Windows Selection Capture Fix (Stale Clipboard)
+
+
+Completed:
+
+- Real-machine report: selecting Chinese text and pressing the default hotkey translated the previously copied text; pressing `Ctrl+C` manually before the hotkey was the only workaround
+- Root cause: the global hotkey fires on key-down and `app.rs` triggers the capture immediately, so the injected copy usually ran while the user was still holding Ctrl/Alt — the focused app received `Ctrl+Alt+C` and did not copy; `capture.rs` then read the clipboard after a fixed 150 ms without checking that it had changed, returning the previous content
+- `desktop/translator-popup-desktop/src/capture.rs` (Windows): wait for all left/right Ctrl/Alt/Shift/Win keys to be released (`GetAsyncKeyState`, 750 ms cap) before injecting, add a 15 ms gap between the modifier and `C`, and poll `GetClipboardSequenceNumber` for up to 1.5 s — translation starts only when the clipboard actually changed, otherwise the app reports "复制未生效" instead of translating stale text
+- Windows-only dependency `windows-sys 0.59` (`Win32_System_DataExchange`, `Win32_UI_Input_KeyboardAndMouse`); the macOS path is unchanged and still has the same race (it errors out instead, thanks to the pre-copy comparison)
+- Left as follow-ups: macOS modifier wait, retry if the clipboard is still busy when the sequence changes, moving capture off the UI thread
+
+
+Verification:
+
+- `capture.rs` compile-checked in a standalone crate against arboard 3.6.1 / enigo 0.6.1 / windows-sys 0.59; CMake 4.4 + LLVM 23 + VS 2022 Build Tools are installed on the verification laptop for future full builds
+- Runtime verification pending: a rebuilt Windows artifact is required (select text, press the hotkey without manual copy, repeat with different selections, check an elevated window)
+
+
+---
+
+
 # Git History
 
 

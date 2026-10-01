@@ -1,12 +1,49 @@
+#[cfg(target_os = "windows")]
+fn wait_for_modifiers_released() {
+    use std::time::{Duration, Instant};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_RCONTROL, VK_RMENU,
+        VK_RSHIFT, VK_RWIN,
+    };
+
+    const MODIFIERS: [u16; 8] = [
+        VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU, VK_LSHIFT, VK_RSHIFT, VK_LWIN, VK_RWIN,
+    ];
+
+    let deadline = Instant::now() + Duration::from_millis(750);
+
+    while Instant::now() < deadline {
+        let held = MODIFIERS
+            .iter()
+            .any(|key| unsafe { GetAsyncKeyState(*key as i32) } < 0);
+
+        if !held {
+            return;
+        }
+
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub fn capture_selection() -> Result<String, String> {
     use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+    use std::time::Duration;
+    #[cfg(target_os = "windows")]
+    use std::time::Instant;
 
     let mut clipboard =
         arboard::Clipboard::new().map_err(|error| format!("failed to open clipboard: {error}"))?;
 
     #[cfg(target_os = "macos")]
     let before = clipboard.get_text().ok();
+
+    #[cfg(target_os = "windows")]
+    wait_for_modifiers_released();
+
+    #[cfg(target_os = "windows")]
+    let clipboard_sequence =
+        unsafe { windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber() };
 
     let mut enigo =
         Enigo::new(&Settings::default()).map_err(|error| format!("failed to init input: {error}"))?;
@@ -19,12 +56,34 @@ pub fn capture_selection() -> Result<String, String> {
     enigo
         .key(modifier, Direction::Press)
         .map_err(|error| format!("failed to press modifier: {error}"))?;
+
+    std::thread::sleep(Duration::from_millis(15));
+
     let click = enigo.key(Key::Unicode('c'), Direction::Click);
     let release = enigo.key(modifier, Direction::Release);
     click.map_err(|error| format!("failed to send C: {error}"))?;
     release.map_err(|error| format!("failed to release modifier: {error}"))?;
 
-    std::thread::sleep(std::time::Duration::from_millis(150));
+    #[cfg(target_os = "windows")]
+    {
+        let deadline = Instant::now() + Duration::from_millis(1500);
+
+        while unsafe { windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber() }
+            == clipboard_sequence
+        {
+            if Instant::now() >= deadline {
+                return Err(
+                    "未能取到选中文本（复制未生效）。请确认已选中文字；若目标窗口以管理员身份运行，请尝试以管理员身份启动 OpenTranslator。"
+                        .to_string(),
+                );
+            }
+
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    std::thread::sleep(Duration::from_millis(150));
 
     let text = clipboard
         .get_text()
