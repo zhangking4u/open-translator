@@ -1051,7 +1051,7 @@ Windows real-machine follow-up (2026-10-01):
 
 - Verified the new UI on a Windows 11 machine (installed client): state machine, adaptive height, hotkey capture, tray and the embedded HTTP API all worked; a short paragraph translated in ~3.4 s with the hy-mt1.5-1.8b q4 model
 - Fixed the black frame around the card: eframe 0.36 defaults to wgpu and its DX12 backend only offers an opaque swapchain for Win32 HWNDs (`wgpu-hal` lists `CompositeAlphaMode::Opaque` only), so the transparent window margin and shadow were composited black by DWM. Windows now uses an opaque window (`with_transparent(false)`), lets DWM round the corners (`DWMWA_WINDOW_CORNER_PREFERENCE`), fills the window with the card (no outer margin or shadow) and clears with the card fill; macOS keeps the transparent floating card. A glow/OpenGL attempt was tried first and still showed the black margins on the Intel UHD driver
-- Rebuild note for this machine: the repo path plus cargo's `target/release/build/llama-cpp-sys-2-*` directory exceeds MSBuild FileTracker's path limit (`MSB6003`), so builds use a short `CARGO_TARGET_DIR` (`%TEMP%\kilo\ot-build`)
+- Rebuild note: the repo path plus cargo's `target/release/build/llama-cpp-sys-2-*` directory exceeds MSBuild FileTracker's path limit (`MSB6003`), so `desktop/install-windows.ps1` now builds into the short `%LOCALAPPDATA%\OpenTranslator\build` target dir (it also points the Startup shortcut at that binary); manual builds can set `CARGO_TARGET_DIR` to any short path
 
 
 ---
