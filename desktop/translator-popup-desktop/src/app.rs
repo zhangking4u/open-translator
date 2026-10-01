@@ -573,8 +573,18 @@ impl PopupApp {
             }
         }
 
-        if show_on_start {
+        if show_on_start || !app.can_restore() {
+            // Without a registered hotkey or tray there is no way to bring the
+            // window back, so surface it instead of starting silent.
             app.show_window(&cc.egui_ctx);
+        } else {
+            // eframe forces the window visible after the first painted frame
+            // (its white-flash fix), which overrides
+            // `ViewportBuilder::with_visible(false)`. Queue a hide command so
+            // an autostart at login stays silent in the tray; it is applied
+            // right after that first frame.
+            cc.egui_ctx
+                .send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
 
         app

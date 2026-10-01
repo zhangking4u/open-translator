@@ -1284,6 +1284,26 @@ Released:
 ---
 
 
+## Milestone: Silent Autostart, Actually Hidden (post-v0.2.1)
+
+
+Fixed:
+
+- The v0.2.1 silent-start fix was incomplete: `ViewportBuilder::with_visible(false)` is a no-op in eframe 0.36 (`eframe::EpiIntegration::post_rendering` unconditionally calls `window.set_visible(true)` after the first painted frame for its white-flash fix), so the window still appeared at login even though the app no longer asked for it
+- `PopupApp::new` now queues `ViewportCommand::Visible(false)` when startup should stay hidden (no `--stdin` text); eframe applies it right after that first frame, so the window ends the first frame hidden and loaded models / downloads never surface a window; if neither the hotkey nor the tray registered, the window is shown instead so the app cannot become unreachable
+- Queued commands keep the intended order: a hotkey or tray action in that first frame still wins and shows the window
+
+
+Verification:
+
+- Live-tested on Windows against the installed v0.2.1 binary and the patched build (separate `TEMP` dirs, the user's running instance untouched): unpatched v0.2.1 shows `OpenTranslator (自动检测 → 中文)` 520x263 with `IsWindowVisible=true` ~14 s after launch; the patched build reports `IsWindowVisible=false`
+- `desktop/translator-popup-desktop`: 12 unit tests pass; `--stdin` with initial text still opens the window immediately
+- Installed users need the next release to pick this up (v0.2.1 still shows the window at login)
+
+
+---
+
+
 # Git History
 
 Commit:
