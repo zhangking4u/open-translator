@@ -22,6 +22,7 @@ Configuration: ~/.config/open-translator/config
   model_path = <path to a .gguf model>   (optional; default is the models dir)
   prompt_style = hymt                    (generic / translategemma / hymt)
   auto_download = true                   (download the default model on first run)
+  check_updates = true                   (check GitHub for a newer release)
 
 The environment can override the auto-start behaviour:
 TRANSLATOR_ENGINE=ollama switches back to a local Ollama server,

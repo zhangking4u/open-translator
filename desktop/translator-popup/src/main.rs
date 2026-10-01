@@ -34,6 +34,7 @@ flag is given; CLI > config file > environment > defaults:
   model_path = <path to a .gguf model>   (default: per-user models dir)
   prompt_style = hymt                    (generic / translategemma / hymt)
   auto_download = true                   (download the model on first run)
+  check_updates = true                   (check GitHub for a newer release)
 
 Auto-start configuration (environment):
   TRANSLATOR_CORE_BIN    Path to the translator-service binary (default: derived
@@ -45,6 +46,8 @@ Auto-start configuration (environment):
                          (default: hy-mt1.5-1.8b)
   TRANSLATOR_OLLAMA_BIN  Path to the ollama binary (default: ~/.local/opt/ollama/bin/ollama)
   TRANSLATOR_AUTO_DOWNLOAD  true/false; overrides auto_download
+  TRANSLATOR_CHECK_UPDATES  true/false; overrides check_updates
+  TRANSLATOR_UPDATE_URL     override the release API URL (testing)
 
 Default model location: ~/.local/share/open-translator/models/hy-mt1.5-1.8b-q4_k_m.gguf
 

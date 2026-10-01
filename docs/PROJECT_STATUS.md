@@ -249,7 +249,7 @@ Status:
 ## 9. Next Steps
 
 
-1. Ship the deb with the next release (Linux release job and packaged first-run download verified 2026-10-01)
+1. Ship the deb and the startup update check with the next release (Linux release job, packaged first-run download and update module verified 2026-10-01)
 
 2. Code signing / notarization (budget decision)
 
@@ -436,3 +436,12 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Release workflow gained a Linux job that attaches the deb to the release; local verification: extracted deb auto-started the sibling service (`llama-cpp`) and translated "kernel panic" → 内核崩溃; missing-model and setup-script paths checked
 - Verified: `workflow_dispatch` release run built all three platforms; the CI deb (version `0.0.0+985830c`) downloaded the model (1.13 GB, 47 s, SHA-256 match) on first run in an isolated HOME and translated "kernel panic" → 内核崩溃 (warm run 0.36 s)
 - Pending: `apt install` on a real user account (needs admin rights), shipping the deb with the next release; AppImage deferred
+
+
+## Startup Update Check (2026-10-01)
+
+
+- `translator-core::update` checks GitHub `releases/latest` once at startup (`check_updates`, default on; `TRANSLATOR_CHECK_UPDATES=false` disables) and compares the embedded release version with the latest tag
+- GTK popup appends a "有新版本 vX.Y.Z，点击查看" link; the Windows/macOS client shows a window banner with a download button and enables a tray item that opens the release page
+- Release builds embed the tag via `OPEN_TRANSLATOR_VERSION`; existing v0.1.0 installs need one manual update before the hint can reach them
+- Pending: real-machine check of the tray item; ship with the next release

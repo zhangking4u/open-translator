@@ -981,6 +981,31 @@ Next:
 ---
 
 
+## Milestone: Startup Update Check
+
+
+Completed:
+
+- `translator-core::update`: GitHub `releases/latest` check returning `ReleaseInfo { version, url }`, numeric version comparison (`is_newer`; tolerates a `v` prefix and `-`/`+` suffixes), 5 s timeout, silent on any failure; `current_version()` embeds the release tag via `OPEN_TRANSLATOR_VERSION` (set by the release workflow) and falls back to the crate version
+- Both clients check once at startup (`check_updates`, default true; `TRANSLATOR_CHECK_UPDATES=false` disables): the GTK popup appends a "有新版本 vX.Y.Z，点击查看" link to its window; the Windows/macOS client shows a banner with a download button and enables a tray/menu-bar item
+- Release workflow build steps inject `OPEN_TRANSLATOR_VERSION` from the tag (dispatch runs pass an empty value, falling back to the crate version)
+- README, the GTK/desktop help texts and the deb README document the new key and env vars
+
+
+Verification:
+
+- `cargo test`: translator-core 31 tests (version comparison, newer/current release, HTTP and parse errors against an axum stub); GTK popup and Windows/macOS client compile; `gh api releases/latest` confirmed reachable from the dev machine
+- Note: the check ships with the next release; existing v0.1.0 installs cannot be notified until they update once manually
+
+
+Next:
+
+- Tag the next release so the update hint reaches users; the tray item needs a real Windows/macOS check
+
+
+---
+
+
 # Git History
 
 

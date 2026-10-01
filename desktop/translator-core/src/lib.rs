@@ -4,3 +4,4 @@ pub mod paths;
 pub mod services;
 pub mod settings;
 pub mod translate;
+pub mod update;

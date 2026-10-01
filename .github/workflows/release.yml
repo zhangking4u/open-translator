@@ -22,6 +22,8 @@ jobs:
         with:
           workspaces: desktop/translator-popup-desktop
       - name: Build
+        env:
+          OPEN_TRANSLATOR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: cargo build --release
       - name: Package zip
         shell: pwsh
@@ -59,6 +61,8 @@ jobs:
             core/translator-service
             desktop/translator-popup
       - name: Build
+        env:
+          OPEN_TRANSLATOR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
           cargo build --release --manifest-path core/translator-service/Cargo.toml
           cargo build --release --manifest-path desktop/translator-popup/Cargo.toml
@@ -95,6 +99,8 @@ jobs:
         with:
           workspaces: desktop/translator-popup-desktop
       - name: Build
+        env:
+          OPEN_TRANSLATOR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: cargo build --release
       - name: Package dmg
         run: |

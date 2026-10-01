@@ -15,6 +15,7 @@ use translator_core::models;
 use translator_core::paths::default_model_path;
 use translator_core::services::bind_addr_from_service_url;
 use translator_core::settings::{FileConfig, load_config};
+use translator_core::update;
 use translator_service::domain::prompt::PromptStyle;
 use translator_service::domain::translation::TranslationRequest;
 use translator_service::engine::llama_cpp::LlamaCppEngine;
@@ -52,9 +53,11 @@ Config file (Windows: %APPDATA%\\open-translator\\config, macOS:
   prompt_style = hymt                       (generic / translategemma / hymt)
   serve_extension = true                    (disable to skip the HTTP endpoint)
   auto_download = true                      (download the model on first run)
+  check_updates = true                      (check GitHub for a newer release)
 
 Environment overrides: TRANSLATOR_HOTKEY, TRANSLATOR_MODEL_PATH,
-TRANSLATOR_PROMPT_STYLE. Default model location:
+TRANSLATOR_PROMPT_STYLE, TRANSLATOR_CHECK_UPDATES, TRANSLATOR_UPDATE_URL.
+Default model location:
   Windows  %LOCALAPPDATA%\\open-translator\\models\\hy-mt1.5-1.8b-q4_k_m.gguf
   macOS    ~/Library/Application Support/open-translator/models/hy-mt1.5-1.8b-q4_k_m.gguf
 
@@ -168,6 +171,14 @@ fn main() {
         None => true,
     };
 
+    let check_updates = match update::enabled(&config) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    };
+
     if args.print {
         let engine = match LlamaCppEngine::load(
             model_path.to_string_lossy().as_ref(),
@@ -269,6 +280,7 @@ fn main() {
                 &hotkey_spec,
                 startup,
                 server_plan,
+                check_updates,
             )))
         }),
     ) {

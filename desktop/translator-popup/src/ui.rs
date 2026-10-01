@@ -13,8 +13,9 @@ use gtk::{
 
 use translator_core::args::{Args, read_stdin};
 use translator_core::services::{self, ServiceConfig};
-use translator_core::settings::persist_target;
+use translator_core::settings::{load_config, persist_target};
 use translator_core::translate;
+use translator_core::update::{self, ReleaseInfo};
 
 use crate::read_selection;
 
@@ -129,6 +130,9 @@ fn build_ui(
     container.set_margin_start(12);
     container.set_margin_end(12);
 
+    let update_box = GtkBox::new(Orientation::Vertical, 4);
+    update_box.set_visible(false);
+
     let source_label = Label::new(None);
     source_label.set_xalign(0.0);
     source_label.set_wrap(true);
@@ -176,6 +180,7 @@ fn build_ui(
     buttons.append(&copy_button);
     buttons.append(&close_button);
 
+    container.append(&update_box);
     container.append(&source_label);
     container.append(&Separator::new(Orientation::Horizontal));
     container.append(&scroller);
@@ -285,6 +290,46 @@ fn build_ui(
         }
     });
     window.add_controller(key_controller);
+
+    if update::enabled(&load_config()).unwrap_or(false) {
+        let (sender, receiver) = channel::<ReleaseInfo>();
+
+        std::thread::spawn(move || {
+            let Ok(client) = translate::build_client() else {
+                return;
+            };
+
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(_) => return,
+            };
+
+            if let Ok(Some(info)) = runtime.block_on(update::check(
+                &client,
+                update::current_version(),
+                &update::api_url(),
+            )) {
+                let _ = sender.send(info);
+            }
+        });
+
+        glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
+            if let Ok(info) = receiver.try_recv() {
+                let link = gtk::LinkButton::with_label(
+                    &info.url,
+                    &format!("有新版本 v{}，点击查看", info.version),
+                );
+                update_box.append(&link);
+                update_box.set_visible(true);
+                return glib::ControlFlow::Break;
+            }
+
+            glib::ControlFlow::Continue
+        });
+    }
 
     window.present();
 

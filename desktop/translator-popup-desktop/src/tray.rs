@@ -7,6 +7,7 @@ mod platform {
     pub enum TrayCommand {
         Show,
         Translate,
+        Update,
         Quit,
     }
 
@@ -14,7 +15,9 @@ mod platform {
         _tray: TrayIcon,
         show_id: MenuId,
         translate_id: MenuId,
+        update_id: MenuId,
         quit_id: MenuId,
+        update_item: MenuItem,
     }
 
     impl Tray {
@@ -27,11 +30,14 @@ mod platform {
 
             let show = MenuItem::with_id("show", "显示窗口", true, None);
             let translate = MenuItem::with_id("translate", "立即翻译选中文本", true, None);
+            let update = MenuItem::with_id("update", "有新版本可用", false, None);
             let quit = MenuItem::with_id("quit", "退出", true, None);
 
             menu.append(&show)
                 .map_err(|error| format!("failed to build tray menu: {error}"))?;
             menu.append(&translate)
+                .map_err(|error| format!("failed to build tray menu: {error}"))?;
+            menu.append(&update)
                 .map_err(|error| format!("failed to build tray menu: {error}"))?;
             menu.append(&quit)
                 .map_err(|error| format!("failed to build tray menu: {error}"))?;
@@ -47,8 +53,15 @@ mod platform {
                 _tray: tray,
                 show_id: show.id().clone(),
                 translate_id: translate.id().clone(),
+                update_id: update.id().clone(),
                 quit_id: quit.id().clone(),
+                update_item: update,
             })
+        }
+
+        pub fn set_update(&self, label: &str) {
+            self.update_item.set_text(label);
+            self.update_item.set_enabled(true);
         }
 
         pub fn poll(&self) -> Option<TrayCommand> {
@@ -59,6 +72,8 @@ mod platform {
                     command = Some(TrayCommand::Show);
                 } else if event.id == self.translate_id {
                     command = Some(TrayCommand::Translate);
+                } else if event.id == self.update_id {
+                    command = Some(TrayCommand::Update);
                 } else if event.id == self.quit_id {
                     command = Some(TrayCommand::Quit);
                 }
@@ -116,6 +131,7 @@ pub use platform::{Tray, TrayCommand};
 pub enum TrayCommand {
     Show,
     Translate,
+    Update,
     Quit,
 }
 
@@ -131,6 +147,8 @@ impl Tray {
     pub fn new(_tooltip: &str) -> Result<Self, String> {
         Ok(Self)
     }
+
+    pub fn set_update(&self, _label: &str) {}
 
     pub fn poll(&self) -> Option<TrayCommand> {
         None

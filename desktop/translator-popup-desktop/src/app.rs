@@ -5,6 +5,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use eframe::egui;
 use translator_core::args::{Args, read_stdin};
 use translator_core::settings::persist_target;
+use translator_core::update::ReleaseInfo;
 use translator_service::domain::prompt::PromptStyle;
 use translator_service::domain::translation::TranslationRequest;
 use translator_service::engine::llama_cpp::LlamaCppEngine;
@@ -63,6 +64,8 @@ pub struct PopupApp {
     error: bool,
     target: String,
     receiver: Option<Receiver<Progress>>,
+    update: Option<ReleaseInfo>,
+    update_receiver: Option<Receiver<ReleaseInfo>>,
     hotkey: Option<Hotkey>,
     tray: Option<Tray>,
     quit: bool,
@@ -137,6 +140,7 @@ impl PopupApp {
         hotkey_spec: &str,
         startup: Startup,
         server_plan: Option<ServerPlan>,
+        check_updates: bool,
     ) -> Self {
         install_cjk_font(&cc.egui_ctx);
 
@@ -152,10 +156,18 @@ impl PopupApp {
             status: String::new(),
             error: false,
             receiver: None,
+            update: None,
+            update_receiver: None,
             hotkey: None,
             tray: None,
             quit: false,
         };
+
+        if check_updates {
+            let (sender, receiver) = channel::<ReleaseInfo>();
+            app.update_receiver = Some(receiver);
+            spawn_update_check(sender);
+        }
 
         let mut show_on_start = false;
 
@@ -312,6 +324,18 @@ impl eframe::App for PopupApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
 
+        if let Some(info) = self
+            .update_receiver
+            .as_ref()
+            .and_then(|receiver| receiver.try_iter().next())
+        {
+            if let Some(tray) = &self.tray {
+                tray.set_update(&format!("有新版本 v{}", info.version));
+            }
+
+            self.update = Some(info);
+        }
+
         let tray_command = self.tray.as_ref().and_then(|tray| tray.poll());
 
         match tray_command {
@@ -323,6 +347,11 @@ impl eframe::App for PopupApp {
                 self.trigger();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            Some(TrayCommand::Update) => {
+                if let Some(info) = &self.update {
+                    open_url(&info.url);
+                }
             }
             Some(TrayCommand::Quit) => {
                 self.quit = true;
@@ -400,6 +429,18 @@ impl eframe::App for PopupApp {
         let mut quit = false;
 
         egui::CentralPanel::default().show(ui, |ui| {
+            if let Some(info) = self.update.clone() {
+                ui.horizontal(|ui| {
+                    ui.label(format!("有新版本 v{}", info.version));
+
+                    if ui.button("查看下载").clicked() {
+                        open_url(&info.url);
+                    }
+                });
+
+                ui.separator();
+            }
+
             ui.horizontal(|ui| {
                 ui.label("目标语言");
 
@@ -542,6 +583,42 @@ fn spawn_startup(
             }
         }
     });
+}
+
+fn spawn_update_check(sender: Sender<ReleaseInfo>) {
+    std::thread::spawn(move || {
+        let client = match translator_core::translate::build_client() {
+            Ok(client) => client,
+            Err(_) => return,
+        };
+
+        let runtime = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(_) => return,
+        };
+
+        if let Ok(Some(info)) = runtime.block_on(translator_core::update::check(
+            &client,
+            translator_core::update::current_version(),
+            &translator_core::update::api_url(),
+        )) {
+            let _ = sender.send(info);
+        }
+    });
+}
+
+pub fn open_url(url: &str) {
+    #[cfg(target_os = "windows")]
+    let (program, args): (&str, Vec<&str>) = ("cmd", vec!["/C", "start", "", url]);
+    #[cfg(target_os = "macos")]
+    let (program, args): (&str, Vec<&str>) = ("open", vec![url]);
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let (program, args): (&str, Vec<&str>) = ("xdg-open", vec![url]);
+
+    let _ = std::process::Command::new(program).args(args).spawn();
 }
 
 fn spawn_worker(
