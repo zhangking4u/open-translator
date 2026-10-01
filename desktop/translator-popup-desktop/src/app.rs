@@ -223,18 +223,51 @@ fn tune_style(style: &mut egui::Style, dark: bool) {
 fn card_frame(ui: &egui::Ui) -> egui::Frame {
     let visuals = ui.visuals();
 
-    egui::Frame::new()
-        .fill(visuals.window_fill)
-        .stroke(visuals.window_stroke)
-        .corner_radius(CARD_RADIUS)
-        .inner_margin(egui::Margin::same(16))
-        .outer_margin(egui::Margin::same(14))
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 6],
-            blur: 20,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(if visuals.dark_mode { 110 } else { 40 }),
-        })
+    if cfg!(target_os = "windows") {
+        // The window is opaque on Windows (DWM rounds its corners), so the
+        // card fills the whole window without margin or shadow.
+        egui::Frame::new()
+            .fill(visuals.window_fill)
+            .inner_margin(egui::Margin::same(16))
+    } else {
+        egui::Frame::new()
+            .fill(visuals.window_fill)
+            .stroke(visuals.window_stroke)
+            .corner_radius(CARD_RADIUS)
+            .inner_margin(egui::Margin::same(16))
+            .outer_margin(egui::Margin::same(14))
+            .shadow(egui::epaint::Shadow {
+                offset: [0, 6],
+                blur: 20,
+                spread: 0,
+                color: egui::Color32::from_black_alpha(if visuals.dark_mode { 110 } else { 40 }),
+            })
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn enable_native_window_style(cc: &eframe::CreationContext<'_>) {
+    use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+    };
+
+    let Ok(handle) = cc.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(win) = handle.as_raw() else {
+        return;
+    };
+
+    let preference = DWMWCP_ROUND;
+    unsafe {
+        DwmSetWindowAttribute(
+            win.hwnd.get() as _,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            &preference as *const _ as *const core::ffi::c_void,
+            std::mem::size_of_val(&preference) as u32,
+        );
+    }
 }
 
 fn max_window_height(ctx: &egui::Context) -> f32 {
@@ -255,6 +288,9 @@ impl PopupApp {
     ) -> Self {
         install_cjk_font(&cc.egui_ctx);
         configure_style(&cc.egui_ctx);
+
+        #[cfg(target_os = "windows")]
+        enable_native_window_style(cc);
 
         let mut app = Self {
             target: args.target.clone(),
@@ -536,8 +572,14 @@ impl PopupApp {
 }
 
 impl eframe::App for PopupApp {
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        egui::Rgba::TRANSPARENT.to_array()
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        if cfg!(target_os = "windows") {
+            // Opaque window: paint the card color everywhere so no black
+            // transparent pixels are composited by DWM.
+            egui::Rgba::from(visuals.window_fill).to_array()
+        } else {
+            egui::Rgba::TRANSPARENT.to_array()
+        }
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {

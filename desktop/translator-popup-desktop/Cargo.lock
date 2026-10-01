@@ -4668,6 +4668,7 @@ dependencies = [
  "eframe",
  "enigo",
  "global-hotkey",
+ "raw-window-handle",
  "tokio",
  "translator-core",
  "translator-service",

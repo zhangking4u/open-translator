@@ -267,7 +267,10 @@ fn main() {
             .with_title(format!("OpenTranslator ({} → {})", args.source, args.target))
             .with_inner_size(app::WINDOW_SIZE)
             .with_decorations(false)
-            .with_transparent(true)
+            // wgpu's DX12 backend only offers an opaque swapchain on Win32
+            // HWNDs, so a "transparent" window shows black margins there.
+            // Windows uses an opaque window with DWM-rounded corners instead.
+            .with_transparent(!cfg!(target_os = "windows"))
             .with_has_shadow(false)
             .with_resizable(false)
             .with_visible(false),
