@@ -61,6 +61,7 @@ cat > "$PLIST" <<EOF
     <key>ProgramArguments</key>
     <array>
         <string>$APP_DIR/Contents/MacOS/$APP_NAME</string>
+        <string>--autostart</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

@@ -573,9 +573,11 @@ impl PopupApp {
             }
         }
 
-        if show_on_start || !app.can_restore() {
-            // Without a registered hotkey or tray there is no way to bring the
-            // window back, so surface it instead of starting silent.
+        // Only the login autostart (`--autostart`, passed by the installers)
+        // stays silent; a manual launch shows the window, and without a
+        // registered hotkey or tray there is no way to bring it back, so
+        // surface it instead of starting silent.
+        if show_on_start || !app.args.autostart || !app.can_restore() {
             app.show_window(&cc.egui_ctx);
         } else {
             // eframe forces the window visible after the first painted frame

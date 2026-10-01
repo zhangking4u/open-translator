@@ -28,9 +28,10 @@ Usage: translator-popup-desktop [OPTIONS]
 
 Desktop popup for OpenTranslator (Windows / macOS): select text and press
 Ctrl+Alt+T to translate it with the embedded model. The app stays resident;
-Esc hides the window, 退出 quits. On first run the model is downloaded
-automatically. While running it also serves the local HTTP API on service_url
-for the browser extension.
+Esc hides the window, 退出 quits. Launching it manually shows the window;
+the login autostart (--autostart) starts silently in the tray. On first run
+the model is downloaded automatically. While running it also serves the
+local HTTP API on service_url for the browser extension.
 
 Options:
   -s, --source <LANG>   Source language tag (default: auto; auto detects
@@ -39,6 +40,8 @@ Options:
       --stdin           Use stdin instead of the current selection (testing)
       --print           Print the translation and exit (debug builds; Windows
                         release builds are GUI-only without a console)
+      --autostart       Start silently in the tray (used by the login
+                        autostart shortcut; without it the window is shown)
       --service <URL>   Also used as the bind address for the extension API
                         (default: http://127.0.0.1:17890)
   -h, --help            Show this help

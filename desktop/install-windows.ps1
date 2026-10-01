@@ -4,9 +4,10 @@
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
+#   powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -NoStart
 #   powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -Uninstall
 
-param([switch]$Uninstall)
+param([switch]$Uninstall, [switch]$NoStart)
 
 $ErrorActionPreference = "Stop"
 
@@ -121,7 +122,12 @@ $shortcut = $shell.CreateShortcut($Link)
 $shortcut.TargetPath = $Exe
 $shortcut.WorkingDirectory = Split-Path $Exe
 $shortcut.Description = "OpenTranslator selection translation"
+$shortcut.Arguments = "--autostart"
 $shortcut.Save()
+
+if (-not $NoStart) {
+    Start-Process -FilePath $Exe -ArgumentList "--autostart"
+}
 
 Write-Host ""
 Write-Host "Installed:"

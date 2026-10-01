@@ -507,3 +507,10 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Tag `v0.2.2` at `8cb4640`; release run 36943753792 passed the Linux, macOS and Windows package jobs and published the three assets with the usual release notes (the first publish, run 36941897001, carried only auto-generated notes, so the tag was re-pushed)
 - The Windows installer now upgrades in place while the old version runs: `packaging/windows/install.ps1` stops the running instance before replacing the exe and retries the copy, `desktop/install-windows.ps1` waits for the binary to unlock before relinking, and the packaging README documents re-running `install.ps1` as the upgrade path
 - Installed v0.2.1 users get the real silent-autostart behavior with this release
+
+
+## Window on Manual Launch, Silent Login (post-v0.2.2)
+
+
+- `--autostart` (installers' login entry) starts silently in the tray; launching the exe manually shows the window so first-run download progress and model errors are visible
+- Windows installers restart the app in the tray after an in-place upgrade unless `-NoStart` is given

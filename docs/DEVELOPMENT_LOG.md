@@ -1335,6 +1335,26 @@ Released:
 ---
 
 
+## Milestone: Manual Launch Shows the Window (post-v0.2.2)
+
+
+Added:
+
+- `--autostart` (translator-core `Args::autostart` + `parse_args`, `PopupApp::new`): only the login autostart starts silent in the tray; a manual launch (no flag) shows the window, so first-run download progress and model errors are visible
+- `packaging/windows/install.ps1`, `desktop/install-windows.ps1` and `desktop/install-macos.sh` pass `--autostart` in the Startup shortcut / LaunchAgent entry
+- The Windows installers start the app in the tray after install (unless `-NoStart`), so an in-place upgrade no longer leaves it stopped
+- README.txt and AGENTS.md describe the new launch behavior
+
+
+Verification:
+
+- translator-core: 55 tests pass (parse_args covers `--autostart`); desktop client: 12 tests pass
+- Live on Windows with the release build: no arguments shows `OpenTranslator (自动检测 → 中文)` with `IsWindowVisible=true`; `--autostart` reports `IsWindowVisible=false`
+
+
+---
+
+
 # Git History
 
 Commit:

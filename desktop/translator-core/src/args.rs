@@ -14,6 +14,7 @@ pub struct Args {
     pub stdin: bool,
     pub print: bool,
     pub no_start: bool,
+    pub autostart: bool,
     pub service_url: String,
 }
 
@@ -27,6 +28,7 @@ impl Default for Args {
             stdin: false,
             print: false,
             no_start: false,
+            autostart: false,
             service_url: std::env::var("TRANSLATOR_SERVICE_URL")
                 .unwrap_or_else(|_| DEFAULT_SERVICE_URL.to_string()),
         }
@@ -42,6 +44,7 @@ pub struct CliArgs {
     pub stdin: bool,
     pub print: bool,
     pub no_start: bool,
+    pub autostart: bool,
 }
 
 impl Args {
@@ -81,6 +84,7 @@ impl Args {
         args.stdin = cli.stdin;
         args.print = cli.print;
         args.no_start = cli.no_start;
+        args.autostart = cli.autostart;
 
         args
     }
@@ -120,6 +124,7 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> Result<CliArgs, String>
             "--stdin" => parsed.stdin = true,
             "--print" => parsed.print = true,
             "--no-start" => parsed.no_start = true,
+            "--autostart" => parsed.autostart = true,
             other => return Err(format!("unknown argument: {other}")),
         }
     }
@@ -236,6 +241,7 @@ mod tests {
             "--stdin",
             "--print",
             "--no-start",
+            "--autostart",
             "--service",
             "http://127.0.0.1:9999/",
         ])
@@ -247,6 +253,7 @@ mod tests {
         assert!(parsed.stdin);
         assert!(parsed.print);
         assert!(parsed.no_start);
+        assert!(parsed.autostart);
         assert_eq!(parsed.service_url.as_deref(), Some("http://127.0.0.1:9999/"));
     }
 

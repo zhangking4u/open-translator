@@ -1,4 +1,4 @@
-param([switch]$Uninstall)
+param([switch]$Uninstall, [switch]$NoStart)
 
 $ErrorActionPreference = "Stop"
 
@@ -48,9 +48,16 @@ $shortcut = $shell.CreateShortcut($Startup)
 $shortcut.TargetPath = $Exe
 $shortcut.WorkingDirectory = $InstallDir
 $shortcut.Description = "OpenTranslator selection translation"
+$shortcut.Arguments = "--autostart"
 $shortcut.Save()
+
+# Bring the app back after an in-place upgrade; --autostart keeps it in the
+# tray so the upgrade stays silent.
+if (-not $NoStart) {
+    Start-Process -FilePath $Exe -ArgumentList "--autostart"
+}
 
 Write-Host ""
 Write-Host "Installed: $InstallDir"
-Write-Host "Started automatically at login. The model (~1.1 GB) downloads on first run."
+Write-Host "Started automatically at login and in the tray. The model (~1.1 GB) downloads on first run."
 Write-Host "Select text and press Ctrl+Alt+T. Uninstall: install.ps1 -Uninstall"
