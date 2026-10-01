@@ -33,7 +33,8 @@ automatically. While running it also serves the local HTTP API on service_url
 for the browser extension.
 
 Options:
-  -s, --source <LANG>   Source language tag (default: en)
+  -s, --source <LANG>   Source language tag (default: auto; auto detects
+                        the language of the selected text)
   -t, --target <LANG>   Target language tag (default: zh)
       --stdin           Use stdin instead of the current selection (testing)
       --print           Print the translation and exit (debug builds; Windows
@@ -46,7 +47,7 @@ Config file (Windows: %APPDATA%\\open-translator\\config, macOS:
 ~/Library/Application Support/open-translator/config):
 
   service_url = http://127.0.0.1:17890
-  source = en
+  source = auto
   target = zh
   hotkey = Ctrl+Alt+T
   model_path = <path to a .gguf model>      (default: per-user models dir)
@@ -104,9 +105,11 @@ fn run_headless(engine: &Arc<LlamaCppEngine>, args: &Args, text: &str) -> i32 {
         return 1;
     }
 
+    let (source, _) = translator_core::detect::resolve_source(&args.source, text);
+
     let request = TranslationRequest {
         text: text.to_string(),
-        source: args.source.clone(),
+        source,
         target: args.target.clone(),
     };
 
@@ -264,7 +267,11 @@ fn main() {
 
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_title(format!("OpenTranslator ({} → {})", args.source, args.target))
+            .with_title(format!(
+                "OpenTranslator ({} → {})",
+                translator_core::languages::source_label(&args.source),
+                translator_core::languages::label(&args.target)
+            ))
             .with_inner_size(app::WINDOW_SIZE)
             .with_decorations(false)
             // wgpu's DX12 backend only offers an opaque swapchain on Win32

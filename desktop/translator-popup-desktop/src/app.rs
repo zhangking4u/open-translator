@@ -5,8 +5,9 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 use translator_core::args::{Args, read_stdin};
+use translator_core::detect;
 use translator_core::languages;
-use translator_core::settings::persist_target;
+use translator_core::settings::{persist_source, persist_target};
 use translator_core::update::ReleaseInfo;
 use translator_service::domain::prompt::PromptStyle;
 use translator_service::domain::translation::TranslationRequest;
@@ -96,6 +97,8 @@ pub struct PopupApp {
     server_started: bool,
     model: ModelState,
     translation: TranslationState,
+    source: String,
+    detected_source: Option<&'static str>,
     target: String,
     receiver: Option<Receiver<Progress>>,
     update: Option<ReleaseInfo>,
@@ -293,6 +296,8 @@ impl PopupApp {
         enable_native_window_style(cc);
 
         let mut app = Self {
+            source: args.source.clone(),
+            detected_source: None,
             target: args.target.clone(),
             args,
             engine: None,
@@ -385,11 +390,13 @@ impl PopupApp {
         match capture::capture_selection() {
             Ok(text) if text.trim().is_empty() => {
                 self.receiver = None;
+                self.detected_source = None;
                 self.translation = TranslationState::Empty;
             }
             Ok(text) => self.begin_translation(text),
             Err(error) => {
                 self.receiver = None;
+                self.detected_source = None;
                 self.translation = TranslationState::Failed {
                     text: String::new(),
                     message: error,
@@ -399,6 +406,8 @@ impl PopupApp {
     }
 
     fn begin_translation(&mut self, text: String) {
+        self.detected_source = None;
+
         let Some(engine) = self.engine.clone() else {
             self.translation = match &self.model {
                 ModelState::Failed(message) => TranslationState::Failed {
@@ -418,13 +427,10 @@ impl PopupApp {
         let (sender, receiver) = channel();
         self.receiver = Some(receiver);
 
-        spawn_worker(
-            engine,
-            self.args.source.clone(),
-            self.target.clone(),
-            text,
-            sender,
-        );
+        let (source, detected) = detect::resolve_source(&self.source, &text);
+        self.detected_source = detected;
+
+        spawn_worker(engine, source, self.target.clone(), text, sender);
     }
 
     fn retranslate(&mut self) {
@@ -444,6 +450,19 @@ impl PopupApp {
             TranslationState::Done { .. } => true,
             TranslationState::Failed { text, .. } => !text.is_empty(),
             _ => false,
+        }
+    }
+
+    fn change_source(&mut self, source: String) {
+        if self.source == source {
+            return;
+        }
+
+        self.source = source.clone();
+        persist_source(&source);
+
+        if self.last_text().is_some() {
+            self.retranslate();
         }
     }
 
@@ -503,7 +522,11 @@ impl PopupApp {
     }
 
     fn title(&self) -> String {
-        format!("OpenTranslator ({} → {})", self.args.source, self.target)
+        format!(
+            "OpenTranslator ({} → {})",
+            languages::source_label(&self.source),
+            languages::label(&self.target)
+        )
     }
 
     fn source_text(&self) -> Option<&str> {
@@ -730,6 +753,7 @@ impl eframe::App for PopupApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let mut actions = Actions::default();
+        let mut change_source: Option<String> = None;
         let mut change_target: Option<String> = None;
         let max_window_height = max_window_height(&ctx);
         let mut content_height = 0.0_f32;
@@ -740,7 +764,7 @@ impl eframe::App for PopupApp {
                 card_frame(ui).show(ui, |ui| {
                     ui.set_min_width(ui.available_width());
 
-                    change_target = self.header(ui, &ctx, &mut actions);
+                    (change_source, change_target) = self.header(ui, &ctx, &mut actions);
                     self.banners(ui, &mut actions);
                     content_height = self.body(ui, &mut actions, max_window_height);
                 });
@@ -755,6 +779,11 @@ impl eframe::App for PopupApp {
                 desired_height,
             )));
             self.requested_height = Some(desired_height);
+        }
+
+        if let Some(source) = change_source {
+            self.change_source(source);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
         }
 
         if let Some(target) = change_target {
@@ -800,7 +829,7 @@ impl PopupApp {
         ui: &mut egui::Ui,
         ctx: &egui::Context,
         actions: &mut Actions,
-    ) -> Option<String> {
+    ) -> (Option<String>, Option<String>) {
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), 34.0),
             egui::Sense::drag(),
@@ -810,6 +839,7 @@ impl PopupApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
 
+        let mut change_source = None;
         let mut change_target = None;
 
         let mut header = ui.new_child(
@@ -825,11 +855,31 @@ impl PopupApp {
                 .color(self.status_color()),
         );
         header.label(egui::RichText::new("OpenTranslator").strong().size(15.0));
-        header.label(
-            egui::RichText::new(format!("{} →", self.args.source))
-                .weak()
-                .size(12.0),
-        );
+
+        let source_text = languages::source_label(&self.source).to_string();
+        egui::ComboBox::from_id_salt("source_lang")
+            .selected_text(egui::RichText::new(source_text).size(13.0))
+            .width(88.0)
+            .show_ui(&mut header, |ui| {
+                for (code, name) in languages::source_options() {
+                    let is_selected = self.source == code;
+                    if ui.selectable_label(is_selected, name).clicked() && !is_selected {
+                        change_source = Some(code.to_string());
+                    }
+                }
+            });
+
+        if self.source == languages::AUTO_CODE {
+            if let Some(tag) = self.detected_source {
+                header.label(
+                    egui::RichText::new(format!("（{}）", languages::label(tag)))
+                        .weak()
+                        .size(12.0),
+                );
+            }
+        }
+
+        header.label(egui::RichText::new("→").weak().size(13.0));
 
         let selected = languages::label(&self.target).to_string();
         egui::ComboBox::from_id_salt("target_lang")
@@ -856,7 +906,7 @@ impl PopupApp {
             }
         });
 
-        change_target
+        (change_source, change_target)
     }
 
     fn status_color(&self) -> egui::Color32 {

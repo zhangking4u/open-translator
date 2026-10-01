@@ -4,7 +4,7 @@ const api = globalThis.browser ?? globalThis.chrome;
 
 const DEFAULTS = {
   serviceUrl: "http://127.0.0.1:17890",
-  source: "en",
+  source: "auto",
   target: "zh",
   autoTranslate: false,
 };

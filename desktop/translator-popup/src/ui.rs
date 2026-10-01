@@ -12,9 +12,10 @@ use gtk::{
 };
 
 use translator_core::args::{Args, read_stdin};
+use translator_core::detect;
 use translator_core::languages;
 use translator_core::services::{self, ServiceConfig};
-use translator_core::settings::{load_config, persist_target};
+use translator_core::settings::{load_config, persist_source, persist_target};
 use translator_core::translate;
 use translator_core::update::{self, ReleaseInfo};
 
@@ -111,6 +112,7 @@ struct Widgets {
     scroller: ScrolledWindow,
     source_card: GtkBox,
     source_label: Label,
+    source_hint: Label,
     translation_label: Label,
     status_label: Label,
     spinner: Spinner,
@@ -307,9 +309,19 @@ impl Widgets {
         if text.is_empty() {
             self.source_card.set_visible(false);
             self.source_label.set_text("");
+            self.source_hint.set_text("");
         } else {
             self.source_label.set_text(text);
             self.source_card.set_visible(true);
+        }
+    }
+
+    fn set_source_hint(&self, detected: Option<&str>) {
+        match detected {
+            Some(tag) => self
+                .source_hint
+                .set_text(&format!("（{}）", languages::label(tag))),
+            None => self.source_hint.set_text(""),
         }
     }
 
@@ -337,6 +349,7 @@ struct Ui {
     widgets: Widgets,
     receiver: Rc<RefCell<Option<Receiver<Progress>>>>,
     state: Rc<RefCell<TranslationState>>,
+    source: RefCell<String>,
     target: RefCell<String>,
     args: Args,
     mode: Mode,
@@ -418,7 +431,11 @@ fn build_ui(
 ) -> Ui {
     install_css();
 
-    let title = format!("OpenTranslator ({} → {})", args.source, args.target);
+    let title = format!(
+        "OpenTranslator ({} → {})",
+        languages::source_label(&args.source),
+        languages::label(&args.target)
+    );
 
     let window = ApplicationWindow::builder()
         .application(app)
@@ -446,18 +463,37 @@ fn build_ui(
     header.append(&dot);
     header.append(&title_label);
 
-    let language_label = Label::new(Some("目标语言"));
-    language_label.add_css_class("ot-dim");
+    let source_caption = Label::new(Some("源语言"));
+    source_caption.add_css_class("ot-dim");
+    let source_combo = ComboBoxText::new();
+
+    for (code, name) in languages::source_options() {
+        source_combo.append(Some(code), name);
+    }
+
+    if args.source != languages::AUTO_CODE && !languages::is_supported(&args.source) {
+        source_combo.append(Some(args.source.as_str()), args.source.as_str());
+    }
+
+    source_combo.set_active_id(Some(args.source.as_str()));
+
+    let source_scroll = EventControllerScroll::new(EventControllerScrollFlags::VERTICAL);
+    source_scroll.connect_scroll(|_, _, _| glib::Propagation::Stop);
+    source_combo.add_controller(source_scroll);
+
+    let source_hint = Label::new(None);
+    source_hint.add_css_class("ot-dim");
+    source_hint.add_css_class("ot-status");
+
+    let target_caption = Label::new(Some("目标语言"));
+    target_caption.add_css_class("ot-dim");
     let language_combo = ComboBoxText::new();
 
     for (code, name) in languages::LANGUAGES {
         language_combo.append(Some(code), name);
     }
 
-    if !languages::LANGUAGES
-        .iter()
-        .any(|(code, _)| *code == args.target)
-    {
+    if !languages::is_supported(&args.target) {
         language_combo.append(Some(args.target.as_str()), args.target.as_str());
     }
 
@@ -467,11 +503,18 @@ fn build_ui(
     scroll_controller.connect_scroll(|_, _, _| glib::Propagation::Stop);
     language_combo.add_controller(scroll_controller);
 
-    let language_box = GtkBox::new(Orientation::Horizontal, 8);
+    let arrow = Label::new(Some("→"));
+    arrow.add_css_class("ot-dim");
+
+    let language_box = GtkBox::new(Orientation::Horizontal, 6);
     let spacer = GtkBox::new(Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
-    language_box.append(&language_label);
     language_box.append(&spacer);
+    language_box.append(&source_caption);
+    language_box.append(&source_combo);
+    language_box.append(&source_hint);
+    language_box.append(&arrow);
+    language_box.append(&target_caption);
     language_box.append(&language_combo);
 
     let source_label = Label::new(None);
@@ -568,6 +611,7 @@ fn build_ui(
         scroller: scroller.clone(),
         source_card,
         source_label,
+        source_hint,
         translation_label,
         status_label,
         spinner,
@@ -687,10 +731,43 @@ fn build_ui(
         }
     });
 
+    source_combo.connect_changed({
+        let state = state.clone();
+        let window = window.clone();
+
+        move |combo| {
+            let Some(source) = combo.active_id() else {
+                return;
+            };
+            let source = source.to_string();
+
+            let (source_text, target) = {
+                let slot = state.borrow();
+                let Some(ui) = slot.as_ref() else {
+                    return;
+                };
+                ui.source.replace(source.clone());
+                (ui.source_text(), ui.target.borrow().clone())
+            };
+
+            persist_source(&source);
+            window.set_title(Some(&format!(
+                "OpenTranslator ({} → {})",
+                languages::source_label(&source),
+                languages::label(&target)
+            )));
+
+            if source_text.is_empty() {
+                refresh(&state);
+            } else {
+                begin_translation(&state, source_text);
+            }
+        }
+    });
+
     language_combo.connect_changed({
         let state = state.clone();
         let window = window.clone();
-        let source = args.source.clone();
 
         move |combo| {
             let Some(target) = combo.active_id() else {
@@ -698,17 +775,21 @@ fn build_ui(
             };
             let target = target.to_string();
 
-            let source_text = {
+            let (source_text, source) = {
                 let slot = state.borrow();
                 let Some(ui) = slot.as_ref() else {
                     return;
                 };
                 ui.target.replace(target.clone());
-                ui.source_text()
+                (ui.source_text(), ui.source.borrow().clone())
             };
 
             persist_target(&target);
-            window.set_title(Some(&format!("OpenTranslator ({source} → {target})")));
+            window.set_title(Some(&format!(
+                "OpenTranslator ({} → {})",
+                languages::source_label(&source),
+                languages::label(&target)
+            )));
 
             if source_text.is_empty() {
                 refresh(&state);
@@ -808,6 +889,7 @@ fn build_ui(
         widgets,
         receiver,
         state: translated,
+        source: RefCell::new(args.source.clone()),
         target: RefCell::new(args.target.clone()),
         args: args.clone(),
         mode: mode.clone(),
@@ -893,7 +975,7 @@ fn set_state(state: &Rc<RefCell<Option<Ui>>>, next: TranslationState) {
 }
 
 fn begin_translation(state: &Rc<RefCell<Option<Ui>>>, text: String) {
-    let (widgets, snapshot, sender, target, args) = {
+    let (widgets, snapshot, sender, source, target, args) = {
         let slot = state.borrow();
         let Some(ui) = slot.as_ref() else {
             return;
@@ -909,17 +991,22 @@ fn begin_translation(state: &Rc<RefCell<Option<Ui>>>, text: String) {
             ui.widgets.clone(),
             snapshot,
             sender,
+            ui.source.borrow().clone(),
             ui.target.borrow().clone(),
             ui.args.clone(),
         )
     };
 
+    let (source, detected) = detect::resolve_source(&source, &text);
+    widgets.set_source_hint(detected);
+
     widgets.apply(&snapshot);
-    spawn_worker(&args, &target, text, sender);
+    spawn_worker(&args, &source, &target, text, sender);
 }
 
-fn spawn_worker(args: &Args, target: &str, text: String, sender: Sender<Progress>) {
+fn spawn_worker(args: &Args, source: &str, target: &str, text: String, sender: Sender<Progress>) {
     let args = args.clone();
+    let source = source.to_string();
     let target = target.to_string();
 
     std::thread::spawn(move || {
@@ -970,7 +1057,7 @@ fn spawn_worker(args: &Args, target: &str, text: String, sender: Sender<Progress
             let outcome = translate::translate(
                 &client,
                 &args.service_url,
-                &args.source,
+                &source,
                 &target,
                 &text,
             )

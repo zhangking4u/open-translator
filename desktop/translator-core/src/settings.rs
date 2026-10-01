@@ -62,7 +62,17 @@ pub fn load_file_config(path: &Path) -> FileConfig {
     config
 }
 
+pub fn persist_source(source: &str) {
+    persist_value("source", source);
+}
+
 pub fn persist_target(target: &str) {
+    persist_value("target", target);
+}
+
+/// Writes a single `key = value` pair back to the config file, keeping the
+/// other lines untouched.
+pub fn persist_value(key: &str, value: &str) {
     let Some(path) = config_path() else {
         return;
     };
@@ -72,23 +82,27 @@ pub fn persist_target(target: &str) {
     }
 
     let contents = std::fs::read_to_string(&path).unwrap_or_default();
-    let _ = std::fs::write(&path, apply_target(&contents, target));
+    let _ = std::fs::write(&path, apply_value(&contents, key, value));
 }
 
-pub fn apply_target(contents: &str, target: &str) -> String {
+pub fn apply_value(contents: &str, key: &str, value: &str) -> String {
     let mut lines: Vec<String> = contents.lines().map(|line| line.to_string()).collect();
     let mut replaced = false;
 
     for line in &mut lines {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("target") && trimmed.contains('=') {
-            *line = format!("target = {target}");
+        let Some((candidate, _)) = trimmed.split_once('=') else {
+            continue;
+        };
+
+        if candidate.trim() == key {
+            *line = format!("{key} = {value}");
             replaced = true;
         }
     }
 
     if !replaced {
-        lines.push(format!("target = {target}"));
+        lines.push(format!("{key} = {value}"));
     }
 
     let mut output = lines.join("\n");
@@ -135,17 +149,35 @@ mod tests {
     }
 
     #[test]
-    fn apply_target_replaces_existing_key() {
-        let updated = apply_target("source = en\ntarget = zh\n", "ja");
+    fn apply_value_replaces_existing_target() {
+        let updated = apply_value("source = en\ntarget = zh\n", "target", "ja");
 
         assert!(updated.contains("target = ja"));
         assert!(!updated.contains("target = zh"));
+        assert!(updated.contains("source = en"));
     }
 
     #[test]
-    fn apply_target_appends_when_missing() {
-        let updated = apply_target("# comment\nsource = en\n", "ko");
+    fn apply_value_appends_target_when_missing() {
+        let updated = apply_value("# comment\nsource = en\n", "target", "ko");
 
         assert!(updated.ends_with("target = ko\n"));
+    }
+
+    #[test]
+    fn apply_value_replaces_source_only() {
+        let updated = apply_value("source = en\ntarget = zh\n", "source", "auto");
+
+        assert!(updated.contains("source = auto"));
+        assert!(updated.contains("target = zh"));
+        assert!(!updated.contains("source = en"));
+    }
+
+    #[test]
+    fn apply_value_keeps_service_url() {
+        let updated = apply_value("service_url = http://127.0.0.1:17890\n", "source", "ja");
+
+        assert!(updated.contains("service_url = http://127.0.0.1:17890"));
+        assert!(updated.ends_with("source = ja\n"));
     }
 }

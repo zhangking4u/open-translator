@@ -1,4 +1,5 @@
 pub mod args;
+pub mod detect;
 pub mod languages;
 pub mod models;
 pub mod paths;

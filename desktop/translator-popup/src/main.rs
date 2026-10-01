@@ -1,6 +1,7 @@
 use std::process::Command;
 
 use translator_core::args::{Args, read_stdin};
+use translator_core::detect;
 use translator_core::services::{self, ServiceConfig};
 use translator_core::translate;
 
@@ -15,7 +16,8 @@ runs fully in-process (llama.cpp); on first run the model is downloaded
 automatically (~1.1 GB, ModelScope).
 
 Options:
-  -s, --source <LANG>   Source language tag (default: en)
+  -s, --source <LANG>   Source language tag (default: auto; auto detects
+                        the language of the selected text)
   -t, --target <LANG>   Target language tag (default: zh)
       --clipboard       Read the clipboard instead of the primary selection
       --stdin           Read text from stdin instead of the selection
@@ -29,7 +31,7 @@ Config file (Linux: ~/.config/open-translator/config) is applied when no CLI
 flag is given; CLI > config file > environment > defaults:
 
   service_url = http://127.0.0.1:17890
-  source = en
+  source = auto
   target = zh
   model_path = <path to a .gguf model>   (default: per-user models dir)
   prompt_style = hymt                    (generic / translategemma / hymt)
@@ -113,10 +115,12 @@ async fn run_headless(args: &Args, text: &str) -> i32 {
         return 1;
     }
 
+    let (source, _) = detect::resolve_source(&args.source, text);
+
     match translate::translate(
         &client,
         &args.service_url,
-        &args.source,
+        &source,
         &args.target,
         text,
     )

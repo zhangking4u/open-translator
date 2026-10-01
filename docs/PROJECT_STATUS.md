@@ -221,7 +221,7 @@ main
 
 Latest commit:
 
-a6f1321 fix: start the extension server once and add a single-instance lock (tag: v0.1.0)
+fd18fc2 docs: update release skill for the Linux deb (tag: v0.1.0); main at 4d813bc (desktop UI polish and Windows fixes, not yet released)
 
 
 ---
@@ -255,7 +255,7 @@ Status:
 
 3. (Done 2026-10-01) v0.1.0 re-released with the Linux deb and the startup update check (three assets); Windows real-machine re-verification passed (selection capture, CJK fonts, single instance)
 
-4. Real-machine visual pass of the redesigned desktop UIs (Windows/macOS); window geometry/position memory and an in-app settings panel are candidates for the next polish round
+4. Real-machine visual pass of the redesigned desktop UIs (Windows/macOS), including the new source-language dropdown and detection hint; window geometry/position memory and an in-app settings panel are candidates for the next polish round
 
 
 ---
@@ -463,3 +463,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Linux/GNOME popup: the same state machine drives a CSS card layout with spinner, download progress bar, error card + retry, 2 s copy feedback and the same shortcuts
 - Both clients adapt the window height to the translation (cap: 70% of the monitor, then scroll), so long results no longer stay hidden behind a fixed scroll area and short results do not leave empty space
 - Pending: visual pass on Windows/macOS real hardware (the egui UI is compile-verified only on the Linux dev box)
+
+
+## Flexible Source Language (2026-10-01)
+
+
+- Source language is no longer fixed to English: `translator-core::detect` (whatlang trigrams, confidence ≥ 0.5) resolves the default `auto` source to a supported tag when confident and falls back to the service's source-agnostic prompt otherwise; the default HY-MT prompt ignores the source language anyway
+- Both desktop clients now have a source-language dropdown (自动检测 + zh/en/ja/ko/fr/de/es/ru) with a detection hint, persisted to the config file like `target`; the browser extension defaults to `source = auto`
+- Pending: real-machine visual pass of the dropdown/hint on Windows/macOS

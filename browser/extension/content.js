@@ -3,7 +3,7 @@
 const api = globalThis.browser ?? globalThis.chrome;
 
 const DEFAULTS = {
-  source: "en",
+  source: "auto",
   target: "zh",
   autoTranslate: false,
 };

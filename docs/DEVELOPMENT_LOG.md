@@ -1056,6 +1056,29 @@ Windows real-machine follow-up (2026-10-01):
 
 ---
 
+## Milestone: Flexible Source Language (Auto Detection)
+
+
+Completed:
+
+- `translator-core::detect` (new): language detection via `whatlang` trigrams; `detect(text)` maps the result to a shared tag (zh/en/ja/ko/fr/de/es/ru) and returns `None` when confidence is below 0.5 or the language is unsupported; `resolve_source(configured, text)` passes explicit tags through, replaces `auto` with the detected tag and keeps `auto` when unsure
+- `translator-core::languages`: `AUTO_CODE` / `AUTO_LABEL`, `source_label()` and `source_options()` (auto + the shared list) so both clients offer the same 自动检测 entry; `is_supported()`
+- `translator-core::args`: default source is now `auto` (was `en`); precedence unchanged (CLI > file > env > defaults)
+- `translator-core::settings`: `persist_source()` plus a generic `persist_value()` / key-aware `apply_value()` now back `persist_target()`
+- GTK popup: source dropdown (自动检测 + languages) with a detection hint next to it (e.g. （英语）), target dropdown stays; both write back to the config file and re-translate the current text; the title shows display names; the `--print` path resolves `auto` too
+- Windows/macOS client: same source dropdown + detection hint in the header, persistence and re-translate behavior; the title and headless `--print` path resolve `auto`
+- Browser extension: default source is `auto` in the worker/content/options page
+- Detection only selects the prompt language, and the default HY-MT prompt is source-agnostic, so the change is safe for the default engine
+
+
+Verification:
+
+- `cargo test` in `desktop/translator-core` (41 passed, including detection tests); `desktop/translator-popup` builds and links; `desktop/translator-popup-desktop` tests green; `node --check` clean for the extension scripts; `browser/test.sh` Chrome e2e passed (11/11 checks, worker + content script translations)
+- Headless GTK smoke test against the running llama.cpp service: `--stdin --print` with `source = auto` translated "kernel panic", a French sentence and an English sentence to Chinese ("内核崩溃" etc.)
+- Pending: real-machine visual pass of the dropdown/hint on Windows/macOS
+
+
+---
 
 # Git History
 

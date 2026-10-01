@@ -19,7 +19,7 @@ pub struct Args {
 impl Default for Args {
     fn default() -> Self {
         Self {
-            source: "en".to_string(),
+            source: crate::languages::AUTO_CODE.to_string(),
             target: "zh".to_string(),
             clipboard: false,
             stdin: false,
@@ -137,6 +137,8 @@ mod tests {
         let args = Args::resolve(CliArgs::default(), FileConfig::default());
 
         assert_eq!(args, Args::default());
+        assert_eq!(args.source, "auto");
+        assert_eq!(args.target, "zh");
     }
 
     #[test]

@@ -83,7 +83,7 @@ sudo apt install -y libgtk-4-dev pkg-config wl-clipboard
 
 ```ini
 service_url = http://127.0.0.1:17890
-source = en
+source = auto
 target = zh
 # model_path = /path/to/model.gguf   # 默认 ~/.local/share/open-translator/models/
 # prompt_style = hymt                # generic / translategemma / hymt
@@ -93,7 +93,7 @@ target = zh
 
 命令行参数 > 配置文件 > 环境变量 > 默认值。其他参数：`--clipboard`（读剪贴板）、`--stdin`/`--print`（脚本化）、`--no-start`。
 `TRANSLATOR_ENGINE=ollama` 可切回本地 Ollama（模型名用 `TRANSLATOR_MODEL`，默认 `hy-mt1.5-1.8b`）；`TRANSLATOR_MODEL_PATH` 指向已有 GGUF 时不触发下载。
-弹窗内可直接用「目标语言」下拉切换（支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语，切换后自动重译并写回配置文件）。`source` 可设为 `auto` 自动识别源语言。
+弹窗内可直接用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语。
 
 ### 3. 浏览器扩展（Firefox / Chrome）
 
@@ -128,7 +128,7 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 
 - Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 构建**内嵌模型推理**的客户端（无需 Ollama/服务进程）并加入开机启动；把 GGUF 放到 `%LOCALAPPDATA%\open-translator\models\hy-mt1.5-1.8b-q4_k_m.gguf`（或配置 `model_path`）。选中文字按 `Ctrl+Alt+T`（模拟 `Ctrl+C` + 剪贴板取词）；托盘菜单提供「显示窗口 / 立即翻译 / 退出」。运行期间在 `127.0.0.1:17890` 提供 HTTP 供浏览器扩展。
 - macOS 桌面划词：`./desktop/install-macos.sh` 构建并安装 `~/Applications/OpenTranslator.app`（内嵌推理）并注册 LaunchAgent 开机启动；模型放到 `~/Library/Application Support/open-translator/models/`（或配置 `model_path`）。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」允许 OpenTranslator（模拟 `Cmd+C` 取词所需）；菜单栏图标提供「显示窗口 / 立即翻译 / 退出」。
-- 桌面客户端配置（Windows `%APPDATA%\open-translator\config`、macOS `~/Library/Application Support/open-translator/config`）：`model_path`、`prompt_style`（默认 `hymt`）、`serve_extension`（默认 `true`）、`auto_download`（默认 `true`，首启自动从 ModelScope 下载模型，支持断点续传与 SHA-256 校验）、`check_updates`（默认 `true`，启动时检查 GitHub 新版本并在窗口/托盘提示）、`hotkey`、`source`、`target`；环境变量 `TRANSLATOR_MODEL_PATH` / `TRANSLATOR_PROMPT_STYLE` / `TRANSLATOR_HOTKEY` / `TRANSLATOR_CHECK_UPDATES` 可临时覆盖。
+- 桌面客户端配置（Windows `%APPDATA%\open-translator\config`、macOS `~/Library/Application Support/open-translator/config`）：`model_path`、`prompt_style`（默认 `hymt`）、`serve_extension`（默认 `true`）、`auto_download`（默认 `true`，首启自动从 ModelScope 下载模型，支持断点续传与 SHA-256 校验）、`check_updates`（默认 `true`，启动时检查 GitHub 新版本并在窗口/托盘提示）、`hotkey`、`source`（默认 `auto`，自动识别源语言）、`target`；环境变量 `TRANSLATOR_MODEL_PATH` / `TRANSLATOR_PROMPT_STYLE` / `TRANSLATOR_HOTKEY` / `TRANSLATOR_CHECK_UPDATES` 可临时覆盖。
 - Linux GTK 弹窗（`desktop/translator-popup`）默认同样使用进程内 llama.cpp + 首次运行自动下载模型；`TRANSLATOR_ENGINE=ollama` 可切回外部核心服务 + Ollama。
 - Windows/macOS 上也可只用浏览器扩展：安装 Ollama + 运行核心服务（`cargo run --release`）即可；HY-MT 导入脚本（Windows 需 Git Bash）或按脚本内 Modelfile 手动 `ollama create`。
 
