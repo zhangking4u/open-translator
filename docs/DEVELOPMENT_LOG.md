@@ -1253,6 +1253,25 @@ Released:
 ---
 
 
+## Milestone: Silent Autostart (No Popup at Login)
+
+
+Fixed:
+
+- `desktop/translator-popup-desktop` no longer shows the window at launch: first-run model downloads and model-load errors used to force the window visible, which left it sitting on screen after login (the Startup shortcut / LaunchAgent starts the app at boot, and nobody needs a translation immediately)
+- Download progress and errors now surface in the tray tooltip (`Tray::set_tooltip`, throttled to changes); the hotkey/tray actions still open the window, where the existing download-progress and error cards appear, and queued selections translate when the model is ready
+- `--stdin` with initial text still opens the window immediately (explicit user intent); a unit-tested `tray_tooltip` builds the status text
+
+
+Verification:
+
+- `desktop/translator-popup-desktop`: 12 tests passed (3 new tray-tooltip tests); the Linux build compiles with the tray stubs
+- Windows/macOS visual pass of the silent autostart still pending (needs a release to reach installed users)
+
+
+---
+
+
 # Git History
 
 Commit:

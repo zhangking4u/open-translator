@@ -20,7 +20,7 @@
 - **macOS**：打开 `OpenTranslator-macos-*.dmg`，把 `OpenTranslator.app` 拖入「应用程序」。首次打开如被 Gatekeeper 拦截，右键 →「打开」或在「系统设置 → 隐私与安全性」中允许（当前未签名）；使用取词功能还需在「辅助功能」中授权。
 - **Linux（GNOME Wayland）**：`sudo apt install ./OpenTranslator-linux-x64.deb`，首次启动会自动注册快捷键（默认 `Ctrl+Alt+T`，也可手动运行 `open-translator-setup`）。deb 基于 Ubuntu 24.04 构建，需要 glibc ≥ 2.39（Ubuntu 24.04+ / Debian 13+）与 GTK4 ≥ 4.10。
 
-首次运行会自动从 ModelScope 下载模型（约 1.1GB，带进度与断点续传）。之后任意应用选中文字按 `Ctrl+Alt+T` 即可翻译；托盘/菜单栏图标提供 显示窗口 / 立即翻译 / 退出。
+首次运行会在后台从 ModelScope 下载模型（约 1.1GB，带进度与断点续传），托盘/菜单栏提示下载进度；程序开机启动后保持静默、不弹窗，按 `Ctrl+Alt+T` 或在托盘选「显示窗口」才会显示。之后任意应用选中文字按 `Ctrl+Alt+T` 即可翻译；托盘/菜单栏图标提供 显示窗口 / 立即翻译 / 退出。
 
 > 安装包由 CI 在打 tag 时生成（`git tag v0.2.0 && git push --tags` 即创建 Release）。
 

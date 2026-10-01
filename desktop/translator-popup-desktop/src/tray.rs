@@ -64,6 +64,10 @@ mod platform {
             self.update_item.set_enabled(true);
         }
 
+        pub fn set_tooltip(&self, label: &str) {
+            let _ = self._tray.set_tooltip(Some(label));
+        }
+
         pub fn poll(&self) -> Option<TrayCommand> {
             let mut command = None;
 
@@ -149,6 +153,8 @@ impl Tray {
     }
 
     pub fn set_update(&self, _label: &str) {}
+
+    pub fn set_tooltip(&self, _label: &str) {}
 
     pub fn poll(&self) -> Option<TrayCommand> {
         None

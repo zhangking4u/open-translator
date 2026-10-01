@@ -121,6 +121,7 @@ pub struct PopupApp {
     hotkey: Option<Hotkey>,
     hotkey_label: String,
     tray: Option<Tray>,
+    tray_status: Option<String>,
     window: Option<isize>,
     quit: bool,
 }
@@ -337,6 +338,19 @@ fn max_window_height(ctx: &egui::Context) -> f32 {
         .max(MIN_WINDOW_HEIGHT)
 }
 
+/// Tray tooltip for the current model state. Download/load progress and errors
+/// are surfaced here because the window stays hidden until the user asks for it.
+fn tray_tooltip(model: &ModelState, hotkey_label: &str) -> String {
+    match model {
+        ModelState::Downloading { downloaded, total } => format!(
+            "OpenTranslator · {}",
+            translator_core::models::format_download_status(*downloaded, *total)
+        ),
+        ModelState::Failed(error) => format!("OpenTranslator · {error}"),
+        _ => format!("OpenTranslator（{hotkey_label}）"),
+    }
+}
+
 #[cfg(target_os = "windows")]
 struct CursorPlacement {
     cursor: (f32, f32),
@@ -497,6 +511,7 @@ impl PopupApp {
             hotkey: None,
             hotkey_label: hotkey_spec.to_string(),
             tray: None,
+            tray_status: None,
             window,
             quit: false,
         };
@@ -516,7 +531,6 @@ impl PopupApp {
             }
             Startup::Loaded(Err(error)) => {
                 app.model = ModelState::Failed(format!("模型加载失败：{error}"));
-                show_on_start = true;
             }
             Startup::Download {
                 dest,
@@ -531,7 +545,6 @@ impl PopupApp {
                     total: None,
                 };
                 spawn_startup(dest, url, sha256, prompt_style, sender);
-                show_on_start = true;
             }
         }
 
@@ -548,6 +561,8 @@ impl PopupApp {
                 }
             }
         }
+
+        app.refresh_tray_tooltip();
 
         if app.args.stdin {
             let initial = read_stdin().unwrap_or_default();
@@ -590,6 +605,24 @@ impl PopupApp {
         self.place_near_cursor(ctx);
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    }
+
+    fn refresh_tray_tooltip(&mut self) {
+        if self.tray.is_none() {
+            return;
+        }
+
+        let tooltip = tray_tooltip(&self.model, &self.hotkey_label);
+
+        if self.tray_status.as_deref() == Some(tooltip.as_str()) {
+            return;
+        }
+
+        if let Some(tray) = &self.tray {
+            tray.set_tooltip(&tooltip);
+        }
+
+        self.tray_status = Some(tooltip);
     }
 
     fn place_near_cursor(&self, ctx: &egui::Context) {
@@ -1047,6 +1080,8 @@ impl eframe::App for PopupApp {
                 }
             }
         }
+
+        self.refresh_tray_tooltip();
 
         if ctx.input(|input| input.viewport().close_requested()) {
             if self.quit || !self.can_restore() {
@@ -1814,7 +1849,6 @@ fn spawn_worker(
 mod placement_tests {
     use super::{clamp_to_work_area, fit_to_work_area};
     use eframe::egui;
-
     const WORK: (f32, f32, f32, f32) = (0.0, 0.0, 1920.0, 1080.0);
 
     #[test]
@@ -1870,5 +1904,39 @@ mod placement_tests {
         let (x, y) = clamp_to_work_area((-1800.0, 100.0), egui::vec2(400.0, 300.0), work, 12.0);
 
         assert_eq!((x, y), (-1788.0, 112.0));
+    }
+}
+
+#[cfg(test)]
+mod tray_tests {
+    use super::{ModelState, tray_tooltip};
+
+    #[test]
+    fn shows_the_hotkey_when_ready() {
+        assert_eq!(
+            tray_tooltip(&ModelState::Ready, "Ctrl+Alt+T"),
+            "OpenTranslator（Ctrl+Alt+T）"
+        );
+    }
+
+    #[test]
+    fn shows_download_progress() {
+        let tooltip = tray_tooltip(
+            &ModelState::Downloading {
+                downloaded: 50_000_000,
+                total: Some(100_000_000),
+            },
+            "Ctrl+Alt+T",
+        );
+
+        assert!(tooltip.contains("50%"), "unexpected tooltip: {tooltip}");
+    }
+
+    #[test]
+    fn shows_model_errors() {
+        assert_eq!(
+            tray_tooltip(&ModelState::Failed("模型文件不存在".to_string()), "Ctrl+Alt+T"),
+            "OpenTranslator · 模型文件不存在"
+        );
     }
 }

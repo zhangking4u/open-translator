@@ -490,3 +490,10 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Tag `v0.2.0` at `dcebea8`; release run 36859033510 passed all package jobs (Linux 5m36s, macOS 9m10s, Windows) and published three assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg` (bundle version now injected from the tag), `OpenTranslator-linux-x64.deb`
 - Highlights since v0.1.0: source-language auto detection + selector, SSE streaming (`POST /translate/stream`), GTK ⇄ swap + Ctrl+1/2/3 recent targets + clipboard toggle + Chinese errors, Windows clipboard restore / near-cursor placement / 替换原文, Thai support, per-script font fallback
 - Release notes cover install steps, first-run model download and the unsigned-build caveats
+
+
+## Silent Autostart Fix (2026-10-01, after v0.2.0)
+
+
+- The Windows/macOS client no longer shows its window at launch: first-run download and model errors used to force it visible, so the window sat on screen after login; progress/errors now live in the tray tooltip and the window appears only on hotkey/tray/`--stdin`
+- Follow-up to v0.2.0 — installed users need the next release to pick up the fix
