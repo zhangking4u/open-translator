@@ -35,10 +35,10 @@ impl LlamaCppEngine {
         })
     }
 
-    pub fn translate_blocking(
+    fn inference_request(
         &self,
         request: &TranslationRequest,
-    ) -> Result<TranslationResult, TranslationError> {
+    ) -> Result<(String, Vec<String>, InferenceOptions), TranslationError> {
         let prompt = self
             .prompt_style
             .raw_prompt(&translation_prompt(self.prompt_style, request)?);
@@ -54,9 +54,37 @@ impl LlamaCppEngine {
             ..InferenceOptions::default()
         };
 
+        Ok((prompt, stop_strings, options))
+    }
+
+    pub fn translate_blocking(
+        &self,
+        request: &TranslationRequest,
+    ) -> Result<TranslationResult, TranslationError> {
+        let (prompt, stop_strings, options) = self.inference_request(request)?;
+
         let generation = self
             .engine
             .generate(&prompt, &stop_strings, &options)
+            .map_err(|error| TranslationError::EngineUnavailable(error.to_string()))?;
+
+        Ok(TranslationResult {
+            translated_text: generation.text,
+        })
+    }
+
+    /// Like [`Self::translate_blocking`], but reports the translation token by
+    /// token through `on_delta` while it is generated.
+    pub fn translate_blocking_streaming(
+        &self,
+        request: &TranslationRequest,
+        on_delta: impl FnMut(&str) + Send + 'static,
+    ) -> Result<TranslationResult, TranslationError> {
+        let (prompt, stop_strings, options) = self.inference_request(request)?;
+
+        let generation = self
+            .engine
+            .generate_streaming(&prompt, &stop_strings, &options, on_delta)
             .map_err(|error| TranslationError::EngineUnavailable(error.to_string()))?;
 
         Ok(TranslationResult {

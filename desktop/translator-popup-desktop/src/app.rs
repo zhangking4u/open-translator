@@ -23,6 +23,7 @@ const MIN_WINDOW_HEIGHT: f32 = 240.0;
 const MAX_WINDOW_FRACTION: f32 = 0.7;
 const CARD_CHROME: f32 = 60.0;
 const FOOTER_SPACE: f32 = 44.0;
+const WINDOW_MARGIN: f32 = 12.0;
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(79, 124, 255);
 const CARD_RADIUS: u8 = 16;
 const COPIED_FEEDBACK: Duration = Duration::from_millis(1500);
@@ -50,6 +51,7 @@ enum StartupEvent {
 }
 
 enum Progress {
+    Delta(String),
     Done(String),
     Error(String),
 }
@@ -66,7 +68,11 @@ enum TranslationState {
     Idle,
     Empty,
     Waiting { text: String },
-    Running { text: String, started: Instant },
+    Running {
+        text: String,
+        started: Instant,
+        partial: String,
+    },
     Done {
         text: String,
         translation: String,
@@ -84,6 +90,7 @@ struct Actions {
     quit: bool,
     retranslate: bool,
     copy: Option<String>,
+    replace: Option<String>,
     dismiss_update: bool,
     dismiss_notice: bool,
     open_url: Option<String>,
@@ -105,11 +112,14 @@ pub struct PopupApp {
     update_receiver: Option<Receiver<ReleaseInfo>>,
     update_dismissed: bool,
     copied_at: Option<Instant>,
+    replaced_at: Option<Instant>,
+    replace_window: Option<isize>,
     notice: Option<String>,
     requested_height: Option<f32>,
     hotkey: Option<Hotkey>,
     hotkey_label: String,
     tray: Option<Tray>,
+    window: Option<isize>,
     quit: bool,
 }
 
@@ -249,23 +259,27 @@ fn card_frame(ui: &egui::Ui) -> egui::Frame {
 }
 
 #[cfg(target_os = "windows")]
-fn enable_native_window_style(cc: &eframe::CreationContext<'_>) {
+fn window_handle(cc: &eframe::CreationContext<'_>) -> Option<isize> {
     use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
-    use windows_sys::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+
+    let handle = cc.window_handle().ok()?;
+    let RawWindowHandle::Win32(win) = handle.as_raw() else {
+        return None;
     };
 
-    let Ok(handle) = cc.window_handle() else {
-        return;
-    };
-    let RawWindowHandle::Win32(win) = handle.as_raw() else {
-        return;
+    Some(win.hwnd.get())
+}
+
+#[cfg(target_os = "windows")]
+fn enable_native_window_style(hwnd: isize) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
     };
 
     let preference = DWMWCP_ROUND;
     unsafe {
         DwmSetWindowAttribute(
-            win.hwnd.get() as _,
+            hwnd as _,
             DWMWA_WINDOW_CORNER_PREFERENCE as u32,
             &preference as *const _ as *const core::ffi::c_void,
             std::mem::size_of_val(&preference) as u32,
@@ -287,30 +301,11 @@ struct CursorPlacement {
 }
 
 #[cfg(target_os = "windows")]
-fn cursor_placement() -> Option<CursorPlacement> {
-    use windows_sys::Win32::Foundation::{POINT, RECT};
-    use windows_sys::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
-    };
-    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
-
-    let mut cursor = POINT { x: 0, y: 0 };
-    if unsafe { GetCursorPos(&mut cursor) } == 0 {
-        return None;
-    }
-
-    let monitor = unsafe {
-        MonitorFromPoint(
-            POINT {
-                x: cursor.x,
-                y: cursor.y,
-            },
-            MONITOR_DEFAULTTONEAREST,
-        )
-    };
-    if monitor.is_null() {
-        return None;
-    }
+fn monitor_work_area(
+    monitor: windows_sys::Win32::Graphics::Gdi::HMONITOR,
+) -> Option<(f32, f32, f32, f32)> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFO};
 
     let mut info = MONITORINFO {
         cbSize: std::mem::size_of::<MONITORINFO>() as u32,
@@ -332,20 +327,59 @@ fn cursor_placement() -> Option<CursorPlacement> {
         return None;
     }
 
+    Some((
+        info.rcWork.left as f32,
+        info.rcWork.top as f32,
+        info.rcWork.right as f32,
+        info.rcWork.bottom as f32,
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn cursor_placement() -> Option<CursorPlacement> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromPoint};
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    let mut cursor = POINT { x: 0, y: 0 };
+    if unsafe { GetCursorPos(&mut cursor) } == 0 {
+        return None;
+    }
+
+    let monitor = unsafe {
+        MonitorFromPoint(
+            POINT {
+                x: cursor.x,
+                y: cursor.y,
+            },
+            MONITOR_DEFAULTTONEAREST,
+        )
+    };
+    if monitor.is_null() {
+        return None;
+    }
+
     Some(CursorPlacement {
         cursor: (cursor.x as f32, cursor.y as f32),
-        work: (
-            info.rcWork.left as f32,
-            info.rcWork.top as f32,
-            info.rcWork.right as f32,
-            info.rcWork.bottom as f32,
-        ),
+        work: monitor_work_area(monitor)?,
     })
 }
 
+#[cfg(target_os = "windows")]
+fn window_work_area(hwnd: isize) -> Option<(f32, f32, f32, f32)> {
+    use windows_sys::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromWindow};
+
+    let monitor = unsafe { MonitorFromWindow(hwnd as _, MONITOR_DEFAULTTONEAREST) };
+    if monitor.is_null() {
+        return None;
+    }
+
+    monitor_work_area(monitor)
+}
+
 #[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
-fn clamp_to_work_area(
-    cursor: (f32, f32),
+fn fit_to_work_area(
+    position: (f32, f32),
     size: egui::Vec2,
     work: (f32, f32, f32, f32),
     margin: f32,
@@ -357,9 +391,19 @@ fn clamp_to_work_area(
     let max_y = (bottom - size.y - margin).max(min_y);
 
     (
-        (cursor.0 + margin).clamp(min_x, max_x),
-        (cursor.1 + margin).clamp(min_y, max_y),
+        position.0.clamp(min_x, max_x),
+        position.1.clamp(min_y, max_y),
     )
+}
+
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn clamp_to_work_area(
+    cursor: (f32, f32),
+    size: egui::Vec2,
+    work: (f32, f32, f32, f32),
+    margin: f32,
+) -> (f32, f32) {
+    fit_to_work_area((cursor.0 + margin, cursor.1 + margin), size, work, margin)
 }
 
 impl PopupApp {
@@ -375,7 +419,14 @@ impl PopupApp {
         configure_style(&cc.egui_ctx);
 
         #[cfg(target_os = "windows")]
-        enable_native_window_style(cc);
+        let window = window_handle(cc);
+        #[cfg(not(target_os = "windows"))]
+        let window = None;
+
+        #[cfg(target_os = "windows")]
+        if let Some(hwnd) = window {
+            enable_native_window_style(hwnd);
+        }
 
         let mut app = Self {
             source: args.source.clone(),
@@ -393,11 +444,14 @@ impl PopupApp {
             update_receiver: None,
             update_dismissed: false,
             copied_at: None,
+            replaced_at: None,
+            replace_window: None,
             notice: None,
             requested_height: None,
             hotkey: None,
             hotkey_label: hotkey_spec.to_string(),
             tray: None,
+            window,
             quit: false,
         };
 
@@ -466,6 +520,8 @@ impl PopupApp {
     }
 
     fn trigger(&mut self) {
+        self.replace_window = capture::foreground_window();
+
         match capture::capture_selection() {
             Ok(text) if text.trim().is_empty() => {
                 self.receiver = None;
@@ -514,7 +570,7 @@ impl PopupApp {
                     placement.work.2 / ppp,
                     placement.work.3 / ppp,
                 ),
-                12.0,
+                WINDOW_MARGIN,
             );
 
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
@@ -522,6 +578,41 @@ impl PopupApp {
 
         #[cfg(not(target_os = "windows"))]
         let _ = (self, ctx);
+    }
+
+    fn fit_vertically(&self, ctx: &egui::Context, height: f32) {
+        #[cfg(target_os = "windows")]
+        {
+            let Some(window) = self.window else {
+                return;
+            };
+            let Some(work) = window_work_area(window) else {
+                return;
+            };
+            let Some(rect) = ctx.input(|input| input.viewport().outer_rect) else {
+                return;
+            };
+
+            let ppp = ctx.pixels_per_point().max(0.1);
+            let (x, y) = fit_to_work_area(
+                (rect.min.x, rect.min.y),
+                egui::vec2(WINDOW_WIDTH, height),
+                (
+                    work.0 / ppp,
+                    work.1 / ppp,
+                    work.2 / ppp,
+                    work.3 / ppp,
+                ),
+                WINDOW_MARGIN,
+            );
+
+            if (x - rect.min.x).abs() > 0.5 || (y - rect.min.y).abs() > 0.5 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        let _ = (self, ctx, height);
     }
 
     fn begin_translation(&mut self, text: String) {
@@ -541,6 +632,7 @@ impl PopupApp {
         self.translation = TranslationState::Running {
             text: text.clone(),
             started: Instant::now(),
+            partial: String::new(),
         };
 
         let (sender, receiver) = channel();
@@ -711,6 +803,30 @@ impl PopupApp {
             .map(|at| at.elapsed() < COPIED_FEEDBACK)
             .unwrap_or(false)
     }
+
+    fn replaced_recently(&self) -> bool {
+        self.replaced_at
+            .map(|at| at.elapsed() < COPIED_FEEDBACK)
+            .unwrap_or(false)
+    }
+
+    fn replace_original(&mut self, text: String) {
+        #[cfg(target_os = "windows")]
+        {
+            let Some(window) = self.replace_window else {
+                self.notice = Some("没有可替换的原窗口".to_string());
+                return;
+            };
+
+            match capture::replace_selection(window, &text) {
+                Ok(()) => self.replaced_at = Some(Instant::now()),
+                Err(error) => self.notice = Some(error),
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        let _ = text;
+    }
 }
 
 impl eframe::App for PopupApp {
@@ -776,9 +892,14 @@ impl eframe::App for PopupApp {
 
         for message in messages {
             match message {
+                Progress::Delta(piece) => {
+                    if let TranslationState::Running { partial, .. } = &mut self.translation {
+                        partial.push_str(&piece);
+                    }
+                }
                 Progress::Done(translation) => {
                     let (text, elapsed) = match &self.translation {
-                        TranslationState::Running { text, started } => {
+                        TranslationState::Running { text, started, .. } => {
                             (text.clone(), started.elapsed())
                         }
                         TranslationState::Waiting { text } => (text.clone(), Duration::ZERO),
@@ -860,8 +981,14 @@ impl eframe::App for PopupApp {
             }
         }
 
-        // Keep polling while the window is hidden (hotkey events arrive via `logic`).
-        ctx.request_repaint_after(Duration::from_millis(100));
+        // Keep polling while the window is hidden (hotkey events arrive via
+        // `logic`); animate the skeleton/caret faster while a translation runs.
+        let repaint = if matches!(&self.translation, TranslationState::Running { .. }) {
+            Duration::from_millis(33)
+        } else {
+            Duration::from_millis(100)
+        };
+        ctx.request_repaint_after(repaint);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -893,6 +1020,7 @@ impl eframe::App for PopupApp {
                 desired_height,
             )));
             self.requested_height = Some(desired_height);
+            self.fit_vertically(&ctx, desired_height);
         }
 
         if let Some(source) = change_source {
@@ -912,6 +1040,10 @@ impl eframe::App for PopupApp {
         if let Some(text) = actions.copy {
             ctx.copy_text(text);
             self.copied_at = Some(Instant::now());
+        }
+
+        if let Some(text) = actions.replace {
+            self.replace_original(text);
         }
 
         if actions.dismiss_update {
@@ -1156,13 +1288,59 @@ impl PopupApp {
                     .wrap(),
                 );
             }
-            TranslationState::Running { .. } => {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(18.0);
-                    ui.spinner();
-                    ui.add_space(6.0);
-                    ui.label(egui::RichText::new("翻译中…").weak());
-                });
+            TranslationState::Running { partial, .. } if partial.is_empty() => {
+                let time = ui.input(|input| input.time);
+                let pulse = ((time * 2.2).sin() * 0.5 + 0.5) as f32;
+                let color = ui
+                    .visuals()
+                    .text_color()
+                    .gamma_multiply(0.14 + 0.16 * pulse);
+
+                ui.add_space(8.0);
+                for fraction in [1.0_f32, 0.86, 0.6] {
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width() * fraction, 14.0),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter()
+                        .rect_filled(rect, egui::CornerRadius::same(7), color);
+                    ui.add_space(10.0);
+                }
+            }
+            TranslationState::Running { partial, .. } => {
+                let time = ui.input(|input| input.time);
+                let pulse = ((time * 2.4).sin() * 0.5 + 0.5) as f32;
+                let caret = egui::Color32::from_rgba_unmultiplied(
+                    ACCENT.r(),
+                    ACCENT.g(),
+                    ACCENT.b(),
+                    (60.0 + 180.0 * pulse) as u8,
+                );
+
+                let mut job = egui::text::LayoutJob::default();
+                job.wrap.max_width = ui.available_width();
+                job.append(
+                    partial,
+                    0.0,
+                    egui::TextFormat {
+                        font_id: egui::FontId::proportional(17.0),
+                        line_height: Some(24.0),
+                        color: ui.visuals().text_color(),
+                        ..Default::default()
+                    },
+                );
+                job.append(
+                    "▍",
+                    0.0,
+                    egui::TextFormat {
+                        font_id: egui::FontId::proportional(17.0),
+                        line_height: Some(24.0),
+                        color: caret,
+                        ..Default::default()
+                    },
+                );
+
+                ui.add(egui::Label::new(job).selectable(true).wrap());
             }
             TranslationState::Failed { text, message } => {
                 self.error_card(ui, message, !text.is_empty(), actions);
@@ -1315,6 +1493,23 @@ impl PopupApp {
                     actions.copy = self.translation_text().map(str::to_string);
                 }
 
+                if cfg!(target_os = "windows")
+                    && self.replace_window.is_some()
+                    && ui
+                        .add_enabled(
+                            enabled,
+                            egui::Button::new(egui::RichText::new(if self.replaced_recently() {
+                                "已替换 ✓"
+                            } else {
+                                "替换原文"
+                            })
+                            .size(13.0)),
+                        )
+                        .clicked()
+                {
+                    actions.replace = self.translation_text().map(str::to_string);
+                }
+
                 if self.can_retranslate()
                     && ui
                         .add(egui::Button::new(
@@ -1439,8 +1634,13 @@ fn spawn_worker(
 ) {
     std::thread::spawn(move || {
         let request = TranslationRequest { text, source, target };
+        let deltas = sender.clone();
 
-        let _ = match engine.translate_blocking(&request) {
+        let result = engine.translate_blocking_streaming(&request, move |piece| {
+            let _ = deltas.send(Progress::Delta(piece.to_string()));
+        });
+
+        let _ = match result {
             Ok(result) => sender.send(Progress::Done(result.translated_text)),
             Err(error) => sender.send(Progress::Error(error.to_string())),
         };
@@ -1449,10 +1649,31 @@ fn spawn_worker(
 
 #[cfg(test)]
 mod placement_tests {
-    use super::clamp_to_work_area;
+    use super::{clamp_to_work_area, fit_to_work_area};
     use eframe::egui;
 
     const WORK: (f32, f32, f32, f32) = (0.0, 0.0, 1920.0, 1080.0);
+
+    #[test]
+    fn keeps_the_window_position_when_it_fits() {
+        let (x, y) = fit_to_work_area((100.0, 200.0), egui::vec2(400.0, 300.0), WORK, 12.0);
+
+        assert_eq!((x, y), (100.0, 200.0));
+    }
+
+    #[test]
+    fn lifts_the_window_when_it_grows_past_the_bottom() {
+        let (x, y) = fit_to_work_area((100.0, 900.0), egui::vec2(400.0, 300.0), WORK, 12.0);
+
+        assert_eq!((x, y), (100.0, 768.0));
+    }
+
+    #[test]
+    fn pulls_the_window_back_from_the_right_edge() {
+        let (x, y) = fit_to_work_area((1800.0, 200.0), egui::vec2(400.0, 300.0), WORK, 12.0);
+
+        assert_eq!((x, y), (1508.0, 200.0));
+    }
 
     #[test]
     fn places_below_right_of_the_cursor() {

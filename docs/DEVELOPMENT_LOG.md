@@ -1099,8 +1099,47 @@ Verification:
 
 ---
 
-# Git History
 
+## Milestone: Replace the Selection with the Translation (Windows)
+
+
+Completed:
+
+- `translator-popup-desktop` remembers the source window at capture time (`capture::foreground_window`) and adds a 替换原文 button (Windows only, shown when a source window is known): it writes the translation to the clipboard, calls `SetForegroundWindow`, sends Ctrl+V (real VK_V scancode), then restores the previous clipboard text
+- Failures (e.g. the source window has closed) surface through the notice banner; success shows 已替换 for 1.5 s
+- macOS and the GTK client keep copy-only behavior for now
+
+
+Verification:
+
+- `cargo test --release` in `desktop/translator-popup-desktop`: 6 passed
+- Windows real-machine pass: 替换原文 replaces the selection in the source app, focus returns to that app and the clipboard keeps its previous content
+
+
+---
+
+
+## Milestone: Streaming Output + Modern Busy Indicator
+
+
+Completed:
+
+- `translator-inference`: `generate_streaming(prompt, stop_strings, options, on_delta)` reports every decoded token piece to a callback (the existing `generate` is unchanged); each `Request` carries an optional `on_delta`
+- `translator-service`: `LlamaCppEngine::translate_blocking_streaming` shares the new `inference_request` helper; the `TranslationEngine` trait and HTTP API stay one-shot
+- `translator-popup-desktop`: the worker forwards `Progress::Delta` pieces and the translation renders while it arrives — skeleton bars breathing before the first token, then the growing text with a pulsing caret instead of a spinner; while running the window repaints every 33 ms
+- `translator-popup-desktop`: `fit_vertically` keeps the popup inside the monitor work area when the adaptive height changes, so a window near the bottom edge grows upward instead of off-screen; `WINDOW_MARGIN` unifies the placement margin
+
+
+Verification:
+
+- `core/inference`: the `TRANSLATOR_TEST_MODEL` test covers both `generate` and `generate_streaming` (deltas were emitted and the streamed result contains 内核)
+- `core/translator-service`: 43 tests passed; `desktop/translator-popup-desktop`: 9 tests passed (7 placement + 2 hotkey parser)
+- Windows real-machine pass: skeleton → streaming text with caret, the window grows upward near the bottom edge, and 替换原文 still replaces the selection
+
+
+---
+
+# Git History
 
 Commit:
 

@@ -169,6 +169,67 @@ fn restore_clipboard(
     let _ = clipboard.set_text(previous);
 }
 
+#[cfg(target_os = "windows")]
+pub fn foreground_window() -> Option<isize> {
+    let window = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+
+    if window.is_null() {
+        None
+    } else {
+        Some(window as isize)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn foreground_window() -> Option<isize> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+pub fn replace_selection(window: isize, text: &str) -> Result<(), String> {
+    use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+    use std::time::Duration;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| format!("failed to open clipboard: {error}"))?;
+
+    let before = clipboard.get_text().ok();
+    clipboard
+        .set_text(text)
+        .map_err(|error| format!("failed to write clipboard: {error}"))?;
+
+    if unsafe { SetForegroundWindow(window as _) } == 0 {
+        return Err("无法把焦点切回原窗口，替换已取消".to_string());
+    }
+
+    std::thread::sleep(Duration::from_millis(120));
+
+    let mut enigo =
+        Enigo::new(&Settings::default()).map_err(|error| format!("failed to init input: {error}"))?;
+
+    enigo
+        .key(Key::Control, Direction::Press)
+        .map_err(|error| format!("failed to press modifier: {error}"))?;
+
+    std::thread::sleep(Duration::from_millis(15));
+
+    let paste = enigo.key(Key::V, Direction::Click);
+    let release = enigo.key(Key::Control, Direction::Release);
+    paste.map_err(|error| format!("failed to send V: {error}"))?;
+    release.map_err(|error| format!("failed to release modifier: {error}"))?;
+
+    std::thread::sleep(Duration::from_millis(250));
+
+    if let Some(previous) = before {
+        if previous != text {
+            let _ = clipboard.set_text(previous);
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn capture_selection() -> Result<String, String> {
     let output = std::process::Command::new("wl-paste")

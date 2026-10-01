@@ -89,6 +89,7 @@ struct Request {
     stop_strings: Vec<String>,
     options: GenerateOptions,
     respond: Sender<Result<Generation, InferenceError>>,
+    on_delta: Option<Box<dyn FnMut(&str) + Send>>,
 }
 
 impl InferenceEngine {
@@ -119,6 +120,28 @@ impl InferenceEngine {
         stop_strings: &[String],
         options: &GenerateOptions,
     ) -> Result<Generation, InferenceError> {
+        self.request(prompt, stop_strings, options, None)
+    }
+
+    /// Like [`Self::generate`], but calls `on_delta` with every decoded token
+    /// piece so callers can render the answer incrementally.
+    pub fn generate_streaming(
+        &self,
+        prompt: &str,
+        stop_strings: &[String],
+        options: &GenerateOptions,
+        on_delta: impl FnMut(&str) + Send + 'static,
+    ) -> Result<Generation, InferenceError> {
+        self.request(prompt, stop_strings, options, Some(Box::new(on_delta)))
+    }
+
+    fn request(
+        &self,
+        prompt: &str,
+        stop_strings: &[String],
+        options: &GenerateOptions,
+        on_delta: Option<Box<dyn FnMut(&str) + Send>>,
+    ) -> Result<Generation, InferenceError> {
         let (respond, response) = channel();
 
         let sender = self
@@ -132,6 +155,7 @@ impl InferenceEngine {
                 stop_strings: stop_strings.to_vec(),
                 options: options.clone(),
                 respond,
+                on_delta,
             })
             .map_err(|_| InferenceError::Worker("inference worker is not running".to_string()))?;
 
@@ -214,9 +238,9 @@ fn worker(
         return;
     }
 
-    while let Ok(request) = receiver.recv() {
+    while let Ok(mut request) = receiver.recv() {
         context.clear_kv_cache();
-        let result = generate_once(&model, &mut context, n_ctx.get() as usize, &request);
+        let result = generate_once(&model, &mut context, n_ctx.get() as usize, &mut request);
         let _ = request.respond.send(result);
     }
 }
@@ -225,7 +249,7 @@ fn generate_once(
     model: &LlamaModel,
     context: &mut LlamaContext<'_>,
     n_ctx: usize,
-    request: &Request,
+    request: &mut Request,
 ) -> Result<Generation, InferenceError> {
     let tokens = model
         .str_to_token(&request.prompt, AddBos::Never)
@@ -302,6 +326,10 @@ fn generate_once(
             break;
         }
 
+        if let Some(on_delta) = request.on_delta.as_mut() {
+            on_delta(&piece);
+        }
+
         batch.clear();
         batch
             .add(token, position, &[0], true)
@@ -344,25 +372,39 @@ mod tests {
 
         let engine = InferenceEngine::load(model_path, LoadOptions::default()).unwrap();
         let prompt = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>将以下文本翻译为中文，注意只需要输出翻译后的结果，不要额外解释：\n\nkernel panic<｜hy_Assistant｜>";
+        let stops = ["<｜hy_place▁holder▁no▁2｜>".to_string()];
+        let options = GenerateOptions {
+            temperature: 0.7,
+            top_k: 20,
+            top_p: 0.6,
+            repeat_penalty: 1.05,
+            ..Default::default()
+        };
 
-        let generation = engine
-            .generate(
-                prompt,
-                &["<｜hy_place▁holder▁no▁2｜>".to_string()],
-                &GenerateOptions {
-                    temperature: 0.7,
-                    top_k: 20,
-                    top_p: 0.6,
-                    repeat_penalty: 1.05,
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        let generation = engine.generate(prompt, &stops, &options).unwrap();
 
         assert!(
             generation.text.contains("内核"),
             "unexpected output: {}",
             generation.text
         );
+
+        let streamed = std::sync::Arc::new(Mutex::new(String::new()));
+        let sink = std::sync::Arc::clone(&streamed);
+        let streamed_generation = engine
+            .generate_streaming(prompt, &stops, &options, move |piece| {
+                if let Ok(mut buffer) = sink.lock() {
+                    buffer.push_str(piece);
+                }
+            })
+            .unwrap();
+        let streamed = streamed.lock().unwrap().clone();
+
+        assert!(
+            streamed_generation.text.contains("内核"),
+            "unexpected streamed output: {}",
+            streamed_generation.text
+        );
+        assert!(!streamed.is_empty(), "no streaming deltas were emitted");
     }
 }
