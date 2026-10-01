@@ -897,6 +897,25 @@ Verification:
 ---
 
 
+## Milestone: v0.1.0 Release
+
+
+Completed:
+
+- Tag `v0.1.0` pushed at `a6f1321`; the release workflow built and published the GitHub release (https://github.com/zhangking4u/open-translator/releases/tag/v0.1.0) with `OpenTranslator-windows-x64.zip` and `OpenTranslator-macos-arm64.dmg`
+- The tagged build includes the latest real-machine fixes: Windows DX12 backend default + system CJK font fallback, capture waiting for modifier release with clipboard-change detection, and the desktop single-instance lock / extension-server bind fix
+- Builds remain unsigned: SmartScreen/Gatekeeper warnings and the macOS Accessibility requirement are documented in the release notes and README
+
+
+Verification:
+
+- `gh release view v0.1.0`: published 2026-10-01 02:40 UTC, both assets attached
+- Still pending: real-machine re-verification with the rebuilt artifacts
+
+
+---
+
+
 # Git History
 
 
@@ -928,13 +947,13 @@ docs: add project status document
 Consumer edition (ordinary users); Sprint 5 meeting translation parked.
 
 
+Released (2026-10-01): `v0.1.0` — GitHub release with the Windows zip and macOS arm64 dmg.
+
 Planned:
 
-1. Tag `v0.1.0` and publish the GitHub release
+1. Real-machine verification on Windows/macOS with the rebuilt artifacts (hotkey/Ctrl+C capture, DX12 + CJK fonts, single instance)
 
-2. Real-machine verification on Windows/macOS
-
-3. Code signing / notarization (budget decision)
+2. Code signing / notarization (budget decision)
 
 
 Completed sprints:
@@ -957,7 +976,7 @@ Completed sprints:
 
 ## Distribution
 
-Tag `v0.1.0`, real-machine verification on Windows/macOS, code signing/notarization.
+v0.1.0 released (2026-10-01); remaining: real-machine verification on Windows/macOS, code signing/notarization.
 
 
 ## Sprint 5

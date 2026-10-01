@@ -221,7 +221,7 @@ main
 
 Latest commit:
 
-docs: refresh project documentation
+a6f1321 fix: start the extension server once and add a single-instance lock (tag: v0.1.0)
 
 
 ---
@@ -239,16 +239,21 @@ Goal:
 Ordinary users on Windows/macOS can download, install and use it without technical setup.
 
 
+Status:
+
+`v0.1.0` published 2026-10-01 (Windows zip + macOS arm64 dmg): https://github.com/zhangking4u/open-translator/releases/tag/v0.1.0
+
+
 ---
 
 ## 9. Next Steps
 
 
-1. Tag `v0.1.0` and publish the GitHub release (Windows zip + macOS dmg; packaging already verified via `workflow_dispatch`)
+1. Real-machine verification with the released artifacts: Windows client (hotkey + Ctrl+C capture, DX12 + CJK fonts, single instance) and macOS client (Accessibility + Cmd+C)
 
 2. Code signing / notarization (budget decision)
 
-3. Real-machine verification: Windows client (hotkey + Ctrl+C) and macOS client (Accessibility + Cmd+C)
+3. (Done 2026-10-01) Tag `v0.1.0` and publish the GitHub release
 
 
 ---
@@ -409,3 +414,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Phase B3: desktop client embeds the engine (no Ollama, no service process) and serves the HTTP API in-process for the browser extension; verified with all services stopped
 - Phase C1: first-run model download (ModelScope + resume + SHA-256 + progress) in the desktop client; live-verified end to end (1.13 GB, then `/translate` 0.28s); normal startup stays hidden, and Esc/X quit where no tray/hotkey exists
 - Phase C2: release workflow produces a Windows zip installer and a macOS dmg (tag `v*` or manual dispatch); README has an ordinary-user download section; code signing/notarization still pending
+
+
+## v0.1.0 Release (2026-10-01)
+
+
+- Real-machine fixes included in the tag: Windows defaults `WGPU_BACKEND=dx12` (Intel Vulkan driver crash `igvk64.dll`) and installs a system CJK font fallback (tofu boxes); capture waits for modifier release and only translates when the clipboard actually changed; the desktop app is single-instance and the extension HTTP server starts once (`AddrInUse` shows an informational status)
+- `v0.1.0` published with `OpenTranslator-windows-x64.zip` and `OpenTranslator-macos-arm64.dmg`; unsigned, so SmartScreen/Gatekeeper warnings are documented in the release notes
+- Pending: real-machine re-verification with the released artifacts and code signing/notarization
