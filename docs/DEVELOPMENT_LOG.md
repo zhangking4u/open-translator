@@ -1080,6 +1080,25 @@ Verification:
 
 ---
 
+
+## Milestone: Selection UX Follow-ups (Clipboard + Popup Placement)
+
+
+Completed:
+
+- `translator-popup-desktop` capture restores the previous clipboard text after a successful selection copy (best-effort; non-text clipboard data such as images/files cannot be restored and is replaced by the captured text)
+- The popup opens near the cursor: on Windows it reads `GetCursorPos` plus the cursor monitor's work area (`MonitorFromPoint`/`GetMonitorInfoW`, new `Win32_Graphics_Gdi` feature), places the window 12 pt below-right of the cursor and clamps it into the work area (multi-monitor and negative origins included), converting physical pixels with `pixels_per_point`; the hotkey, tray and first-show paths all go through `show_window`; macOS keeps its previous placement
+- `clamp_to_work_area` is a pure helper covered by four unit tests
+
+
+Verification:
+
+- `cargo test --release` in `desktop/translator-popup-desktop`: 6 passed (4 placement + 2 hotkey parser tests)
+- Windows real-machine pass: the clipboard keeps its pre-capture text after translating a selection, and the popup appears on the cursor's monitor near the cursor without crossing the work-area edges
+
+
+---
+
 # Git History
 
 

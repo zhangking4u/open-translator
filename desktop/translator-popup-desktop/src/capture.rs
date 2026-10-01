@@ -80,7 +80,6 @@ pub fn capture_selection() -> Result<String, String> {
     let mut clipboard =
         arboard::Clipboard::new().map_err(|error| format!("failed to open clipboard: {error}"))?;
 
-    #[cfg(target_os = "macos")]
     let before = clipboard.get_text().ok();
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -148,7 +147,26 @@ pub fn capture_selection() -> Result<String, String> {
         );
     }
 
+    restore_clipboard(&mut clipboard, before, &text);
+
     Ok(text)
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn restore_clipboard(
+    clipboard: &mut arboard::Clipboard,
+    previous: Option<String>,
+    captured: &str,
+) {
+    let Some(previous) = previous else {
+        return;
+    };
+
+    if previous.trim() == captured {
+        return;
+    }
+
+    let _ = clipboard.set_text(previous);
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]

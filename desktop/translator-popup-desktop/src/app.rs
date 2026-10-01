@@ -280,6 +280,88 @@ fn max_window_height(ctx: &egui::Context) -> f32 {
         .max(MIN_WINDOW_HEIGHT)
 }
 
+#[cfg(target_os = "windows")]
+struct CursorPlacement {
+    cursor: (f32, f32),
+    work: (f32, f32, f32, f32),
+}
+
+#[cfg(target_os = "windows")]
+fn cursor_placement() -> Option<CursorPlacement> {
+    use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    let mut cursor = POINT { x: 0, y: 0 };
+    if unsafe { GetCursorPos(&mut cursor) } == 0 {
+        return None;
+    }
+
+    let monitor = unsafe {
+        MonitorFromPoint(
+            POINT {
+                x: cursor.x,
+                y: cursor.y,
+            },
+            MONITOR_DEFAULTTONEAREST,
+        )
+    };
+    if monitor.is_null() {
+        return None;
+    }
+
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        rcMonitor: RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        rcWork: RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        dwFlags: 0,
+    };
+    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+        return None;
+    }
+
+    Some(CursorPlacement {
+        cursor: (cursor.x as f32, cursor.y as f32),
+        work: (
+            info.rcWork.left as f32,
+            info.rcWork.top as f32,
+            info.rcWork.right as f32,
+            info.rcWork.bottom as f32,
+        ),
+    })
+}
+
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn clamp_to_work_area(
+    cursor: (f32, f32),
+    size: egui::Vec2,
+    work: (f32, f32, f32, f32),
+    margin: f32,
+) -> (f32, f32) {
+    let (left, top, right, bottom) = work;
+    let min_x = left + margin;
+    let min_y = top + margin;
+    let max_x = (right - size.x - margin).max(min_x);
+    let max_y = (bottom - size.y - margin).max(min_y);
+
+    (
+        (cursor.0 + margin).clamp(min_x, max_x),
+        (cursor.1 + margin).clamp(min_y, max_y),
+    )
+}
+
 impl PopupApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
@@ -377,10 +459,7 @@ impl PopupApp {
         }
 
         if show_on_start {
-            cc.egui_ctx
-                .send_viewport_cmd(egui::ViewportCommand::Visible(true));
-            cc.egui_ctx
-                .send_viewport_cmd(egui::ViewportCommand::Focus);
+            app.show_window(&cc.egui_ctx);
         }
 
         app
@@ -403,6 +482,46 @@ impl PopupApp {
                 };
             }
         }
+    }
+
+    fn show_window(&self, ctx: &egui::Context) {
+        self.place_near_cursor(ctx);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    }
+
+    fn place_near_cursor(&self, ctx: &egui::Context) {
+        #[cfg(target_os = "windows")]
+        {
+            let Some(placement) = cursor_placement() else {
+                return;
+            };
+
+            let ppp = ctx.pixels_per_point().max(0.1);
+            let size = ctx
+                .input(|input| input.viewport().inner_rect)
+                .map(|rect| rect.size())
+                .unwrap_or_else(|| {
+                    egui::vec2(WINDOW_WIDTH, self.requested_height.unwrap_or(WINDOW_SIZE[1]))
+                });
+
+            let (x, y) = clamp_to_work_area(
+                (placement.cursor.0 / ppp, placement.cursor.1 / ppp),
+                size,
+                (
+                    placement.work.0 / ppp,
+                    placement.work.1 / ppp,
+                    placement.work.2 / ppp,
+                    placement.work.3 / ppp,
+                ),
+                12.0,
+            );
+
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        let _ = (self, ctx);
     }
 
     fn begin_translation(&mut self, text: String) {
@@ -614,8 +733,7 @@ impl eframe::App for PopupApp {
 
         if hotkey_pressed {
             self.trigger();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            self.show_window(ctx);
         }
 
         if let Some(info) = self
@@ -633,14 +751,10 @@ impl eframe::App for PopupApp {
         let tray_command = self.tray.as_ref().and_then(|tray| tray.poll());
 
         match tray_command {
-            Some(TrayCommand::Show) => {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            }
+            Some(TrayCommand::Show) => self.show_window(ctx),
             Some(TrayCommand::Translate) => {
                 self.trigger();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.show_window(ctx);
             }
             Some(TrayCommand::Update) => {
                 if let Some(info) = &self.update {
@@ -1331,4 +1445,46 @@ fn spawn_worker(
             Err(error) => sender.send(Progress::Error(error.to_string())),
         };
     });
+}
+
+#[cfg(test)]
+mod placement_tests {
+    use super::clamp_to_work_area;
+    use eframe::egui;
+
+    const WORK: (f32, f32, f32, f32) = (0.0, 0.0, 1920.0, 1080.0);
+
+    #[test]
+    fn places_below_right_of_the_cursor() {
+        let (x, y) = clamp_to_work_area((100.0, 200.0), egui::vec2(400.0, 300.0), WORK, 12.0);
+
+        assert_eq!((x, y), (112.0, 212.0));
+    }
+
+    #[test]
+    fn clamps_the_window_into_the_work_area() {
+        let (x, y) = clamp_to_work_area((1900.0, 1070.0), egui::vec2(400.0, 300.0), WORK, 12.0);
+
+        assert_eq!((x, y), (1508.0, 768.0));
+    }
+
+    #[test]
+    fn keeps_an_oversized_window_at_the_origin() {
+        let (x, y) = clamp_to_work_area(
+            (500.0, 500.0),
+            egui::vec2(4000.0, 3000.0),
+            WORK,
+            12.0,
+        );
+
+        assert_eq!((x, y), (12.0, 12.0));
+    }
+
+    #[test]
+    fn handles_monitors_left_of_the_primary() {
+        let work = (-1920.0, 0.0, 0.0, 1080.0);
+        let (x, y) = clamp_to_work_area((-1800.0, 100.0), egui::vec2(400.0, 300.0), work, 12.0);
+
+        assert_eq!((x, y), (-1788.0, 112.0));
+    }
 }
