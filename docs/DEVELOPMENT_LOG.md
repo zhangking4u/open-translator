@@ -969,12 +969,13 @@ Verification:
 - Missing-model path fails fast: `TRANSLATOR_MODEL_PATH=/tmp/nonexistent.gguf` → "model file not found ... (set model_path or enable auto_download)" (explicit paths never trigger a download)
 - `open-translator-setup --name ot-selftest --bin /bin/true` registered and uninstalled cleanly without touching the existing shortcut; shell syntax checks pass on all packaging scripts
 - After the review fixes: the packaged popup still translates "kernel panic" → 内核崩溃 (llama-cpp); `--no-start` with a missing default model fails in ~26 ms without creating the models dir; `--if-missing` is a silent no-op when the shortcut exists and registers only when missing
-- Pending: an actual `apt install` on a user account, a full first-run download inside the packaged app, and a `workflow_dispatch` run to verify the new release job
+- CI `workflow_dispatch` run 36811560500 (commit `985830c`): all three jobs succeeded; the downloaded `OpenTranslator-linux-x64.deb` (version `0.0.0+985830c`) was extracted and run with an isolated HOME: the first run downloaded 1.13 GB in 47 s with progress, the SHA-256 matched (`4383ac0c…`), and "kernel panic" → 内核崩溃; the warm second run took 0.36 s
+- Pending: an actual `apt install` on a user account (needs admin rights) and shipping the deb with the next release
 
 
 Next:
 
-- Verify the Release workflow Linux job via `workflow_dispatch`, then ship the deb with the next release; AppImage deferred
+- Ship the deb with the next release (release job and packaged first-run download verified); AppImage deferred
 
 
 ---

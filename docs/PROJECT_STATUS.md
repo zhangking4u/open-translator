@@ -249,7 +249,7 @@ Status:
 ## 9. Next Steps
 
 
-1. Verify the Release workflow Linux job (`workflow_dispatch`) and ship the deb with the next release
+1. Ship the deb with the next release (Linux release job and packaged first-run download verified 2026-10-01)
 
 2. Code signing / notarization (budget decision)
 
@@ -434,4 +434,5 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - `open-translator-setup` registers the GNOME shortcut at user level (no root-time gsettings); the popup auto-registers on first launch via `--if-missing` (never overwrites a custom binding), and `postinst` still points users to the manual command
 - Deb requires `libc6 (>= 2.39)` and GTK4 ≥ 4.10 (built on Ubuntu 24.04; binary symbol versions GLIBC_2.38/2.39)
 - Release workflow gained a Linux job that attaches the deb to the release; local verification: extracted deb auto-started the sibling service (`llama-cpp`) and translated "kernel panic" → 内核崩溃; missing-model and setup-script paths checked
-- Pending: `apt install` on a real user account, full first-run download inside the packaged app, `workflow_dispatch` run of the new release job; AppImage deferred
+- Verified: `workflow_dispatch` release run built all three platforms; the CI deb (version `0.0.0+985830c`) downloaded the model (1.13 GB, 47 s, SHA-256 match) on first run in an isolated HOME and translated "kernel panic" → 内核崩溃 (warm run 0.36 s)
+- Pending: `apt install` on a real user account (needs admin rights), shipping the deb with the next release; AppImage deferred
