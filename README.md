@@ -22,7 +22,7 @@
 
 首次运行会自动从 ModelScope 下载模型（约 1.1GB，带进度与断点续传）。之后任意应用选中文字按 `Ctrl+Alt+T` 即可翻译；托盘/菜单栏图标提供 显示窗口 / 立即翻译 / 退出。
 
-> 安装包由 CI 在打 tag 时生成（`git tag v0.1.0 && git push --tags` 即创建 Release）。
+> 安装包由 CI 在打 tag 时生成（`git tag v0.2.0 && git push --tags` 即创建 Release）。
 
 ### 开发 / 进阶用户
 
@@ -157,7 +157,7 @@ docs/                      架构、状态、开发日志
 
 ```bash
 cd core/translator-service && cargo test    # 核心服务
-# Linux 安装包：VERSION=0.1.0 ./packaging/linux/make-deb.sh（先 cargo build --release 两个 crate）
+# Linux 安装包：VERSION=0.2.0 ./packaging/linux/make-deb.sh（先 cargo build --release 两个 crate）
 cd core/inference && cargo test             # 进程内推理（构建 llama.cpp 需 cmake + clang/libclang）
 cd desktop/translator-core && cargo test    # 桌面共享库（跨平台：参数/配置/翻译调用/服务自启）
 cd desktop/translator-popup && cargo test   # 桌面弹窗（Linux/GTK）

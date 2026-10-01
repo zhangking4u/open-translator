@@ -11,6 +11,17 @@ OUT="${2:?usage: $0 <popup-binary> <output.dmg>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Version baked into the app bundle: explicit VERSION (CI passes the tag),
+# then the latest tag, then a placeholder.
+if [ -z "${VERSION:-}" ]; then
+    VERSION="$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || true)"
+    VERSION="${VERSION#v}"
+
+    if ! [[ "$VERSION" =~ ^[0-9] ]]; then
+        VERSION="0.0.0"
+    fi
+fi
+
 if [ ! -x "$BIN" ]; then
     echo "popup binary not found: $BIN" >&2
     exit 1
@@ -24,6 +35,9 @@ mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/OpenTranslator"
 cp "$REPO_ROOT/packaging/macos/Info.plist" "$APP/Contents/Info.plist"
 
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+
 hdiutil create -volname "OpenTranslator" -srcfolder "$STAGE" -ov -format UDZO "$OUT"
 
-echo "created $OUT"
+echo "created $OUT (version $VERSION)"

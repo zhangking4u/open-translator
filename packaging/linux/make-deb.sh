@@ -2,7 +2,7 @@
 # Build a Debian package for the Linux/GNOME OpenTranslator client.
 #
 # Usage:
-#   VERSION=0.1.0 ARCH=amd64 ./make-deb.sh
+#   VERSION=0.2.0 ARCH=amd64 ./make-deb.sh
 #
 # Expects release binaries at the default cargo locations (override with
 # POPUP_BIN / SERVICE_BIN):
@@ -23,7 +23,7 @@ if [ -z "${VERSION:-}" ]; then
     # Shallow clones have no tags; `git describe --always` then returns a bare
     # SHA, which is not a valid package version.
     if ! [[ "$VERSION" =~ ^[0-9] ]]; then
-        VERSION="0.1.0"
+        VERSION="0.0.0"
     fi
 fi
 

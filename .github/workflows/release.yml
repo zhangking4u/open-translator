@@ -103,8 +103,11 @@ jobs:
           OPEN_TRANSLATOR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: cargo build --release
       - name: Package dmg
+        env:
+          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
           ARCH="$(uname -m)"
+          VERSION="${VERSION#v}"
           ../../packaging/macos/make-dmg.sh target/release/translator-popup-desktop "OpenTranslator-macos-$ARCH.dmg"
       - uses: actions/upload-artifact@v4
         with:
