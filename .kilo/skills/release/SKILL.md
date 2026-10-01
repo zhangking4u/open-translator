@@ -21,9 +21,9 @@ git push origin v0.1.0
 
 Pushing a `v*` tag triggers `.github/workflows/release.yml`, which:
 
-1. builds the desktop client on `windows-latest` and `macos-latest`;
-2. packages `OpenTranslator-windows-x64.zip` (exe + `packaging/windows/install.ps1` + README) and `OpenTranslator-macos-<arch>.dmg` (`packaging/macos/make-dmg.sh` + `Info.plist`);
-3. creates the GitHub release (`gh release create --generate-notes`) and uploads both assets.
+1. builds the desktop client on `windows-latest` and `macos-latest`, and the core service + GTK popup on `ubuntu-latest`;
+2. packages `OpenTranslator-windows-x64.zip` (exe + `packaging/windows/install.ps1` + README), `OpenTranslator-macos-<arch>.dmg` (`packaging/macos/make-dmg.sh` + `Info.plist`) and `OpenTranslator-linux-x64.deb` (`packaging/linux/make-deb.sh`, needs `libgtk-4-dev` + `pkg-config` to build);
+3. creates the GitHub release (`gh release create --generate-notes`) and uploads all three assets; the build steps inject `OPEN_TRANSLATOR_VERSION` from the tag for the startup update check.
 
 The workflow also supports manual `workflow_dispatch`: it then only uploads workflow artifacts and does not touch releases — useful for testing packaging before tagging.
 
@@ -35,12 +35,12 @@ gh run watch <run-id>
 gh release view v0.1.0
 ```
 
-Expected assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`.
+Expected assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`.
 Artifacts can be downloaded with `gh run download <run-id> -n <name>` (can be slow).
 
 ## Polish / troubleshoot
 
-- Better release body: `gh release edit v0.1.0 --title "OpenTranslator v0.1.0" --notes "..."` — mention: local inference (no cloud), first run downloads the model (~1.1 GB from ModelScope), Windows runs `install.ps1`, macOS needs Accessibility permission, unsigned builds may trigger SmartScreen/Gatekeeper.
+- Better release body: `gh release edit v0.1.0 --title "OpenTranslator v0.1.0" --notes "..."` — mention: local inference (no cloud), first run downloads the model (~1.1 GB from ModelScope), Windows runs `install.ps1`, Linux `sudo apt install ./OpenTranslator-linux-x64.deb` (shortcut auto-registers on first launch; needs Ubuntu 24.04+/glibc ≥ 2.39), macOS needs Accessibility permission, unsigned builds may trigger SmartScreen/Gatekeeper.
 - Failed job: `gh run rerun <run-id> --failed`.
 - Missing/stale assets after a rerun: `gh release upload v0.1.0 <file> --clobber`.
 - Re-do a release: `git tag -d v0.1.0 && git push origin :refs/tags/v0.1.0`, then tag and push again.
