@@ -276,6 +276,10 @@ impl PopupApp {
 
         match crate::server::start(engine, plan.bind_addr, plan.model_name) {
             Ok(()) => self.server_started = true,
+            Err(crate::server::ServerError::AddrInUse(address)) => {
+                self.status = format!("扩展服务未启动：{address} 已被其他服务占用");
+                self.error = false;
+            }
             Err(error) => {
                 if !self.error {
                     self.show_error(&format!("扩展服务启动失败：{error}"));

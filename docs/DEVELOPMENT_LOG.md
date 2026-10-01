@@ -876,6 +876,27 @@ Verification:
 ---
 
 
+## Milestone: Extension Server Bind Error and Single Instance
+
+
+Completed:
+
+- Real-machine report: "扩展服务启动失败：cannot bind 127.0.0.1:17890 ... (os error 10048)" kept appearing even with a single running instance; the earlier "duplicate instance" explanation was wrong
+- Root cause: `main.rs` started the extension HTTP server when the model was already loaded, and `PopupApp::new` started it a second time for the same `Startup::Loaded(Ok)`; the second bind always failed with `AddrInUse` and that error was shown in the window, while the first server kept serving (`/health` answered normally)
+- Fix: removed the duplicate start in `main.rs`; the server now starts only from the app (`maybe_start_server`, which also covers the post-download `Ready` event)
+- `server.rs` returns `ServerError::{AddrInUse, Other}`; `AddrInUse` shows an informational status ("扩展服务未启动：… 已被其他服务占用") instead of a red error — the expected case when a headless `translator-service` already owns the port
+- New `single_instance` module (`File::try_lock` on a per-user lock file in the temp dir, no new crates): a second desktop launch exits early, showing a Windows message box ("OpenTranslator 已在运行…"); macOS exits silently (LaunchServices normally prevents duplicates there anyway)
+
+
+Verification:
+
+- `single_instance.rs` and `capture.rs` compile-checked in a standalone crate for the Windows target and `--target aarch64-apple-darwin`
+- Runtime check pending: start the app and confirm the window shows "等待划词…" instead of the bind error (with `/health` working); double-click a second copy and confirm the "已在运行" box appears and only one process remains
+
+
+---
+
+
 # Git History
 
 

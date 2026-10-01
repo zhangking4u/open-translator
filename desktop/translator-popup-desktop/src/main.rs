@@ -4,6 +4,7 @@ mod app;
 mod capture;
 mod hotkey;
 mod server;
+mod single_instance;
 mod tray;
 
 use std::path::PathBuf;
@@ -189,6 +190,14 @@ fn main() {
         std::process::exit(run_headless(&engine, &args, &text));
     }
 
+    let _instance = match single_instance::acquire() {
+        Some(guard) => guard,
+        None => {
+            single_instance::notify_existing_instance();
+            return;
+        }
+    };
+
     let startup = if model_path.is_file() {
         app::Startup::Loaded(
             LlamaCppEngine::load(
@@ -235,16 +244,6 @@ fn main() {
     } else {
         None
     };
-
-    if let app::Startup::Loaded(Ok(engine)) = &startup {
-        if let Some(plan) = &server_plan {
-            if let Err(error) =
-                server::start(engine.clone(), plan.bind_addr.clone(), plan.model_name.clone())
-            {
-                eprintln!("extension server disabled: {error}");
-            }
-        }
-    }
 
     let hotkey_spec = config
         .hotkey

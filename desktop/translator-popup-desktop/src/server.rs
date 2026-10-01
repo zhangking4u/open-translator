@@ -8,17 +8,36 @@ use translator_service::engine::{EngineRef, TimeoutEngine};
 const TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CHARS: usize = 1500;
 
+pub enum ServerError {
+    AddrInUse(String),
+    Other(String),
+}
+
+impl std::fmt::Display for ServerError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AddrInUse(address) => write!(formatter, "{address} 已被占用"),
+            Self::Other(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
 pub fn start(
     engine: Arc<LlamaCppEngine>,
     bind_addr: String,
     model_name: String,
-) -> Result<(), String> {
-    let listener = std::net::TcpListener::bind(&bind_addr)
-        .map_err(|error| format!("cannot bind {bind_addr}: {error}"))?;
+) -> Result<(), ServerError> {
+    let listener = std::net::TcpListener::bind(&bind_addr).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AddrInUse {
+            ServerError::AddrInUse(bind_addr.clone())
+        } else {
+            ServerError::Other(format!("cannot bind {bind_addr}: {error}"))
+        }
+    })?;
 
     listener
         .set_nonblocking(true)
-        .map_err(|error| format!("cannot configure listener: {error}"))?;
+        .map_err(|error| ServerError::Other(format!("cannot configure listener: {error}")))?;
 
     std::thread::Builder::new()
         .name("translator-http".to_string())
@@ -51,7 +70,7 @@ pub fn start(
                 }
             });
         })
-        .map_err(|error| format!("cannot start extension server thread: {error}"))?;
+        .map_err(|error| ServerError::Other(format!("cannot start extension server thread: {error}")))?;
 
     Ok(())
 }
