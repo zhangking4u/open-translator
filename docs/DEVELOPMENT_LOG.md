@@ -1006,6 +1006,24 @@ Next:
 ---
 
 
+## Milestone: v0.1.0 Re-Release (Linux deb + Update Check)
+
+
+Completed:
+
+- Deleted the original v0.1.0 GitHub release and both tags, re-tagged `v0.1.0` at `fd18fc2` (main with the Linux deb and update-check work) and re-ran the Release workflow
+- Release run 36813116437: all three package jobs succeeded; the release now carries `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg` and `OpenTranslator-linux-x64.deb`
+- Release notes rewritten: Linux `apt install`, first-launch shortcut registration, glibc/GTK baseline, startup update check, and the note that existing v0.1.0 installs need one manual update before hints can reach them
+
+
+Verification:
+
+- `gh release view v0.1.0`: three assets attached; `gh run view 36813116437`: Windows/macOS/Linux jobs all success
+
+
+---
+
+
 # Git History
 
 
