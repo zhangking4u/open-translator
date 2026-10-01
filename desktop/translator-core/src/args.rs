@@ -9,6 +9,7 @@ pub const DEFAULT_SERVICE_URL: &str = "http://127.0.0.1:17890";
 pub struct Args {
     pub source: String,
     pub target: String,
+    pub recent_targets: Vec<String>,
     pub clipboard: bool,
     pub stdin: bool,
     pub print: bool,
@@ -21,6 +22,7 @@ impl Default for Args {
         Self {
             source: crate::languages::AUTO_CODE.to_string(),
             target: "zh".to_string(),
+            recent_targets: Vec::new(),
             clipboard: false,
             stdin: false,
             print: false,
@@ -54,6 +56,9 @@ impl Args {
         }
         if let Some(value) = file.target {
             args.target = value;
+        }
+        if let Some(value) = file.recent_targets {
+            args.recent_targets = value;
         }
 
         if let Some(value) = cli.service_url {
@@ -147,6 +152,7 @@ mod tests {
             service_url: Some("http://127.0.0.1:9999".to_string()),
             source: Some("fr".to_string()),
             target: Some("de".to_string()),
+            recent_targets: Some(vec!["zh".to_string(), "en".to_string()]),
             ..FileConfig::default()
         };
 
@@ -155,6 +161,7 @@ mod tests {
         assert_eq!(args.service_url, "http://127.0.0.1:9999");
         assert_eq!(args.source, "fr");
         assert_eq!(args.target, "de");
+        assert_eq!(args.recent_targets, vec!["zh".to_string(), "en".to_string()]);
     }
 
     #[test]

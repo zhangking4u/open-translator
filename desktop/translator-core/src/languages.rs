@@ -15,6 +15,7 @@ pub const LANGUAGES: &[(&str, &str)] = &[
     ("de", "德语"),
     ("es", "西班牙语"),
     ("ru", "俄语"),
+    ("th", "泰语"),
 ];
 
 /// Human-readable name for a language tag, falling back to the tag itself.

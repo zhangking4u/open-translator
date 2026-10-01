@@ -1139,6 +1139,28 @@ Verification:
 
 ---
 
+
+## Milestone: Language Switching + Thai Support
+
+
+Completed:
+
+- desktop client: a painted ⇄ button between the selectors swaps the language pair and shows the previous translation as the new source (it is translated back); the `⇄` (U+21C4) glyph was dropped because the loaded fonts had no such glyph and painted arrows render on every platform
+- desktop client: target history (up to 3 entries, de-duplicated, supported tags only) switched with Ctrl+1/2/3; the previous target is pushed on every change and persisted as `recent_targets`
+- `translator-core`: `FileConfig`/`Args` carry `recent_targets` and `persist_recent_targets` writes them back
+- `translator-core`: Thai (`th`, 泰语) joins the shared language list and the whatlang detection mapping
+- desktop client: per-script system-font fallback chains — Windows msyh → malgun → Yu Gothic → Leelawadee UI, macOS PingFang → Apple SD Gothic Neo → Hiragino → Thonburi, Linux Noto CJK → Noto Thai — fixing the tofu boxes for Korean and Thai
+- browser extension: the bubble target list gains 泰语
+
+
+Verification:
+
+- `desktop/translator-core`: 42 tests passed (including Thai detection); `desktop/translator-popup-desktop`: 11 tests passed
+- Windows real-machine pass: the swap button exchanges texts and languages, Ctrl+1/2/3 switches recent targets, and Korean/Thai translations render without tofu
+
+
+---
+
 # Git History
 
 Commit:

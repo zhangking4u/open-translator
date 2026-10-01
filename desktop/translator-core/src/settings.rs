@@ -7,6 +7,7 @@ pub struct FileConfig {
     pub service_url: Option<String>,
     pub source: Option<String>,
     pub target: Option<String>,
+    pub recent_targets: Option<Vec<String>>,
     pub hotkey: Option<String>,
     pub model_path: Option<String>,
     pub prompt_style: Option<String>,
@@ -49,6 +50,16 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "service_url" => config.service_url = Some(value.to_string()),
             "source" => config.source = Some(value.to_string()),
             "target" => config.target = Some(value.to_string()),
+            "recent_targets" => {
+                config.recent_targets = Some(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|entry| !entry.is_empty())
+                        .map(str::to_string)
+                        .collect(),
+                );
+            }
             "hotkey" => config.hotkey = Some(value.to_string()),
             "model_path" => config.model_path = Some(value.to_string()),
             "prompt_style" => config.prompt_style = Some(value.to_string()),
@@ -68,6 +79,10 @@ pub fn persist_source(source: &str) {
 
 pub fn persist_target(target: &str) {
     persist_value("target", target);
+}
+
+pub fn persist_recent_targets(targets: &[String]) {
+    persist_value("recent_targets", &targets.join(","));
 }
 
 /// Writes a single `key = value` pair back to the config file, keeping the
@@ -123,7 +138,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nunknown = x\n",
         )
         .unwrap();
 
@@ -132,6 +147,10 @@ mod tests {
 
         assert_eq!(config.source.as_deref(), Some("ja"));
         assert_eq!(config.target.as_deref(), Some("ko"));
+        assert_eq!(
+            config.recent_targets.as_deref(),
+            Some(["zh".to_string(), "ja".to_string()].as_slice())
+        );
         assert_eq!(config.service_url.as_deref(), Some("http://127.0.0.1:1"));
         assert_eq!(config.hotkey.as_deref(), Some("Ctrl+Shift+T"));
         assert_eq!(config.model_path.as_deref(), Some("/models/hy-mt.gguf"));
@@ -162,6 +181,13 @@ mod tests {
         let updated = apply_value("# comment\nsource = en\n", "target", "ko");
 
         assert!(updated.ends_with("target = ko\n"));
+    }
+
+    #[test]
+    fn apply_value_writes_recent_targets() {
+        let updated = apply_value("target = zh\n", "recent_targets", "en,ja");
+
+        assert!(updated.ends_with("recent_targets = en,ja\n"));
     }
 
     #[test]

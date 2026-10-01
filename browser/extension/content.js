@@ -17,6 +17,7 @@ const LANGUAGES = [
   ["de", "德语"],
   ["es", "西班牙语"],
   ["ru", "俄语"],
+  ["th", "泰语"],
 ];
 
 let host = null;

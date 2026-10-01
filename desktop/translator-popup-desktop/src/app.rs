@@ -7,7 +7,7 @@ use eframe::egui;
 use translator_core::args::{Args, read_stdin};
 use translator_core::detect;
 use translator_core::languages;
-use translator_core::settings::{persist_source, persist_target};
+use translator_core::settings::{persist_recent_targets, persist_source, persist_target};
 use translator_core::update::ReleaseInfo;
 use translator_service::domain::prompt::PromptStyle;
 use translator_service::domain::translation::TranslationRequest;
@@ -91,6 +91,7 @@ struct Actions {
     retranslate: bool,
     copy: Option<String>,
     replace: Option<String>,
+    swap: bool,
     dismiss_update: bool,
     dismiss_notice: bool,
     open_url: Option<String>,
@@ -107,6 +108,7 @@ pub struct PopupApp {
     source: String,
     detected_source: Option<&'static str>,
     target: String,
+    recent_targets: Vec<String>,
     receiver: Option<Receiver<Progress>>,
     update: Option<ReleaseInfo>,
     update_receiver: Option<Receiver<ReleaseInfo>>,
@@ -123,66 +125,107 @@ pub struct PopupApp {
     quit: bool,
 }
 
-fn system_cjk_font() -> Option<(String, Vec<u8>)> {
-    let candidates: Vec<PathBuf> = if cfg!(target_os = "windows") {
+fn system_fonts() -> Vec<(String, Vec<u8>)> {
+    // One candidate group per script so a Chinese font (no Hangul) cannot
+    // shadow the Korean fallback.
+    let groups: Vec<Vec<PathBuf>> = if cfg!(target_os = "windows") {
         let windir = std::env::var_os("WINDIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
         let fonts = windir.join("Fonts");
 
-        ["msyh.ttc", "msyh.ttf", "simhei.ttf", "simsun.ttc", "Deng.ttf"]
-            .iter()
-            .map(|name| fonts.join(name))
-            .collect()
+        [
+            &["msyh.ttc", "msyh.ttf", "simhei.ttf", "simsun.ttc", "Deng.ttf"][..],
+            &["malgun.ttf", "malgunbd.ttf", "batang.ttc", "gulim.ttc"][..],
+            &["YuGothM.ttc", "meiryo.ttc", "msgothic.ttc"][..],
+            &["LeelawUI.ttf", "Leelawad.ttf", "tahoma.ttf"][..],
+        ]
+        .iter()
+        .map(|names| names.iter().map(|name| fonts.join(name)).collect())
+        .collect()
     } else if cfg!(target_os = "macos") {
         [
-            "/System/Library/Fonts/PingFang.ttc",
-            "/System/Library/Fonts/STHeiti Medium.ttc",
-            "/System/Library/Fonts/Hiragino Sans GB.ttc",
-            "/Library/Fonts/Arial Unicode.ttf",
+            &[
+                "/System/Library/Fonts/PingFang.ttc",
+                "/System/Library/Fonts/STHeiti Medium.ttc",
+                "/System/Library/Fonts/Hiragino Sans GB.ttc",
+                "/Library/Fonts/Arial Unicode.ttf",
+            ][..],
+            &[
+                "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+                "/System/Library/Fonts/AppleGothic.ttf",
+            ][..],
+            &[
+                "/System/Library/Fonts/Hiragino Sans W3.ttc",
+                "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            ][..],
+            &[
+                "/System/Library/Fonts/ThonburiUI.ttc",
+                "/System/Library/Fonts/Thonburi.ttc",
+                "/System/Library/Fonts/Ayuthaya.ttf",
+            ][..],
         ]
         .iter()
-        .map(PathBuf::from)
+        .map(|names| names.iter().map(PathBuf::from).collect())
         .collect()
     } else {
-        [
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        vec![
+            [
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+                "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+            ]
+            .iter()
+            .map(PathBuf::from)
+            .collect(),
+            [
+                "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
+                "/usr/share/fonts/opentype/noto/NotoSansThai-Regular.otf",
+            ]
+            .iter()
+            .map(PathBuf::from)
+            .collect(),
         ]
-        .iter()
-        .map(PathBuf::from)
-        .collect()
     };
 
-    for path in candidates {
-        if let Ok(bytes) = std::fs::read(&path) {
-            return Some((path.display().to_string(), bytes));
+    let mut fonts = Vec::new();
+
+    for group in groups {
+        if let Some(font) = group.iter().find_map(|path| {
+            std::fs::read(path)
+                .ok()
+                .map(|bytes| (path.display().to_string(), bytes))
+        }) {
+            fonts.push(font);
         }
     }
 
-    None
+    fonts
 }
 
 fn install_cjk_font(ctx: &egui::Context) {
-    let Some((name, bytes)) = system_cjk_font() else {
+    let fonts = system_fonts();
+    if fonts.is_empty() {
         return;
-    };
-
-    let mut fonts = egui::FontDefinitions::default();
-    fonts
-        .font_data
-        .insert(name.clone(), Arc::new(egui::FontData::from_owned(bytes)));
-
-    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-        fonts
-            .families
-            .entry(family)
-            .or_default()
-            .push(name.clone());
     }
 
-    ctx.set_fonts(fonts);
+    let mut definitions = egui::FontDefinitions::default();
+
+    for (name, bytes) in fonts {
+        definitions
+            .font_data
+            .insert(name.clone(), Arc::new(egui::FontData::from_owned(bytes)));
+
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            definitions
+                .families
+                .entry(family)
+                .or_default()
+                .push(name.clone());
+        }
+    }
+
+    ctx.set_fonts(definitions);
 }
 
 fn configure_style(ctx: &egui::Context) {
@@ -406,6 +449,22 @@ fn clamp_to_work_area(
     fit_to_work_area((cursor.0 + margin, cursor.1 + margin), size, work, margin)
 }
 
+fn recent_target_list(recents: &[String], current: &str) -> Vec<String> {
+    let mut list: Vec<String> = Vec::new();
+
+    for entry in recents {
+        if entry != current && languages::is_supported(entry) && !list.contains(entry) {
+            list.push(entry.clone());
+        }
+
+        if list.len() == 3 {
+            break;
+        }
+    }
+
+    list
+}
+
 impl PopupApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
@@ -428,10 +487,13 @@ impl PopupApp {
             enable_native_window_style(hwnd);
         }
 
+        let recent_targets = recent_target_list(&args.recent_targets, &args.target);
+
         let mut app = Self {
             source: args.source.clone(),
             detected_source: None,
             target: args.target.clone(),
+            recent_targets,
             args,
             engine: None,
             startup_receiver: None,
@@ -682,10 +744,71 @@ impl PopupApp {
             return;
         }
 
-        self.target = target.clone();
+        let previous = std::mem::replace(&mut self.target, target.clone());
         persist_target(&target);
+        self.remember_target(&previous);
 
         if self.last_text().is_some() {
+            self.retranslate();
+        }
+    }
+
+    fn remember_target(&mut self, previous: &str) {
+        if previous == self.target {
+            return;
+        }
+
+        self.recent_targets
+            .retain(|entry| entry != &self.target && entry != previous);
+        self.recent_targets.insert(0, previous.to_string());
+        self.recent_targets.truncate(3);
+        persist_recent_targets(&self.recent_targets);
+    }
+
+    fn select_recent_target(&mut self, index: usize) -> bool {
+        let Some(target) = self.recent_targets.get(index).cloned() else {
+            return false;
+        };
+
+        self.change_target(target);
+
+        true
+    }
+
+    fn swap_languages(&mut self) {
+        let new_source = if self.source == languages::AUTO_CODE {
+            let Some(tag) = self.detected_source else {
+                return;
+            };
+
+            tag.to_string()
+        } else {
+            self.source.clone()
+        };
+
+        let new_target = self.target.clone();
+
+        if new_source == new_target {
+            return;
+        }
+
+        let translated = match &self.translation {
+            TranslationState::Done { translation, .. } if !translation.trim().is_empty() => {
+                Some(translation.clone())
+            }
+            _ => None,
+        };
+
+        let old_target = std::mem::replace(&mut self.target, new_source);
+        self.source = new_target;
+        persist_source(&self.source);
+        persist_target(&self.target);
+        self.remember_target(&old_target);
+
+        // Swap the displayed texts too: the translation becomes the new source.
+        if let Some(translation) = translated {
+            self.begin_translation(translation);
+        } else if self.last_text().is_some() {
             self.retranslate();
         }
     }
@@ -981,6 +1104,21 @@ impl eframe::App for PopupApp {
             }
         }
 
+        for (index, key) in [egui::Key::Num1, egui::Key::Num2, egui::Key::Num3]
+            .iter()
+            .enumerate()
+        {
+            let pressed = ctx.input(|input| {
+                input.modifiers.command
+                    && !input.modifiers.shift
+                    && input.key_pressed(*key)
+            });
+
+            if pressed && self.select_recent_target(index) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
+            }
+        }
+
         // Keep polling while the window is hidden (hotkey events arrive via
         // `logic`); animate the skeleton/caret faster while a translation runs.
         let repaint = if matches!(&self.translation, TranslationState::Running { .. }) {
@@ -1030,6 +1168,11 @@ impl eframe::App for PopupApp {
 
         if let Some(target) = change_target {
             self.change_target(target);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
+        }
+
+        if actions.swap {
+            self.swap_languages();
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
         }
 
@@ -1125,7 +1268,53 @@ impl PopupApp {
             }
         }
 
-        header.label(egui::RichText::new("→").weak().size(13.0));
+        let swap_enabled = match self.source.as_str() {
+            languages::AUTO_CODE => self
+                .detected_source
+                .map(|tag| tag != self.target)
+                .unwrap_or(false),
+            source => source != self.target,
+        };
+
+        let (swap_rect, swap_response) =
+            header.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::click());
+        let swap_color = if !swap_enabled {
+            ui.visuals().weak_text_color()
+        } else if swap_response.hovered() {
+            ui.visuals().strong_text_color()
+        } else {
+            ui.visuals().text_color()
+        };
+        let center = swap_rect.center();
+        let half = 9.0;
+        let head = 4.0;
+        let stroke = egui::Stroke::new(1.6, swap_color);
+        let painter = header.painter();
+
+        for (offset, forward) in [(-3.0_f32, true), (3.0, false)] {
+            let y = center.y + offset;
+            let left = egui::pos2(center.x - half, y);
+            let right = egui::pos2(center.x + half, y);
+            let (tip, back_x) = if forward {
+                (right, center.x + half - head)
+            } else {
+                (left, center.x - half + head)
+            };
+
+            painter.line_segment([left, right], stroke);
+            painter.line_segment([egui::pos2(back_x, y - head), tip], stroke);
+            painter.line_segment([egui::pos2(back_x, y + head), tip], stroke);
+        }
+
+        if swap_enabled {
+            let swap_response = swap_response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("互换源语言与目标语言");
+
+            if swap_response.clicked() {
+                actions.swap = true;
+            }
+        }
 
         let selected = languages::label(&self.target).to_string();
         egui::ComboBox::from_id_salt("target_lang")
@@ -1707,5 +1896,41 @@ mod placement_tests {
         let (x, y) = clamp_to_work_area((-1800.0, 100.0), egui::vec2(400.0, 300.0), work, 12.0);
 
         assert_eq!((x, y), (-1788.0, 112.0));
+    }
+}
+
+#[cfg(test)]
+mod recent_tests {
+    use super::recent_target_list;
+
+    #[test]
+    fn excludes_the_current_and_duplicate_targets() {
+        let recents = vec![
+            "zh".to_string(),
+            "en".to_string(),
+            "zh".to_string(),
+            "ja".to_string(),
+        ];
+
+        assert_eq!(
+            recent_target_list(&recents, "zh"),
+            vec!["en".to_string(), "ja".to_string()]
+        );
+    }
+
+    #[test]
+    fn caps_the_list_at_three_supported_targets() {
+        let recents = vec![
+            "en".to_string(),
+            "de".to_string(),
+            "fr".to_string(),
+            "ja".to_string(),
+            "xx".to_string(),
+        ];
+
+        assert_eq!(
+            recent_target_list(&recents, "zh"),
+            vec!["en".to_string(), "de".to_string(), "fr".to_string()]
+        );
     }
 }

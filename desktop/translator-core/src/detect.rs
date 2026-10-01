@@ -52,6 +52,7 @@ fn tag_of(lang: Lang) -> Option<&'static str> {
         Lang::Deu => Some("de"),
         Lang::Spa => Some("es"),
         Lang::Rus => Some("ru"),
+        Lang::Tha => Some("th"),
         _ => None,
     }
 }
@@ -67,6 +68,10 @@ mod tests {
         assert_eq!(detect("これは日本語で書かれた文章です。"), Some("ja"));
         assert_eq!(detect("이 문장은 한국어로 작성되었습니다."), Some("ko"));
         assert_eq!(detect("Это предложение написано на русском языке."), Some("ru"));
+        assert_eq!(
+            detect("นี่คือประโยคที่เขียนเป็นภาษาไทยเพื่อทดสอบการตรวจจับภาษา"),
+            Some("th")
+        );
     }
 
     #[test]
