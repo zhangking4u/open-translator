@@ -68,6 +68,68 @@ pub struct PopupApp {
     quit: bool,
 }
 
+fn system_cjk_font() -> Option<(String, Vec<u8>)> {
+    let candidates: Vec<PathBuf> = if cfg!(target_os = "windows") {
+        let windir = std::env::var_os("WINDIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        let fonts = windir.join("Fonts");
+
+        ["msyh.ttc", "msyh.ttf", "simhei.ttf", "simsun.ttc", "Deng.ttf"]
+            .iter()
+            .map(|name| fonts.join(name))
+            .collect()
+    } else if cfg!(target_os = "macos") {
+        [
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/Library/Fonts/Arial Unicode.ttf",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .collect()
+    } else {
+        [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .collect()
+    };
+
+    for path in candidates {
+        if let Ok(bytes) = std::fs::read(&path) {
+            return Some((path.display().to_string(), bytes));
+        }
+    }
+
+    None
+}
+
+fn install_cjk_font(ctx: &egui::Context) {
+    let Some((name, bytes)) = system_cjk_font() else {
+        return;
+    };
+
+    let mut fonts = egui::FontDefinitions::default();
+    fonts
+        .font_data
+        .insert(name.clone(), Arc::new(egui::FontData::from_owned(bytes)));
+
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .push(name.clone());
+    }
+
+    ctx.set_fonts(fonts);
+}
+
 impl PopupApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
@@ -76,6 +138,8 @@ impl PopupApp {
         startup: Startup,
         server_plan: Option<ServerPlan>,
     ) -> Self {
+        install_cjk_font(&cc.egui_ctx);
+
         let mut app = Self {
             target: args.target.clone(),
             args,

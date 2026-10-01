@@ -119,6 +119,12 @@ fn run_headless(engine: &Arc<LlamaCppEngine>, args: &Args, text: &str) -> i32 {
 }
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    if std::env::var_os("WGPU_BACKEND").is_none() {
+        // SAFETY: called before any other thread is spawned.
+        unsafe { std::env::set_var("WGPU_BACKEND", "dx12") };
+    }
+
     if std::env::args().any(|arg| arg == "--help" || arg == "-h") {
         print!("{HELP}");
         return;

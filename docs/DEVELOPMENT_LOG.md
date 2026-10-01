@@ -829,6 +829,31 @@ Verification:
 ---
 
 
+# 2026-10-01
+
+
+## Milestone: Windows Real-Machine Verification (Intel Vulkan Crash)
+
+
+Completed:
+
+- Installed the `OpenTranslator-windows-x64` release zip on a real Windows machine: `install.ps1` copied the exe to `%LOCALAPPDATA%\Programs\OpenTranslator` and created the Startup shortcut correctly, but the app crashed immediately on every launch
+- Event log diagnosis: `Application Error` 1000, faulting module `igvk64.dll` (Intel Vulkan driver, 30.0.101.1692), exception `0xc0000005`; eframe 0.36 defaults to the wgpu renderer, which enumerates the Vulkan backend first and the driver bug kills the process before a window appears (silent because release builds have no console)
+- Fix: `desktop/translator-popup-desktop/src/main.rs` defaults `WGPU_BACKEND=dx12` on Windows when the variable is not already set; a user-set value still wins
+- Workaround for the existing installed binary: user-level `WGPU_BACKEND=dx12` (`setx`), verified against the installed exe
+- Second real-machine issue: eframe's built-in fonts have no CJK glyphs, so every Chinese label (download status, buttons, language names, translation output) rendered as tofu boxes; `desktop/translator-popup-desktop/src/app.rs` now installs a system CJK font as a fallback (Windows Microsoft YaHei/SimHei/SimSun, macOS PingFang/STHeiti, Linux Noto CJK/WQY) for both the proportional and monospace families
+- Both fixes need a rebuilt Windows artifact to reach users; the downloaded release zip predates them
+
+
+Verification:
+
+- Default launch: crash event 1000 (`igvk64.dll`, `0xc0000005`); launch with `WGPU_BACKEND=dx12`: window opens and the process stays resident
+- Follow-up: a rebuilt Windows artifact is required to ship the in-code fix; the current release zip still needs the environment variable
+
+
+---
+
+
 # Git History
 
 
