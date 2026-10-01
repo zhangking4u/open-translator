@@ -1,10 +1,11 @@
 OpenTranslator (Windows)
 ========================
 
-1. 安装：右键 install.ps1 → "使用 PowerShell 运行"（或在 PowerShell 中执行
+1. 安装/升级：右键 install.ps1 → "使用 PowerShell 运行"（或在 PowerShell 中执行
    powershell -ExecutionPolicy Bypass -File .\install.ps1）
    - 程序复制到 %LOCALAPPDATA%\Programs\OpenTranslator
    - 自动加入开机启动（开始菜单"启动"文件夹快捷方式）
+   - 旧版本正在运行时会先自动结束，安装完成后需要时再启动（或下次登录自动启动）
 
 2. 首次运行会自动从 ModelScope 下载模型（约 1.1GB，支持断点续传与校验），
    窗口会显示下载进度。

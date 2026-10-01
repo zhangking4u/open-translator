@@ -18,8 +18,30 @@ if (-not (Test-Path $Source)) {
     throw "translator-popup-desktop.exe not found next to this script"
 }
 
+# Windows locks a running executable against overwrite, so stop any running
+# instance first; it can be started again (or comes back at next login).
+$running = Get-Process -Name "translator-popup-desktop" -ErrorAction SilentlyContinue
+if ($running) {
+    Write-Host "Stopping the running OpenTranslator instance..."
+    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-Copy-Item $Source $Exe -Force
+
+# The old process can keep the image locked while it finishes exiting, so
+# retry the copy briefly.
+$deadline = (Get-Date).AddSeconds(10)
+while ($true) {
+    try {
+        Copy-Item $Source $Exe -Force -ErrorAction Stop
+        break
+    } catch {
+        if ((Get-Date) -ge $deadline) {
+            throw
+        }
+        Start-Sleep -Milliseconds 200
+    }
+}
 
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($Startup)

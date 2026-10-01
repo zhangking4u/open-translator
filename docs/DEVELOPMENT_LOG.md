@@ -1304,6 +1304,24 @@ Verification:
 ---
 
 
+## Milestone: Direct Windows Reinstall (post-v0.2.1)
+
+
+Fixed:
+
+- `packaging/windows/install.ps1` and `desktop/install-windows.ps1` stop a running `translator-popup-desktop` instance before copying or building; Windows locks a running exe against overwrite, so upgrading while the old version ran used to fail with a sharing violation (or an LNK1104 from the linker in the source build)
+- The packaging `README.txt` documents the upgrade flow: re-run `install.ps1`, the running old version is closed automatically, and the new one starts on demand or at the next login
+
+
+Verification:
+
+- Overwriting a running exe was reproduced failing with "正由另一进程使用"; the real-machine test then showed `Stop-Process` + `Wait-Process` still racing the lock while the old process finished exiting, so `packaging/windows/install.ps1` now retries the copy for up to 10 s and `desktop/install-windows.ps1` waits for the binary to unlock before building (both parse clean)
+- End-to-end reinstall verified with the old version running: `install.ps1` stopped the instance, completed in 1.7 s with exit code 0, the installed exe hash matches the package, the Startup shortcut stays valid, and the newly installed build starts with `IsWindowVisible=false`
+
+
+---
+
+
 # Git History
 
 Commit:

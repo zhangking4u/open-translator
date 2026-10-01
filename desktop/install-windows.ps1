@@ -32,6 +32,33 @@ if ($Uninstall) {
     exit 0
 }
 
+# Windows locks a running executable against overwrite, and MSBuild cannot
+# relink the binary while it runs, so stop any running instance before the
+# build; it can be started again (or comes back at next login).
+$running = Get-Process -Name "translator-popup-desktop" -ErrorAction SilentlyContinue
+if ($running) {
+    Write-Host "Stopping the running OpenTranslator instance..."
+    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+# The old process can keep the image locked while it finishes exiting; wait
+# for the binary to become writable so the linker can replace it.
+if (Test-Path $Exe) {
+    $deadline = (Get-Date).AddSeconds(10)
+    while ($true) {
+        try {
+            $stream = [System.IO.File]::Open($Exe, 'Open', 'ReadWrite', 'None')
+            $stream.Close()
+            break
+        } catch {
+            if ((Get-Date) -ge $deadline) {
+                break
+            }
+            Start-Sleep -Milliseconds 200
+        }
+    }
+}
+
 Write-Host "Building release binaries..."
 $env:CARGO_TARGET_DIR = $BuildDir
 
