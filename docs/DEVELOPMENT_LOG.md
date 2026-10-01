@@ -1240,6 +1240,19 @@ Verification:
 ---
 
 
+## Milestone: v0.2.0 Release
+
+
+Released:
+
+- Tag `v0.2.0` at `dcebea8` (CI run 36858635066 green first); release run 36859033510 passed the Windows, macOS and Linux package jobs and published `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg` and `OpenTranslator-linux-x64.deb`
+- Packaging fix before tagging: `make-dmg.sh` now injects the release version into `Info.plist` with PlistBuddy (explicit `VERSION` from the workflow, then the latest tag, then a placeholder), so the macOS bundle no longer ships the hardcoded 0.1.0; deb usage examples and the shallow-clone fallback were refreshed
+- Release notes (edited after publishing) cover the highlights since v0.1.0: source-language auto detection + selector, SSE streaming, GTK swap/recent targets/clipboard toggle, Windows clipboard restore/near-cursor placement/替换原文, Thai support, plus install steps and the unsigned-build caveats
+
+
+---
+
+
 # Git History
 
 Commit:

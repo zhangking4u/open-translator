@@ -253,7 +253,7 @@ Status:
 
 2. macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
 
-3. (Done 2026-10-01) v0.1.0 re-released with the Linux deb and the startup update check (three assets); Windows real-machine re-verification passed (selection capture, CJK fonts, single instance)
+3. (Done 2026-10-01) v0.1.0 re-released with the Linux deb and the startup update check (three assets); Windows real-machine re-verification passed (selection capture, CJK fonts, single instance). v0.2.0 released the same day (release run 36859033510, three assets) with source-language detection, SSE streaming, GTK swap/recent targets and the clipboard toggle
 
 4. Real-machine visual pass of the redesigned desktop UIs (Windows/macOS), including the new source-language dropdown and detection hint; window geometry/position memory and an in-app settings panel are candidates for the next polish round
 
@@ -482,3 +482,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Streaming output is implemented end to end: `POST /translate/stream` (SSE) on the service, `translate::translate_stream` in translator-core and incremental rendering in the GTK popup
 - An in-window 剪贴板 toggle switches between the primary selection and the clipboard (persisted as `clipboard`)
 - Next GTK candidate: optional model pre-warm autostart
+
+
+## v0.2.0 Release (2026-10-01)
+
+
+- Tag `v0.2.0` at `dcebea8`; release run 36859033510 passed all package jobs (Linux 5m36s, macOS 9m10s, Windows) and published three assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg` (bundle version now injected from the tag), `OpenTranslator-linux-x64.deb`
+- Highlights since v0.1.0: source-language auto detection + selector, SSE streaming (`POST /translate/stream`), GTK ⇄ swap + Ctrl+1/2/3 recent targets + clipboard toggle + Chinese errors, Windows clipboard restore / near-cursor placement / 替换原文, Thai support, per-script font fallback
+- Release notes cover install steps, first-run model download and the unsigned-build caveats
