@@ -1158,8 +1158,27 @@ Verification:
 - `desktop/translator-core`: 42 tests passed (including Thai detection); `desktop/translator-popup-desktop`: 11 tests passed
 - Windows real-machine pass: the swap button exchanges texts and languages, Ctrl+1/2/3 switches recent targets, and Korean/Thai translations render without tofu
 
+---
+
+
+## Milestone: GTK Quick Wins (Status, Selection, Errors)
+
+
+Completed:
+
+- `desktop/translator-popup`: the Done state shows `N 字符 · N ms` in the status bar (matching the Windows/macOS client); the source card text is selectable
+- `desktop/translator-popup`: when the primary selection is empty, reading falls back to the clipboard, so a manual Ctrl+C before the hotkey still translates
+- user-facing errors are Chinese with actionable hints: `read_selection` (wl-clipboard install), `translator-core::translate` (service connection/response, plus Chinese labels for the API error kinds) and `translator-core::services` (model missing, download, auto-start, Ollama, log paths)
+
+
+Verification:
+
+- `cargo test --locked` in `desktop/translator-core` (42 passed); `desktop/translator-popup` builds and `cargo check` is clean; headless smoke test: `kernel panic` → 内核崩溃, and the unreachable-service path prints 翻译服务 http://127.0.0.1:1 未运行（已通过 --no-start 禁用自动启动）
+- Status bar/selectable source/primary fallback are compile-verified only; visual pass on GNOME still pending
+
 
 ---
+
 
 # Git History
 

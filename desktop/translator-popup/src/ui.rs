@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::time::{Duration, Instant};
 
 use gtk4 as gtk;
 use gtk::glib;
@@ -91,6 +92,7 @@ enum TranslationState {
     Done {
         text: String,
         translation: String,
+        elapsed: Duration,
     },
     Failed {
         text: String,
@@ -101,7 +103,10 @@ enum TranslationState {
 enum Progress {
     Downloading { downloaded: u64, total: Option<u64> },
     Translating,
-    Done(String),
+    Done {
+        translation: String,
+        elapsed: Duration,
+    },
     Error(String),
 }
 
@@ -224,11 +229,19 @@ impl Widgets {
                 self.store.borrow_mut().clear();
                 self.set_dot("ot-busy");
             }
-            TranslationState::Done { text, translation } => {
+            TranslationState::Done {
+                text,
+                translation,
+                elapsed,
+            } => {
                 self.set_source(text);
                 self.translation_label.remove_css_class("ot-dim");
                 self.translation_label.set_text(translation);
-                self.status_label.set_text("");
+                self.status_label.set_text(&format!(
+                    "{} 字符 · {:.0} ms",
+                    text.chars().count(),
+                    elapsed.as_secs_f64() * 1000.0
+                ));
                 self.set_busy(false);
                 self.progress_bar.set_visible(false);
                 self.error_card.set_visible(false);
@@ -522,6 +535,7 @@ fn build_ui(
     source_label.set_wrap(true);
     source_label.set_lines(3);
     source_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    source_label.set_selectable(true);
     source_label.add_css_class("ot-dim");
 
     let source_card = GtkBox::new(Orientation::Vertical, 0);
@@ -653,9 +667,13 @@ fn build_ui(
                         Progress::Translating => TranslationState::Translating {
                             text: state_text(&current),
                         },
-                        Progress::Done(translation) => TranslationState::Done {
+                        Progress::Done {
+                            translation,
+                            elapsed,
+                        } => TranslationState::Done {
                             text: state_text(&current),
                             translation,
+                            elapsed,
                         },
                         Progress::Error(message) => TranslationState::Failed {
                             text: if current_text_retryable(&current) {
@@ -1054,6 +1072,8 @@ fn spawn_worker(args: &Args, source: &str, target: &str, text: String, sender: S
 
             let _ = sender.send(Progress::Translating);
 
+            let started = Instant::now();
+
             let outcome = translate::translate(
                 &client,
                 &args.service_url,
@@ -1063,8 +1083,13 @@ fn spawn_worker(args: &Args, source: &str, target: &str, text: String, sender: S
             )
             .await;
 
+            let elapsed = started.elapsed();
+
             let _ = match outcome {
-                Ok(translation) => sender.send(Progress::Done(translation)),
+                Ok(translation) => sender.send(Progress::Done {
+                    translation,
+                    elapsed,
+                }),
                 Err(error) => sender.send(Progress::Error(error)),
             };
         });

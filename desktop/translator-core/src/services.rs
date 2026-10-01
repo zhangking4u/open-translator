@@ -102,14 +102,14 @@ fn resolve_engine(
         Some("llama-cpp") => {
             let (model_path, default_path) =
                 model_path_from(env_model_path, file_model_path, fallback_default)
-                    .ok_or_else(|| "cannot determine the default model directory".to_string())?;
+                    .ok_or_else(|| "无法确定默认模型目录".to_string())?;
             Ok(EngineChoice::LlamaCpp {
                 model_path,
                 default_path,
             })
         }
         Some(other) => Err(format!(
-            "unsupported TRANSLATOR_ENGINE: {other} (expected ollama or llama-cpp)"
+            "不支持的 TRANSLATOR_ENGINE：{other}（可选 ollama 或 llama-cpp）"
         )),
         None => match model_path_from(env_model_path, file_model_path, fallback_default) {
             Some((model_path, default_path)) => Ok(EngineChoice::LlamaCpp {
@@ -151,7 +151,7 @@ fn parse_bool(key: &str, value: &str) -> Result<bool, String> {
     match value {
         "true" => Ok(true),
         "false" => Ok(false),
-        other => Err(format!("invalid {key}: {other}")),
+        other => Err(format!("无效的 {key}：{other}（应为 true 或 false）")),
     }
 }
 
@@ -166,7 +166,7 @@ pub async fn ensure(client: &reqwest::Client, config: &ServiceConfig) -> Result<
 
     if !is_local_url(&config.service_url) {
         return Err(format!(
-            "{} is not reachable (remote services are not auto-started)",
+            "{} 无法访问（远程服务不会自动启动）",
             config.service_url
         ));
     }
@@ -176,8 +176,7 @@ pub async fn ensure(client: &reqwest::Client, config: &ServiceConfig) -> Result<
             if is_local_url(&config.model_url) && !ollama_ok(client, &config.model_url).await {
                 let Some(bin) = &config.ollama_bin else {
                     return Err(
-                        "ollama is not running and no binary was found; start it manually or set \
-                         TRANSLATOR_OLLAMA_BIN"
+                        "Ollama 未运行且未找到可执行文件；请手动启动或设置 TRANSLATOR_OLLAMA_BIN"
                             .to_string(),
                     );
                 };
@@ -186,7 +185,7 @@ pub async fn ensure(client: &reqwest::Client, config: &ServiceConfig) -> Result<
 
                 if !wait_until(|| ollama_ok(client, &config.model_url), OLLAMA_POLL_ATTEMPTS).await {
                     return Err(format!(
-                        "ollama did not become ready in time; see {}",
+                        "Ollama 未在预期时间内就绪；请查看日志 {}",
                         log_path("ollama.log").display()
                     ));
                 }
@@ -208,8 +207,8 @@ pub async fn ensure(client: &reqwest::Client, config: &ServiceConfig) -> Result<
 
     let Some(bin) = &config.core_bin else {
         return Err(
-            "translator service is not running and no core binary was found; build it with \
-             `cargo build --release` in core/translator-service or set TRANSLATOR_CORE_BIN"
+            "翻译服务未运行且未找到核心二进制；请在 core/translator-service 执行 \
+             `cargo build --release`，或设置 TRANSLATOR_CORE_BIN"
                 .to_string(),
         );
     };
@@ -228,7 +227,7 @@ pub async fn ensure(client: &reqwest::Client, config: &ServiceConfig) -> Result<
     .await
     {
         return Err(format!(
-            "translator service did not become ready in time; see {}",
+            "翻译服务未在预期时间内就绪；请查看日志 {}",
             log_path("translator-service.log").display()
         ));
     }
@@ -254,7 +253,7 @@ where
 
     if !is_local_url(&config.service_url) {
         return Err(format!(
-            "{} is not reachable (remote services are not auto-started)",
+            "{} 无法访问（远程服务不会自动启动）",
             config.service_url
         ));
     }
@@ -272,7 +271,7 @@ where
                 // waited for the lock.
                 if !model_path.is_file() {
                     let download_client = models::download_client()
-                        .map_err(|error| format!("failed to initialise the download: {error}"))?;
+                        .map_err(|error| format!("初始化模型下载失败：{error}"))?;
 
                     models::download(
                         &download_client,
@@ -282,7 +281,7 @@ where
                         &mut progress,
                     )
                     .await
-                    .map_err(|error| format!("model download failed: {error}"))?;
+                    .map_err(|error| format!("模型下载失败：{error}"))?;
                 }
             } else {
                 return Err(model_missing_hint(
@@ -300,18 +299,17 @@ where
 fn model_missing_hint(model_path: &Path, default_path: bool, auto_download: bool) -> String {
     if !default_path {
         format!(
-            "model file not found: {} (auto-download only fills the default model path; provide \
-             this file or unset model_path)",
+            "未找到模型文件 {}（自动下载只会填充默认模型路径；请提供该文件或取消 model_path 配置）",
             model_path.display()
         )
     } else if auto_download {
         format!(
-            "model file not found: {} (the download did not complete; check the network and retry)",
+            "未找到模型文件 {}（下载未完成；请检查网络后重试）",
             model_path.display()
         )
     } else {
         format!(
-            "model file not found: {} (enable auto_download or provide the file)",
+            "未找到模型文件 {}（请开启 auto_download 或手动提供模型文件）",
             model_path.display()
         )
     }
@@ -319,7 +317,7 @@ fn model_missing_hint(model_path: &Path, default_path: bool, auto_download: bool
 
 fn not_running_hint(config: &ServiceConfig) -> String {
     format!(
-        "translator service at {} is not running (auto-start disabled with --no-start)",
+        "翻译服务 {} 未运行（已通过 --no-start 禁用自动启动）",
         config.service_url
     )
 }
@@ -398,7 +396,7 @@ fn spawn_detached(
     let stdout = open_log(log_name)?;
     let stderr = stdout
         .try_clone()
-        .map_err(|error| format!("failed to open log handle: {error}"))?;
+        .map_err(|error| format!("无法打开日志文件：{error}"))?;
 
     Command::new(program)
         .args(args)
@@ -408,21 +406,21 @@ fn spawn_detached(
         .envs(envs.iter().map(|(key, value)| (key, value)))
         .spawn()
         .map(|_| ())
-        .map_err(|error| format!("failed to start {}: {error}", program.display()))
+        .map_err(|error| format!("无法启动 {}：{error}", program.display()))
 }
 
 fn open_log(name: &str) -> Result<File, String> {
     let path = log_path(name);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)
-            .map_err(|error| format!("failed to create {}: {error}", dir.display()))?;
+            .map_err(|error| format!("无法创建目录 {}：{error}", dir.display()))?;
     }
 
     OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
-        .map_err(|error| format!("failed to open {}: {error}", path.display()))
+        .map_err(|error| format!("无法打开 {}：{error}", path.display()))
 }
 
 fn env_or(key: &str, default: &str) -> String {

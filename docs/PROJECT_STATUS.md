@@ -471,3 +471,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Source language is no longer fixed to English: `translator-core::detect` (whatlang trigrams, confidence ≥ 0.5) resolves the default `auto` source to a supported tag when confident and falls back to the service's source-agnostic prompt otherwise; the default HY-MT prompt ignores the source language anyway
 - Both desktop clients now have a source-language dropdown (自动检测 + zh/en/ja/ko/fr/de/es/ru) with a detection hint, persisted to the config file like `target`; the browser extension defaults to `source = auto`
 - Pending: real-machine visual pass of the dropdown/hint on Windows/macOS
+
+
+## GTK Client Quick Wins (2026-10-01)
+
+
+- `translator-popup`: the status bar shows character count and elapsed time, the source text is selectable, and an empty primary selection falls back to the clipboard
+- user-facing errors are Chinese with actionable hints (wl-clipboard install, service auto-start/log paths, model download/auto-start failures)
+- Next GTK candidates: streaming output (needs an SSE endpoint), ⇄ swap + Ctrl+1/2/3 recent targets (translator-core support exists), optional model pre-warm autostart

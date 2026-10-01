@@ -6,7 +6,7 @@ pub fn build_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
-        .map_err(|error| format!("failed to create HTTP client: {error}"))
+        .map_err(|error| format!("创建 HTTP 客户端失败：{error}"))
 }
 
 #[derive(Serialize)]
@@ -50,7 +50,7 @@ pub async fn translate(
         })
         .send()
         .await
-        .map_err(|error| format!("cannot reach translator service at {url}: {error}"))?;
+        .map_err(|error| format!("无法连接翻译服务 {url}：{error}"))?;
 
     let status = response.status();
 
@@ -58,15 +58,22 @@ pub async fn translate(
         let payload: TranslateResponse = response
             .json()
             .await
-            .map_err(|error| format!("invalid service response: {error}"))?;
+            .map_err(|error| format!("翻译服务返回了无效响应：{error}"))?;
         return Ok(payload.translation);
     }
 
     let body = response.text().await.unwrap_or_default();
 
     if let Ok(error) = serde_json::from_str::<ErrorResponse>(&body) {
-        return Err(format!("{}: {}", error.error.kind, error.error.message));
+        let kind = match error.error.kind.as_str() {
+            "invalid_request" => "请求无效",
+            "engine_unavailable" => "翻译引擎不可用",
+            "timeout" => "翻译超时",
+            "internal" => "服务内部错误",
+            other => other,
+        };
+        return Err(format!("{kind}：{}", error.error.message));
     }
 
-    Err(format!("service returned {status}: {body}"))
+    Err(format!("翻译服务返回 {status}：{body}"))
 }

@@ -58,6 +58,18 @@ Selection reading uses wl-paste from the wl-clipboard package
 ";
 
 pub(crate) fn read_selection(clipboard: bool) -> Result<String, String> {
+    let text = wl_paste(clipboard)?;
+
+    // The primary selection is empty when nothing is selected; fall back to
+    // the clipboard so a plain Ctrl+C beforehand still translates.
+    if !clipboard && text.trim().is_empty() {
+        return wl_paste(true);
+    }
+
+    Ok(text)
+}
+
+fn wl_paste(clipboard: bool) -> Result<String, String> {
     let mut command = Command::new("wl-paste");
     command.arg("--no-newline");
 
@@ -67,15 +79,15 @@ pub(crate) fn read_selection(clipboard: bool) -> Result<String, String> {
 
     let output = command.output().map_err(|error| match error.kind() {
         std::io::ErrorKind::NotFound => {
-            "wl-paste not found; install the wl-clipboard package (sudo apt install wl-clipboard)"
+            "未找到 wl-paste，请安装 wl-clipboard 后重试（sudo apt install wl-clipboard）"
                 .to_string()
         }
-        _ => format!("failed to run wl-paste: {error}"),
+        _ => format!("运行 wl-paste 失败：{error}"),
     })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("wl-paste failed: {}", stderr.trim()));
+        return Err(format!("读取选区失败：{}", stderr.trim()));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())

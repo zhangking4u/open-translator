@@ -125,7 +125,7 @@ pub fn read_stdin() -> Result<String, String> {
     let mut text = String::new();
     std::io::stdin()
         .read_to_string(&mut text)
-        .map_err(|error| format!("failed to read stdin: {error}"))?;
+        .map_err(|error| format!("读取标准输入失败：{error}"))?;
     Ok(text.trim().to_string())
 }
 
