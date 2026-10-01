@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Install the OpenTranslator desktop integration for the current user:
 #   - builds the release binaries (core service + popup)
-#   - registers a GNOME custom keyboard shortcut for the popup
+#   - delegates shortcut registration to packaging/linux/open-translator-setup
 #
-# The popup starts ollama and the core service automatically on first use.
+# The popup starts the core service automatically on first use; the model is
+# downloaded on first run (TRANSLATOR_ENGINE=ollama switches to a local Ollama).
 #
 # Usage:
 #   ./install.sh [--binding "<Control><Alt>t"] [--name NAME] [--uninstall] [--help]
@@ -13,106 +14,27 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 POPUP_BIN="$SCRIPT_DIR/translator-popup/target/release/translator-popup"
-
-NAME="translator-popup"
-BINDING="<Control><Alt>t"
-UNINSTALL=0
-
-KEYBINDINGS_SCHEMA="org.gnome.settings-daemon.plugins.media-keys"
-KEYBINDINGS_KEY="custom-keybindings"
-KEYBINDING_PREFIX="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
+SETUP="$REPO_ROOT/packaging/linux/open-translator-setup"
 
 usage() {
     sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --uninstall)
-            UNINSTALL=1
-            shift
-            ;;
-        --binding)
-            BINDING="${2:?--binding requires a value}"
-            shift 2
-            ;;
-        --name)
-            NAME="${2:?--name requires a value}"
-            shift 2
-            ;;
+for arg in "$@"; do
+    case "$arg" in
         -h|--help)
             usage
             exit 0
             ;;
-        *)
-            echo "unknown argument: $1" >&2
-            usage >&2
-            exit 2
+        --uninstall)
+            exec "$SETUP" --bin "$POPUP_BIN" "$@"
             ;;
     esac
 done
 
-if ! command -v gsettings >/dev/null 2>&1; then
-    echo "gsettings not found; GNOME is required to register the shortcut" >&2
+if [ ! -x "$SETUP" ]; then
+    echo "setup script missing: $SETUP" >&2
     exit 1
-fi
-
-list_paths() {
-    gsettings get "$KEYBINDINGS_SCHEMA" "$KEYBINDINGS_KEY" \
-        | tr -d "[]' " \
-        | tr ',' '\n' \
-        | sed '/^$/d' \
-        | grep -v '^@' || true
-}
-
-find_path_by_name() {
-    local path current
-
-    for path in $(list_paths); do
-        current="$(gsettings get "$KEYBINDING_PREFIX:$path" name 2>/dev/null || true)"
-        if [ "$current" = "'$NAME'" ]; then
-            printf '%s\n' "$path"
-            return 0
-        fi
-    done
-
-    return 1
-}
-
-set_paths() {
-    local joined=""
-    local path
-
-    for path in "$@"; do
-        [ -n "$path" ] || continue
-        if [ -z "$joined" ]; then
-            joined="'$path'"
-        else
-            joined="$joined, '$path'"
-        fi
-    done
-
-    gsettings set "$KEYBINDINGS_SCHEMA" "$KEYBINDINGS_KEY" "[$joined]"
-}
-
-if [ "$UNINSTALL" -eq 1 ]; then
-    path="$(find_path_by_name || true)"
-
-    if [ -z "$path" ]; then
-        echo "no shortcut named '$NAME' found; nothing to do"
-        exit 0
-    fi
-
-    remaining=()
-    for candidate in $(list_paths); do
-        [ "$candidate" = "$path" ] || remaining+=("$candidate")
-    done
-
-    gsettings reset-recursively "$KEYBINDING_PREFIX:$path"
-    set_paths "${remaining[@]:-}"
-
-    echo "removed shortcut '$NAME' ($path)"
-    exit 0
 fi
 
 echo "Building release binaries..."
@@ -124,44 +46,4 @@ if [ ! -x "$POPUP_BIN" ]; then
     exit 1
 fi
 
-path="$(find_path_by_name || true)"
-
-if [ -z "$path" ]; then
-    index=0
-    existing="$(list_paths)"
-    while printf '%s\n' "$existing" | grep -q "/custom$index/"; do
-        index=$((index + 1))
-    done
-
-    path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom$index/"
-    set_paths $existing "$path"
-    echo "created shortcut slot $path"
-else
-    echo "updating existing shortcut $path"
-    set_paths $(list_paths)
-fi
-
-gsettings set "$KEYBINDING_PREFIX:$path" name "$NAME"
-gsettings set "$KEYBINDING_PREFIX:$path" command "$POPUP_BIN"
-gsettings set "$KEYBINDING_PREFIX:$path" binding "$BINDING"
-
-for candidate in $(list_paths); do
-    [ "$candidate" = "$path" ] && continue
-    current="$(gsettings get "$KEYBINDING_PREFIX:$candidate" binding 2>/dev/null || true)"
-    if [ "$current" = "'$BINDING'" ]; then
-        echo "warning: binding $BINDING is also used by $candidate" >&2
-    fi
-done
-
-if ! command -v wl-paste >/dev/null 2>&1; then
-    echo "warning: wl-paste not found; install wl-clipboard (sudo apt install wl-clipboard)" >&2
-fi
-
-echo
-echo "Installed:"
-echo "  name:    $NAME"
-echo "  binding: $BINDING"
-echo "  command: $POPUP_BIN"
-echo
-echo "Select text and press the shortcut; ollama and the core service start automatically."
-echo "Logs: ~/.local/state/open-translator/"
+exec "$SETUP" --bin "$POPUP_BIN" "$@"

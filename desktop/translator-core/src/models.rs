@@ -45,6 +45,20 @@ impl std::fmt::Display for ModelError {
 
 impl std::error::Error for ModelError {}
 
+pub fn format_download_status(downloaded: u64, total: Option<u64>) -> String {
+    const MB: f64 = 1_000_000.0;
+
+    match total {
+        Some(total) if total > 0 => format!(
+            "正在下载模型：{:.0}%（{:.0}/{:.0} MB）",
+            downloaded as f64 / total as f64 * 100.0,
+            downloaded as f64 / MB,
+            total as f64 / MB
+        ),
+        _ => format!("正在下载模型：已下载 {:.0} MB", downloaded as f64 / MB),
+    }
+}
+
 pub fn partial_path(dest: &Path) -> PathBuf {
     let mut name = dest.as_os_str().to_os_string();
     name.push(".part");
@@ -257,6 +271,18 @@ mod tests {
             "translator-core-model-test-{}-{name}",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn formats_download_status() {
+        assert_eq!(
+            format_download_status(500_000_000, Some(1_000_000_000)),
+            "正在下载模型：50%（500/1000 MB）"
+        );
+        assert_eq!(
+            format_download_status(123_000_000, None),
+            "正在下载模型：已下载 123 MB"
+        );
     }
 
     #[tokio::test]

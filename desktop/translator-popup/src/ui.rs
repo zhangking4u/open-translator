@@ -36,6 +36,7 @@ enum Mode {
 }
 
 enum Progress {
+    Downloading { downloaded: u64, total: Option<u64> },
     Translating,
     Done(String),
     Error(String),
@@ -55,6 +56,8 @@ struct Ui {
 }
 
 pub fn run(args: Args) -> i32 {
+    register_shortcut_if_missing();
+
     let mode = if args.stdin {
         Mode::Stdin(read_stdin())
     } else {
@@ -92,6 +95,17 @@ pub fn run(args: Args) -> i32 {
     let no_args: [&str; 0] = [];
     application.run_with_args(&no_args);
     0
+}
+
+fn register_shortcut_if_missing() {
+    // Installed layouts ship open-translator-setup; dev builds usually do not.
+    // The helper exits silently when the shortcut already exists.
+    let _ = std::process::Command::new("open-translator-setup")
+        .arg("--if-missing")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }
 
 fn build_ui(
@@ -188,6 +202,9 @@ fn build_ui(
 
             for message in messages {
                 match message {
+                    Progress::Downloading { downloaded, total } => translation_label.set_text(
+                        &translator_core::models::format_download_status(downloaded, total),
+                    ),
                     Progress::Translating => translation_label.set_text("翻译中…"),
                     Progress::Done(translation) => {
                         translation_label.set_text(&translation);
@@ -375,9 +392,24 @@ fn spawn_worker(args: &Args, target: &str, text: String, sender: Sender<Progress
                 }
             };
 
-            let config = ServiceConfig::from_env(&args.service_url, !args.no_start);
+            let config = match ServiceConfig::from_env(&args.service_url, !args.no_start) {
+                Ok(config) => config,
+                Err(error) => {
+                    let _ = sender.send(Progress::Error(error));
+                    return;
+                }
+            };
 
-            if let Err(error) = services::ensure(&client, &config).await {
+            let mut last_megabyte = 0u64;
+            let ensured = services::ensure_with_download(&client, &config, |downloaded, total| {
+                if downloaded / 1_000_000 != last_megabyte / 1_000_000 {
+                    last_megabyte = downloaded;
+                    let _ = sender.send(Progress::Downloading { downloaded, total });
+                }
+            })
+            .await;
+
+            if let Err(error) = ensured {
                 let _ = sender.send(Progress::Error(error));
                 return;
             }

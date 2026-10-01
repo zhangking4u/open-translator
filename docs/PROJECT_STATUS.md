@@ -249,11 +249,13 @@ Status:
 ## 9. Next Steps
 
 
-1. Real-machine verification with the released artifacts: Windows client (hotkey + Ctrl+C capture, DX12 + CJK fonts, single instance) and macOS client (Accessibility + Cmd+C)
+1. Verify the Release workflow Linux job (`workflow_dispatch`) and ship the deb with the next release
 
 2. Code signing / notarization (budget decision)
 
-3. (Done 2026-10-01) Tag `v0.1.0` and publish the GitHub release
+3. (Done 2026-10-01) Linux deb package for the GNOME client (llama.cpp + first-run model download); tag `v0.1.0` published; Windows real-machine re-verification passed (selection capture, CJK fonts, single instance)
+
+4. macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
 
 
 ---
@@ -421,4 +423,15 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 
 - Real-machine fixes included in the tag: Windows defaults `WGPU_BACKEND=dx12` (Intel Vulkan driver crash `igvk64.dll`) and installs a system CJK font fallback (tofu boxes); capture waits for modifier release and only translates when the clipboard actually changed; the desktop app is single-instance and the extension HTTP server starts once (`AddrInUse` shows an informational status)
 - `v0.1.0` published with `OpenTranslator-windows-x64.zip` and `OpenTranslator-macos-arm64.dmg`; unsigned, so SmartScreen/Gatekeeper warnings are documented in the release notes
-- Pending: real-machine re-verification with the released artifacts and code signing/notarization
+- Windows real-machine re-verification passed (selection capture without manual copy, CJK font rendering, single-instance box); macOS verification deferred (no hardware), code signing/notarization still pending
+
+
+## Linux deb Packaging (2026-10-01)
+
+
+- GTK client now defaults to the in-process llama.cpp service with first-run model download (ModelScope, resume, SHA-256) and progress shown in the window; `TRANSLATOR_ENGINE=ollama` keeps the legacy Ollama path
+- `packaging/linux/make-deb.sh` builds `OpenTranslator-linux-x64.deb`: `translator-popup` + `translator-service` in `/usr/lib/open-translator` (sibling discovery), `/usr/bin/translator-popup` symlink, `.desktop` entry, hicolor icon, README; depends on `libgtk-4-1`, `wl-clipboard`, `libgomp1`
+- `open-translator-setup` registers the GNOME shortcut at user level (no root-time gsettings); the popup auto-registers on first launch via `--if-missing` (never overwrites a custom binding), and `postinst` still points users to the manual command
+- Deb requires `libc6 (>= 2.39)` and GTK4 ≥ 4.10 (built on Ubuntu 24.04; binary symbol versions GLIBC_2.38/2.39)
+- Release workflow gained a Linux job that attaches the deb to the release; local verification: extracted deb auto-started the sibling service (`llama-cpp`) and translated "kernel panic" → 内核崩溃; missing-model and setup-script paths checked
+- Pending: `apt install` on a real user account, full first-run download inside the packaged app, `workflow_dispatch` run of the new release job; AppImage deferred

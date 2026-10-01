@@ -45,6 +45,43 @@ jobs:
           if ($LASTEXITCODE -ne 0) { gh release create "${{ github.ref_name }}" --generate-notes *> $null }
           gh release upload "${{ github.ref_name }}" "OpenTranslator-windows-x64.zip" --clobber
 
+  linux:
+    name: Linux package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core/translator-service
+            desktop/translator-popup
+      - name: Build
+        run: |
+          cargo build --release --manifest-path core/translator-service/Cargo.toml
+          cargo build --release --manifest-path desktop/translator-popup/Cargo.toml
+      - name: Package deb
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            export VERSION="${GITHUB_REF_NAME#v}"
+          else
+            export VERSION="0.0.0+$(git rev-parse --short=7 HEAD)"
+          fi
+          packaging/linux/make-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTranslator-linux-x64
+          path: packaging/linux/build/OpenTranslator-linux-*.deb
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || gh release create "${GITHUB_REF_NAME}" --generate-notes || true
+          gh release upload "${GITHUB_REF_NAME}" packaging/linux/build/OpenTranslator-linux-*.deb --clobber
+
   macos:
     name: macOS package
     runs-on: macos-latest

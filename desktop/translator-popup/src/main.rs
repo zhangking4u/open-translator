@@ -10,8 +10,9 @@ const HELP: &str = "\
 Usage: translator-popup [OPTIONS]
 
 Reads the Wayland primary selection (or clipboard), sends it to the local
-translator service and shows the translation in a popup window. Starts ollama
-and the translator service automatically when they are not running.
+translator service and shows the translation in a popup window. The service
+runs fully in-process (llama.cpp); on first run the model is downloaded
+automatically (~1.1 GB, ModelScope).
 
 Options:
   -s, --source <LANG>   Source language tag (default: en)
@@ -30,13 +31,22 @@ flag is given; CLI > config file > environment > defaults:
   service_url = http://127.0.0.1:17890
   source = en
   target = zh
+  model_path = <path to a .gguf model>   (default: per-user models dir)
+  prompt_style = hymt                    (generic / translategemma / hymt)
+  auto_download = true                   (download the model on first run)
 
 Auto-start configuration (environment):
   TRANSLATOR_CORE_BIN    Path to the translator-service binary (default: derived
-                         from the popup location, core/translator-service/target/release)
-  TRANSLATOR_OLLAMA_BIN  Path to the ollama binary (default: ~/.local/opt/ollama/bin/ollama)
-  TRANSLATOR_MODEL       Model for the started service (default: hy-mt1.5-1.8b)
+                         from the popup location or a sibling binary)
+  TRANSLATOR_ENGINE      llama-cpp (default) or ollama
+  TRANSLATOR_MODEL_PATH  Path to the .gguf model (llama-cpp)
   TRANSLATOR_PROMPT_STYLE  Prompt style (default: hymt)
+  TRANSLATOR_MODEL       Model for the started service when engine=ollama
+                         (default: hy-mt1.5-1.8b)
+  TRANSLATOR_OLLAMA_BIN  Path to the ollama binary (default: ~/.local/opt/ollama/bin/ollama)
+  TRANSLATOR_AUTO_DOWNLOAD  true/false; overrides auto_download
+
+Default model location: ~/.local/share/open-translator/models/hy-mt1.5-1.8b-q4_k_m.gguf
 
 Selection reading uses wl-paste from the wl-clipboard package
 (Debian/Ubuntu: sudo apt install wl-clipboard).
@@ -75,8 +85,27 @@ async fn run_headless(args: &Args, text: &str) -> i32 {
         }
     };
 
-    let config = ServiceConfig::from_env(&args.service_url, !args.no_start);
-    if let Err(error) = services::ensure(&client, &config).await {
+    let config = match ServiceConfig::from_env(&args.service_url, !args.no_start) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("{error}");
+            return 1;
+        }
+    };
+
+    let mut last_megabyte = 0u64;
+    let ensured = services::ensure_with_download(&client, &config, |downloaded, total| {
+        if downloaded / 5_000_000 != last_megabyte / 5_000_000 {
+            last_megabyte = downloaded;
+            eprintln!(
+                "{}",
+                translator_core::models::format_download_status(downloaded, total)
+            );
+        }
+    })
+    .await;
+
+    if let Err(error) = ensured {
         eprintln!("{error}");
         return 1;
     }

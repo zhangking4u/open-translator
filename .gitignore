@@ -4,6 +4,9 @@ target/
 # Browser extension build output
 browser/dist/
 
+# Linux package build output
+packaging/linux/build/
+
 # IDE
 .vscode/
 .idea/

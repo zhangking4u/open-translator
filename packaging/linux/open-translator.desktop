@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=OpenTranslator
+Name[zh_CN]=OpenTranslator 划词翻译
+Comment=Local AI selection translation
+Comment[zh_CN]=本地 AI 划词翻译
+Exec=translator-popup
+Icon=io.github.opentranslator.popup
+Terminal=false
+StartupNotify=false
+Categories=Utility;Translation;

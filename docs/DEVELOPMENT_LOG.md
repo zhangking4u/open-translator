@@ -897,6 +897,31 @@ Verification:
 ---
 
 
+## Milestone: Windows Real-Machine Re-Verification (v0.1.0)
+
+
+Completed:
+
+- Ran the released v0.1.0 Windows build on a real machine; all three target checks passed:
+  - Selection capture without a manual Ctrl+C: the hotkey fires, the modifier wait and clipboard-change detection work, and the fresh selection is translated
+  - Chinese UI/translation text renders correctly (system CJK font fallback, no tofu boxes)
+  - Launching a second copy shows the "OpenTranslator 已在运行…" box and only one process remains
+- The DX12 default needs no user setting on the Intel Vulkan-driver machine
+
+
+Deferred:
+
+- macOS real-machine verification: no Mac hardware available; the dmg is arm64-only and the Accessibility flow is untested on device
+
+
+Next:
+
+- Linux packaging: deb/AppImage for the GNOME client
+
+
+---
+
+
 ## Milestone: v0.1.0 Release
 
 
@@ -911,6 +936,45 @@ Verification:
 
 - `gh release view v0.1.0`: published 2026-10-01 02:40 UTC, both assets attached
 - Still pending: real-machine re-verification with the rebuilt artifacts
+
+
+---
+
+
+## Milestone: Linux deb Package (GNOME Client)
+
+
+Completed:
+
+- `translator-core::services` resolves the auto-start engine: no `TRANSLATOR_ENGINE` (or `llama-cpp`) uses in-process llama.cpp with the per-user model path; `TRANSLATOR_ENGINE=ollama` keeps the legacy Ollama path. `core_env` passes `TRANSLATOR_MODEL_PATH` + `TRANSLATOR_PROMPT_STYLE`, and `ensure` skips the Ollama readiness gate for llama-cpp
+- First-run model download for the GTK popup: `services::ensure_with_download` reuses `translator_core::models::download` (ModelScope, resume, SHA-256) when the default model is missing and `auto_download = true`; the window shows percentage/MB progress and `--print` reports it on stderr
+- `packaging/linux/make-deb.sh`: hand-rolled `dpkg-deb` package with `translator-popup` + `translator-service` in `/usr/lib/open-translator` (sibling layout used by `default_core_bin`, `/usr/bin/translator-popup` symlink), `.desktop` entry, hicolor icon, `/usr/share/doc` README; `Depends: libgtk-4-1, wl-clipboard, libgomp1`
+- `packaging/linux/open-translator-setup`: user-level GNOME shortcut registration (`--binding`, `--name`, `--bin`, `--uninstall`) so the deb needs no root-time gsettings; `postinst` points users to it
+- `release.yml` gained a Linux job that builds both crates and attaches `OpenTranslator-linux-x64.deb` to the release; `.gitignore` ignores `packaging/linux/build/`
+- Popup help/config docs updated for `model_path` / `prompt_style` / `auto_download` and the new default engine; README documents the deb install
+
+
+Review fixes (same day):
+
+- Process-wide download lock (`static DOWNLOAD_LOCK`) so concurrent workers can no longer corrupt the shared `.part`; `ensure_with_download` now checks an existing service, `--no-start` and remote URLs before downloading; the missing-model hint distinguishes explicit paths from the default path
+- `format_download_status` moved to `translator_core::models` and shared by the GTK popup, its headless path and the Windows/macOS client; `desktop/install.sh` now delegates shortcut handling to `open-translator-setup` (one gsettings implementation), which gained `--if-missing`
+- The popup silently auto-registers the shortcut on first launch (`--if-missing`), so the deb is usable out of the box and custom bindings are never overwritten
+- Deb metadata declares `libc6 (>= 2.39)` and the docs state the Ubuntu 24.04+ / GTK4 4.10+ baseline (binary symbol versions: GLIBC_2.38/2.39); Release dispatch runs export a numeric `0.0.0+<sha>` version
+
+
+Verification:
+
+- `cargo test`: translator-core 27 tests, popup tests move with the shared formatter; `cargo test --locked` now passes in both after regenerating the stale `Cargo.lock` files (the popup lock predated translator-core's sha2 dependency; both were missing platform deps that current Cargo requires under `--locked`); `cargo check --locked` passes for the Windows/macOS client with the shared formatter
+- Extracted the built deb to a temp dir and ran the packaged `translator-popup --stdin --print`: auto-started the sibling `translator-service` (engine `llama-cpp`, default model) → "kernel panic" → 内核崩溃; `/health` reported `engine: llama-cpp`; the service process was stopped afterwards
+- Missing-model path fails fast: `TRANSLATOR_MODEL_PATH=/tmp/nonexistent.gguf` → "model file not found ... (set model_path or enable auto_download)" (explicit paths never trigger a download)
+- `open-translator-setup --name ot-selftest --bin /bin/true` registered and uninstalled cleanly without touching the existing shortcut; shell syntax checks pass on all packaging scripts
+- After the review fixes: the packaged popup still translates "kernel panic" → 内核崩溃 (llama-cpp); `--no-start` with a missing default model fails in ~26 ms without creating the models dir; `--if-missing` is a silent no-op when the shortcut exists and registers only when missing
+- Pending: an actual `apt install` on a user account, a full first-run download inside the packaged app, and a `workflow_dispatch` run to verify the new release job
+
+
+Next:
+
+- Verify the Release workflow Linux job via `workflow_dispatch`, then ship the deb with the next release; AppImage deferred
 
 
 ---
@@ -947,13 +1011,13 @@ docs: add project status document
 Consumer edition (ordinary users); Sprint 5 meeting translation parked.
 
 
-Released (2026-10-01): `v0.1.0` — GitHub release with the Windows zip and macOS arm64 dmg.
+Released (2026-10-01): `v0.1.0` — GitHub release with the Windows zip and macOS arm64 dmg; Windows real-machine re-verification passed (capture, CJK fonts, single instance). Linux deb package implemented for the GNOME client (llama.cpp + first-run download; AppImage deferred).
 
 Planned:
 
-1. Real-machine verification on Windows/macOS with the rebuilt artifacts (hotkey/Ctrl+C capture, DX12 + CJK fonts, single instance)
+1. Verify the Release workflow Linux job (`workflow_dispatch`) and ship the deb with the next release
 
-2. Code signing / notarization (budget decision)
+2. macOS real-machine verification deferred (no Mac hardware); code signing / notarization (budget decision)
 
 
 Completed sprints:

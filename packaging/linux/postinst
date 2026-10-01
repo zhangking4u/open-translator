@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    echo "OpenTranslator installed."
+    echo "Run 'open-translator-setup' as your desktop user to bind the global shortcut (default Ctrl+Alt+T)."
+fi
+
+exit 0

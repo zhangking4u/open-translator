@@ -358,7 +358,8 @@ impl eframe::App for PopupApp {
             match message {
                 StartupEvent::Progress { downloaded, total } => {
                     self.error = false;
-                    self.status = format_download_status(downloaded, total);
+                    self.status =
+                        translator_core::models::format_download_status(downloaded, total);
                 }
                 StartupEvent::Ready(engine) => {
                     self.engine = Some(engine);
@@ -484,20 +485,6 @@ fn target_label(target: &str) -> &str {
         .find(|(code, _)| *code == target)
         .map(|(_, name)| *name)
         .unwrap_or(target)
-}
-
-fn format_download_status(downloaded: u64, total: Option<u64>) -> String {
-    const MB: f64 = 1_000_000.0;
-
-    match total {
-        Some(total) if total > 0 => format!(
-            "正在下载模型：{:.0}%（{:.0}/{:.0} MB）",
-            downloaded as f64 / total as f64 * 100.0,
-            downloaded as f64 / MB,
-            total as f64 / MB
-        ),
-        _ => format!("正在下载模型：已下载 {:.0} MB", downloaded as f64 / MB),
-    }
 }
 
 fn spawn_startup(
