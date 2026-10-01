@@ -16,10 +16,28 @@ pub type TranslationFuture<'a> = Pin<
     Box<dyn Future<Output = Result<TranslationResult, TranslationError>> + Send + 'a>,
 >;
 
+/// Receives generated translation pieces as they are decoded.
+pub type DeltaCallback = Box<dyn FnMut(&str) + Send + 'static>;
+
 pub type EngineRef = Arc<dyn TranslationEngine>;
 
 pub trait TranslationEngine: Send + Sync {
     fn translate(&self, request: TranslationRequest) -> TranslationFuture<'_>;
+
+    /// Like [`Self::translate`], but reports the translation piece by piece
+    /// through `on_delta`. Engines without native streaming fall back to a
+    /// single delta carrying the complete translation.
+    fn translate_streaming<'a>(
+        &'a self,
+        request: TranslationRequest,
+        mut on_delta: DeltaCallback,
+    ) -> TranslationFuture<'a> {
+        Box::pin(async move {
+            let result = self.translate(request).await?;
+            on_delta(&result.translated_text);
+            Ok(result)
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -90,6 +90,7 @@ enum TranslationState {
     },
     Translating {
         text: String,
+        translation: String,
     },
     Done {
         text: String,
@@ -105,6 +106,7 @@ enum TranslationState {
 enum Progress {
     Downloading { downloaded: u64, total: Option<u64> },
     Translating,
+    Delta(String),
     Done {
         translation: String,
         elapsed: Duration,
@@ -218,11 +220,20 @@ impl Widgets {
                     }
                 }
             }
-            TranslationState::Translating { text } => {
+            TranslationState::Translating { text, translation } => {
                 self.set_source(text);
-                self.translation_label.set_text("翻译中…");
-                self.translation_label.add_css_class("ot-dim");
-                self.status_label.set_text("");
+
+                if translation.trim().is_empty() {
+                    self.translation_label.set_text("翻译中…");
+                    self.translation_label.add_css_class("ot-dim");
+                    self.status_label.set_text("");
+                } else {
+                    self.translation_label.remove_css_class("ot-dim");
+                    self.translation_label.set_text(translation);
+                    self.status_label
+                        .set_text(&format!("翻译中… {} 字符", translation.chars().count()));
+                }
+
                 self.set_busy(true);
                 self.progress_bar.set_visible(false);
                 self.error_card.set_visible(false);
@@ -677,7 +688,21 @@ fn build_ui(
                         }
                         Progress::Translating => TranslationState::Translating {
                             text: state_text(&current),
+                            translation: String::new(),
                         },
+                        Progress::Delta(delta) => {
+                            let translation = match &*current {
+                                TranslationState::Translating { translation, .. } => {
+                                    format!("{translation}{delta}")
+                                }
+                                _ => delta,
+                            };
+
+                            TranslationState::Translating {
+                                text: state_text(&current),
+                                translation,
+                            }
+                        }
                         Progress::Done {
                             translation,
                             elapsed,
@@ -749,7 +774,7 @@ fn build_ui(
                     | TranslationState::Failed { text, .. }
                     | TranslationState::Preparing { text }
                     | TranslationState::Downloading { text, .. }
-                    | TranslationState::Translating { text } => Some(text.clone()),
+                    | TranslationState::Translating { text, .. } => Some(text.clone()),
                     TranslationState::Idle | TranslationState::Empty => None,
                 }
             };
@@ -920,7 +945,7 @@ fn state_text(state: &TranslationState) -> String {
     match state {
         TranslationState::Preparing { text }
         | TranslationState::Downloading { text, .. }
-        | TranslationState::Translating { text }
+        | TranslationState::Translating { text, .. }
         | TranslationState::Done { text, .. }
         | TranslationState::Failed { text, .. } => text.clone(),
         TranslationState::Idle | TranslationState::Empty => String::new(),
@@ -1278,12 +1303,16 @@ fn spawn_worker(args: &Args, source: &str, target: &str, text: String, sender: S
 
             let started = Instant::now();
 
-            let outcome = translate::translate(
+            let delta_sender = sender.clone();
+            let outcome = translate::translate_stream(
                 &client,
                 &args.service_url,
                 &source,
                 &target,
                 &text,
+                move |delta| {
+                    let _ = delta_sender.send(Progress::Delta(delta.to_string()));
+                },
             )
             .await;
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use translator_inference::{GenerateOptions as InferenceOptions, InferenceEngine, LoadOptions};
 
-use super::{TranslationEngine, TranslationFuture};
+use super::{DeltaCallback, TranslationEngine, TranslationFuture};
 use crate::domain::prompt::{PromptStyle, translation_prompt};
 use crate::domain::translation::{TranslationError, TranslationRequest, TranslationResult};
 
@@ -103,6 +103,22 @@ impl TranslationEngine for LlamaCppEngine {
                 .map_err(|error| {
                     TranslationError::Internal(format!("inference task failed: {error}"))
                 })?
+        })
+    }
+
+    fn translate_streaming<'a>(
+        &'a self,
+        request: TranslationRequest,
+        on_delta: DeltaCallback,
+    ) -> TranslationFuture<'a> {
+        let engine = self.clone();
+
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                engine.translate_blocking_streaming(&request, on_delta)
+            })
+            .await
+            .map_err(|error| TranslationError::Internal(format!("inference task failed: {error}")))?
         })
     }
 }

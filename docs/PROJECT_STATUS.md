@@ -479,4 +479,5 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - `translator-popup`: the status bar shows character count and elapsed time, the source text is selectable, and an empty primary selection falls back to the clipboard
 - user-facing errors are Chinese with actionable hints (wl-clipboard install, service auto-start/log paths, model download/auto-start failures)
 - Language pair swap (previous translation becomes the new source) and Ctrl+1/2/3 recent targets are now implemented in the GTK popup as well; `translator-core::languages::recent_target_list` is shared by both desktop clients
-- Next GTK candidates: streaming output (needs an SSE endpoint), optional model pre-warm autostart
+- Streaming output is implemented end to end: `POST /translate/stream` (SSE) on the service, `translate::translate_stream` in translator-core and incremental rendering in the GTK popup
+- Next GTK candidate: optional model pre-warm autostart

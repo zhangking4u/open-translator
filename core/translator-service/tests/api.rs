@@ -163,3 +163,73 @@ async fn slow_engine_returns_gateway_timeout() {
     let json = body_json(response).await;
     assert_eq!(json["error"]["kind"], "timeout");
 }
+
+fn stream_request(body: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/translate/stream")
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_owned()))
+        .unwrap()
+}
+
+async fn body_text(response: axum::response::Response) -> String {
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
+#[tokio::test]
+async fn stream_returns_sse_deltas_and_done() {
+    let response = app()
+        .oneshot(stream_request(
+            r#"{"text":"hello","source":"en","target":"zh"}"#,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .starts_with("text/event-stream")
+    );
+
+    let body = body_text(response).await;
+
+    assert!(body.contains("\"type\":\"delta\""));
+    assert!(body.contains("[Mock Translation] hello"));
+    assert!(body.contains("\"type\":\"done\""));
+    assert!(body.contains("\"translation\":\"[Mock Translation] hello\""));
+}
+
+#[tokio::test]
+async fn stream_rejects_empty_text() {
+    let response = app()
+        .oneshot(stream_request(r#"{"text":"   ","source":"en","target":"zh"}"#))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let json = body_json(response).await;
+    assert_eq!(json["error"]["kind"], "invalid_request");
+}
+
+#[tokio::test]
+async fn stream_reports_engine_errors() {
+    let response = failing_app()
+        .oneshot(stream_request(
+            r#"{"text":"hello","source":"en","target":"zh"}"#,
+        ))
+        .await
+        .unwrap();
+
+    // The response has already started as SSE, so the failure is an event.
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = body_text(response).await;
+
+    assert!(body.contains("\"type\":\"error\""));
+    assert!(body.contains("engine_unavailable"));
+}

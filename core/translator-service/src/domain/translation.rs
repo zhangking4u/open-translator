@@ -18,6 +18,19 @@ pub enum TranslationError {
     Internal(String),
 }
 
+impl TranslationError {
+    /// Stable machine-readable kind used by the HTTP error body and the
+    /// streaming error event.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::InvalidRequest(_) => "invalid_request",
+            Self::EngineUnavailable(_) => "engine_unavailable",
+            Self::Timeout => "timeout",
+            Self::Internal(_) => "internal",
+        }
+    }
+}
+
 impl std::fmt::Display for TranslationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

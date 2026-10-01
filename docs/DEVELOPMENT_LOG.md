@@ -1199,6 +1199,29 @@ Verification:
 ---
 
 
+## Milestone: Streaming Translation (SSE)
+
+
+Completed:
+
+- `TranslationEngine::translate_streaming` + `DeltaCallback` (`Box<dyn FnMut(&str) + Send + 'static>`): engines report decoded pieces; the default implementation emits the complete translation as one delta, `LlamaCppEngine` forwards the inference callback through `spawn_blocking`
+- `TimeoutEngine`: streaming uses an idle timeout that restarts on every delta (unit-tested with a silent engine); non-streaming keeps the whole-request timeout
+- API: `POST /translate/stream` returns SSE `{"type":"delta","delta":...}` events and terminates with `{"type":"done","translation","elapsed_ms"}` or `{"type":"error","kind","message"}`; the stream closes right after the terminal event; `TranslationError::kind()` is now shared with the JSON error mapping
+- `desktop/translator-core`: `translate::translate_stream` parses the SSE stream (chunked framing, comments/keep-alives ignored) and reports deltas; error kinds mapped to Chinese
+- `desktop/translator-popup`: the translation renders while streaming and the status line shows 翻译中… N 字符, then the Done state with character count and elapsed time; `--print` keeps the non-streaming path
+- The Windows/macOS embedded server serves the new endpoint automatically (same router)
+
+
+Verification:
+
+- `core/translator-service`: 32 unit + 9 integration tests (3 new SSE tests: deltas+done, validation, error event); `desktop/translator-core`: 53 tests (parse unit tests plus stub-service streaming tests); `desktop/translator-popup` builds with `cargo build --locked`
+- Live smoke against the release llama-cpp service: `curl -N` received 内核 at 51.348, 崩溃 at 51.386 and done at 51.425 (elapsed 267 ms); non-streaming `/translate` and the 400 validation path unchanged
+- GUI rendering is compile-verified; visual pass on GNOME still pending
+
+
+---
+
+
 # Git History
 
 Commit:
