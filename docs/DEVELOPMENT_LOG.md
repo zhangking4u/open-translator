@@ -1222,6 +1222,24 @@ Verification:
 ---
 
 
+## Milestone: In-Window Selection / Clipboard Toggle
+
+
+Completed:
+
+- `translator-core`: `FileConfig`/`Args` accept `clipboard` (CLI `--clipboard` still wins) and `persist_clipboard` writes the flag back
+- `desktop/translator-popup`: a header 剪贴板 toggle switches the read source between the Wayland primary selection and the clipboard; toggling persists the choice and re-reads the selection immediately; the toggle is hidden in `--stdin` mode
+
+
+Verification:
+
+- `desktop/translator-core`: 55 tests passed (file parsing, precedence and clipboard-mode tests); `desktop/translator-popup` builds with `cargo build --locked`
+- The toggle interaction is compile-verified; visual pass on GNOME still pending
+
+
+---
+
+
 # Git History
 
 Commit:

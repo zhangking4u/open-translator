@@ -9,7 +9,7 @@ use gtk::prelude::*;
 use gtk::{
     Align, Application, ApplicationWindow, Box as GtkBox, Button, ComboBoxText, CssProvider,
     EventControllerKey, EventControllerScroll, EventControllerScrollFlags, Label, Orientation,
-    ProgressBar, ScrolledWindow, Spinner,
+    ProgressBar, ScrolledWindow, Spinner, ToggleButton,
 };
 
 use translator_core::args::{Args, read_stdin};
@@ -17,7 +17,7 @@ use translator_core::detect;
 use translator_core::languages;
 use translator_core::services::{self, ServiceConfig};
 use translator_core::settings::{
-    load_config, persist_recent_targets, persist_source, persist_target,
+    load_config, persist_clipboard, persist_recent_targets, persist_source, persist_target,
 };
 use translator_core::translate;
 use translator_core::update::{self, ReleaseInfo};
@@ -383,7 +383,7 @@ struct Ui {
     target_combo: ComboBoxText,
     swap_button: Button,
     args: Args,
-    mode: Mode,
+    mode: RefCell<Mode>,
 }
 
 pub fn run(args: Args) -> i32 {
@@ -491,8 +491,20 @@ fn build_ui(
     let title_label = Label::new(Some("OpenTranslator"));
     title_label.add_css_class("ot-title");
     title_label.set_xalign(0.0);
+
+    let header_spacer = GtkBox::new(Orientation::Horizontal, 0);
+    header_spacer.set_hexpand(true);
+
+    let clipboard_toggle = ToggleButton::with_label("剪贴板");
+    clipboard_toggle.add_css_class("flat");
+    clipboard_toggle.set_tooltip_text(Some("读取剪贴板而不是划词选区"));
+    clipboard_toggle.set_active(args.clipboard);
+    clipboard_toggle.set_visible(matches!(mode, Mode::Selection { .. }));
+
     header.append(&dot);
     header.append(&title_label);
+    header.append(&header_spacer);
+    header.append(&clipboard_toggle);
 
     let source_caption = Label::new(Some("源语言"));
     source_caption.add_css_class("ot-dim");
@@ -815,6 +827,28 @@ fn build_ui(
         move |_| swap_languages(&state)
     });
 
+    clipboard_toggle.connect_toggled({
+        let state = state.clone();
+
+        move |button| {
+            let active = button.is_active();
+
+            {
+                let slot = state.borrow();
+                let Some(ui) = slot.as_ref() else {
+                    return;
+                };
+
+                if let Mode::Selection { clipboard } = &mut *ui.mode.borrow_mut() {
+                    *clipboard = active;
+                }
+            }
+
+            persist_clipboard(active);
+            refresh(&state);
+        }
+    });
+
     let key_controller = EventControllerKey::new();
     key_controller.connect_key_pressed({
         let window = window.clone();
@@ -937,7 +971,7 @@ fn build_ui(
         target_combo: language_combo.clone(),
         swap_button,
         args: args.clone(),
-        mode: mode.clone(),
+        mode: RefCell::new(mode.clone()),
     }
 }
 
@@ -1177,8 +1211,10 @@ fn refresh(state: &Rc<RefCell<Option<Ui>>>) {
             return;
         };
 
-        match &ui.mode {
-            Mode::Selection { clipboard } => read_selection(*clipboard),
+        let mode = ui.mode.borrow().clone();
+
+        match mode {
+            Mode::Selection { clipboard } => read_selection(clipboard),
             Mode::Stdin(Ok(text)) => Ok(text.clone()),
             Mode::Stdin(Err(error)) => Err(error.clone()),
         }

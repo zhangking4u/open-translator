@@ -7,6 +7,7 @@ pub struct FileConfig {
     pub service_url: Option<String>,
     pub source: Option<String>,
     pub target: Option<String>,
+    pub clipboard: Option<String>,
     pub recent_targets: Option<Vec<String>>,
     pub hotkey: Option<String>,
     pub model_path: Option<String>,
@@ -50,6 +51,7 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "service_url" => config.service_url = Some(value.to_string()),
             "source" => config.source = Some(value.to_string()),
             "target" => config.target = Some(value.to_string()),
+            "clipboard" => config.clipboard = Some(value.to_string()),
             "recent_targets" => {
                 config.recent_targets = Some(
                     value
@@ -79,6 +81,10 @@ pub fn persist_source(source: &str) {
 
 pub fn persist_target(target: &str) {
     persist_value("target", target);
+}
+
+pub fn persist_clipboard(clipboard: bool) {
+    persist_value("clipboard", if clipboard { "true" } else { "false" });
 }
 
 pub fn persist_recent_targets(targets: &[String]) {
@@ -138,7 +144,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nunknown = x\n",
         )
         .unwrap();
 
@@ -147,6 +153,7 @@ mod tests {
 
         assert_eq!(config.source.as_deref(), Some("ja"));
         assert_eq!(config.target.as_deref(), Some("ko"));
+        assert_eq!(config.clipboard.as_deref(), Some("true"));
         assert_eq!(
             config.recent_targets.as_deref(),
             Some(["zh".to_string(), "ja".to_string()].as_slice())

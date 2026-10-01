@@ -20,6 +20,7 @@ Options:
                         the language of the selected text)
   -t, --target <LANG>   Target language tag (default: zh)
       --clipboard       Read the clipboard instead of the primary selection
+                        (also switchable in the window, persisted as `clipboard`)
       --stdin           Read text from stdin instead of the selection
       --print           Print the translation to stdout instead of a popup
       --service <URL>   Service base URL
@@ -33,6 +34,7 @@ flag is given; CLI > config file > environment > defaults:
   service_url = http://127.0.0.1:17890
   source = auto
   target = zh
+  # clipboard = false                  # read the clipboard instead of the selection
   model_path = <path to a .gguf model>   (default: per-user models dir)
   prompt_style = hymt                    (generic / translategemma / hymt)
   auto_download = true                   (download the model on first run)

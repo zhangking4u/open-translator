@@ -60,6 +60,9 @@ impl Args {
         if let Some(value) = file.recent_targets {
             args.recent_targets = value;
         }
+        if let Some(value) = file.clipboard.as_deref() {
+            args.clipboard = value.eq_ignore_ascii_case("true");
+        }
 
         if let Some(value) = cli.service_url {
             args.service_url = value;
@@ -71,7 +74,10 @@ impl Args {
             args.target = value;
         }
 
-        args.clipboard = cli.clipboard;
+        if cli.clipboard {
+            args.clipboard = true;
+        }
+
         args.stdin = cli.stdin;
         args.print = cli.print;
         args.no_start = cli.no_start;
@@ -183,6 +189,40 @@ mod tests {
         assert_eq!(args.source, "ja");
         assert_eq!(args.target, "de");
         assert!(args.print);
+    }
+
+    #[test]
+    fn config_file_controls_clipboard_mode() {
+        let file = FileConfig {
+            clipboard: Some("true".to_string()),
+            ..FileConfig::default()
+        };
+
+        let args = Args::resolve(CliArgs::default(), file);
+        assert!(args.clipboard);
+
+        let file = FileConfig {
+            clipboard: Some("false".to_string()),
+            ..FileConfig::default()
+        };
+
+        let args = Args::resolve(CliArgs::default(), file);
+        assert!(!args.clipboard);
+    }
+
+    #[test]
+    fn clipboard_flag_overrides_the_config_file() {
+        let cli = CliArgs {
+            clipboard: true,
+            ..CliArgs::default()
+        };
+        let file = FileConfig {
+            clipboard: Some("false".to_string()),
+            ..FileConfig::default()
+        };
+
+        let args = Args::resolve(cli, file);
+        assert!(args.clipboard);
     }
 
     #[test]

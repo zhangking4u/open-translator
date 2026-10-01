@@ -86,6 +86,7 @@ sudo apt install -y libgtk-4-dev pkg-config wl-clipboard
 service_url = http://127.0.0.1:17890
 source = auto
 target = zh
+# clipboard = false                  # 改读剪贴板而不是划词选区（弹窗内也可切换）
 # model_path = /path/to/model.gguf   # 默认 ~/.local/share/open-translator/models/
 # prompt_style = hymt                # generic / translategemma / hymt
 # auto_download = true               # 首次运行自动下载默认模型
@@ -94,7 +95,7 @@ target = zh
 
 命令行参数 > 配置文件 > 环境变量 > 默认值。其他参数：`--clipboard`（读剪贴板）、`--stdin`/`--print`（脚本化）、`--no-start`。
 `TRANSLATOR_ENGINE=ollama` 可切回本地 Ollama（模型名用 `TRANSLATOR_MODEL`，默认 `hy-mt1.5-1.8b`）；`TRANSLATOR_MODEL_PATH` 指向已有 GGUF 时不触发下载。
-弹窗内可直接用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语。译文通过 `POST /translate/stream` 流式返回，边生成边显示，状态栏同步显示已接收字数。
+弹窗内可直接用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语。译文通过 `POST /translate/stream` 流式返回，边生成边显示，状态栏同步显示已接收字数。右上角「剪贴板」开关可在划词选区与剪贴板之间切换，选择会写入配置并在下次启动时恢复。
 
 ### 3. 浏览器扩展（Firefox / Chrome）
 
