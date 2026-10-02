@@ -152,8 +152,9 @@ fn main() {
     });
 
     let translate_on_start = args.translate;
-    let show_on_start =
-        !args.autostart || args.stdin || args.settings || args.history || translate_on_start;
+    // A --translate cold start must not show the window before the capture
+    // thread runs, or the synthesized Ctrl+C would land on our own window.
+    let show_on_start = !args.autostart || args.stdin || args.settings || args.history;
     let initial_view = if args.settings {
         Some("settings".to_string())
     } else if args.history {
@@ -222,6 +223,7 @@ fn main() {
             clear_history,
             set_pinned,
             get_initial_view,
+            platform,
             start_update,
             open_release_page,
             replace_text
@@ -516,14 +518,17 @@ fn fail_model(app: &AppHandle, message: String) {
 }
 
 fn trigger_translation(app: &AppHandle) {
-    show_main(app);
-
     let app = app.clone();
     std::thread::spawn(move || {
+        // Capture before showing the window: the synthesized Ctrl+C must go to
+        // the app the user selected text in, not to our own window.
         let window = capture::foreground_window();
         *app.state::<AppState>().replace_window.lock().unwrap() = window;
+        let captured = capture::capture_selection();
 
-        match capture::capture_selection() {
+        show_main(&app);
+
+        match captured {
             Ok(text) if text.trim().is_empty() => {
                 let _ = app.emit("empty", ());
             }
@@ -707,9 +712,41 @@ fn quit_app(app: AppHandle) {
 
 #[tauri::command]
 fn resize_window(window: WebviewWindow, height: f64) {
-    if let Ok(size) = window.inner_size() {
-        let height = height.clamp(120.0, 2000.0) as u32;
-        let _ = window.set_size(tauri::PhysicalSize::new(size.width, height));
+    let Ok(size) = window.inner_size() else {
+        return;
+    };
+
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+
+    let (max_height, margin) = match &monitor {
+        Some(monitor) => {
+            let work = monitor.work_area();
+            let margin = (12.0 * monitor.scale_factor()) as i32;
+            let max = (work.size.height as i32 - 2 * margin).max(120) as u32;
+            (max, margin)
+        }
+        None => (2000, 12),
+    };
+
+    let height = (height as u32).clamp(120, max_height);
+    let _ = window.set_size(tauri::PhysicalSize::new(size.width, height));
+
+    // Keep the growing card inside the work area: when it would run past the
+    // bottom edge, slide it up so the translation stays visible while it
+    // streams in.
+    if let (Ok(position), Some(monitor)) = (window.outer_position(), monitor) {
+        let work = monitor.work_area();
+        let work_top = work.position.y + margin;
+        let work_bottom = work.position.y + work.size.height as i32 - margin;
+
+        if position.y + height as i32 > work_bottom {
+            let y = (work_bottom - height as i32).max(work_top);
+            let _ = window.set_position(PhysicalPosition::new(position.x, y));
+        }
     }
 }
 
@@ -900,6 +937,11 @@ fn set_pinned(app: AppHandle, pinned: bool) {
 #[tauri::command]
 fn get_initial_view(app: AppHandle) -> Option<String> {
     app.state::<InitialView>().0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn platform() -> &'static str {
+    std::env::consts::OS
 }
 
 fn parse_bool(key: &str, value: &str) -> Result<bool, String> {

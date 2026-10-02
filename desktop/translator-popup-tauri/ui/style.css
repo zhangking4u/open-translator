@@ -32,6 +32,13 @@ body {
   user-select: none;
 }
 
+.os-windows .card {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .card {
   margin: 10px;
   padding: 14px 16px 12px;

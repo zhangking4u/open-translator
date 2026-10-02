@@ -33,7 +33,8 @@ function render(html) {
 }
 
 async function resize() {
-  const height = document.querySelector(".card").getBoundingClientRect().height + 20;
+  const margin = document.body.classList.contains("os-windows") ? 0 : 20;
+  const height = document.querySelector(".card").getBoundingClientRect().height + margin;
   await invoke("resize_window", { height });
 }
 
@@ -75,11 +76,15 @@ function showEmpty() {
 function showSource(text, canReplace) {
   lastSource = text;
   replaceable = canReplace;
+  // A new source starts a fresh translation: never append to the old one.
+  current = "";
+  streaming = false;
+  setCopyEnabled(false);
   source.hidden = false;
   source.textContent = text;
   retranslate.hidden = false;
   replace.hidden = !replaceable;
-  resize();
+  render('<p class="hint">正在翻译…</p>');
 }
 
 function showProgress(downloaded, total) {
@@ -408,6 +413,12 @@ listen("update-error", (event) => {
 
 showWaiting();
 resize();
+
+invoke("platform").then((os) => {
+  // Windows keeps the window opaque, so the card fills it instead of floating.
+  document.body.classList.toggle("os-windows", os === "windows");
+  resize();
+});
 
 invoke("get_initial_view").then((initial) => {
   if (initial === "settings") {
