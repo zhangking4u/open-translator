@@ -32,6 +32,7 @@ body {
   user-select: none;
 }
 
+/* Windows keeps the window opaque, so the card fills it instead of floating. */
 .os-windows .card {
   margin: 0;
   border: none;
