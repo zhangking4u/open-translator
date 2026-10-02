@@ -1393,6 +1393,24 @@ Verification:
 ---
 
 
+## Milestone: Translation History and Pinned Window (post-v0.2.2)
+
+
+Added:
+
+- translator-core `history` module: `HistoryEntry` (source/target/text/translation), newest-first `push` (deduped by text + target, capped at `MAX_ENTRIES` = 10), `load`/`save` via `paths::history_path()` (`history.json` next to the config)
+- Desktop client: every completed translation is recorded; the footer 历史 button (or Ctrl+H) opens a scrollable panel (清空, click an entry to restore its translation and language pair); 固定 keeps Esc/× from hiding the window, shows 已固定 in place of ×, and Esc closes the history panel first
+
+
+Verification:
+
+- translator-core: 60 tests (5 new history tests); desktop client: 15 tests
+- Live on Windows via UIAutomation: 历史 shows a seeded entry and clicking it restores the translation; 固定 → Esc keeps the window visible, 取消固定 → Esc hides it; a real `--stdin` translation wrote a valid UTF-8 `history.json` entry (backed up and restored around the test)
+
+
+---
+
+
 # Git History
 
 Commit:

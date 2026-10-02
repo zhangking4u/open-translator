@@ -529,3 +529,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Release assets are parsed (`ReleaseAsset`); on Windows 立即更新 downloads the release zip to `%TEMP%\open-translator-update`, extracts it and runs `install.ps1`, which replaces the binary and restarts the tray app
 - The banner shows download progress and offers 重试 on failure; macOS/Linux keep the release-page link
 - Verified with a stub release server and a UIAutomation click through the real banner (download, extraction, installer, app exit)
+
+
+## Translation History and Pinned Window (post-v0.2.2)
+
+
+- Completed translations are recorded in `%APPDATA%\open-translator\history.json` (`translator-core::history`, max 10, deduped); 历史/Ctrl+H lists them and clicking restores the translation
+- 固定 prevents Esc/× from hiding the window (已固定 replaces the close button); Esc closes the history panel first
+- Verified live via UI Automation and unit tests (translator-core 60, desktop 15)

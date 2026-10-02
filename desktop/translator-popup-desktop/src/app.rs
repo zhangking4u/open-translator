@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use translator_core::args::{Args, read_stdin};
 use translator_core::detect;
+use translator_core::history::HistoryEntry;
 use translator_core::languages;
 use translator_core::settings::{persist_recent_targets, persist_source, persist_target};
 use translator_core::update::{ReleaseAsset, ReleaseInfo};
@@ -108,6 +109,10 @@ struct Actions {
     dismiss_notice: bool,
     open_url: Option<String>,
     install_update: bool,
+    toggle_history: bool,
+    toggle_pin: bool,
+    clear_history: bool,
+    load_history: Option<usize>,
 }
 
 pub struct PopupApp {
@@ -128,6 +133,9 @@ pub struct PopupApp {
     update_dismissed: bool,
     update_progress: Option<UpdateProgress>,
     update_install_receiver: Option<Receiver<UpdateEvent>>,
+    history: Vec<HistoryEntry>,
+    history_open: bool,
+    pinned: bool,
     copied_at: Option<Instant>,
     replaced_at: Option<Instant>,
     replace_window: Option<isize>,
@@ -382,6 +390,16 @@ fn format_update_progress(downloaded: u64, total: Option<u64>) -> String {
     }
 }
 
+fn history_preview(value: &str, max_chars: usize) -> String {
+    let mut preview: String = value.chars().take(max_chars).collect();
+
+    if value.chars().count() > max_chars {
+        preview.push('…');
+    }
+
+    preview
+}
+
 /// Tray tooltip for the current model state. Download/load progress and errors
 /// are surfaced here because the window stays hidden until the user asks for it.
 fn tray_tooltip(model: &ModelState, hotkey_label: &str) -> String {
@@ -549,6 +567,9 @@ impl PopupApp {
             update_dismissed: false,
             update_progress: None,
             update_install_receiver: None,
+            history: translator_core::history::load(),
+            history_open: false,
+            pinned: false,
             copied_at: None,
             replaced_at: None,
             replace_window: None,
@@ -909,12 +930,34 @@ impl PopupApp {
         }
     }
 
+    fn load_history(&mut self, index: usize) {
+        let Some(entry) = self.history.get(index).cloned() else {
+            return;
+        };
+
+        self.source = entry.source.clone();
+        self.target = entry.target.clone();
+        persist_source(&entry.source);
+        persist_target(&entry.target);
+        self.detected_source = None;
+        self.history_open = false;
+        self.translation = TranslationState::Done {
+            text: entry.text,
+            translation: entry.translation,
+            elapsed: Duration::ZERO,
+        };
+    }
+
     fn hide(&mut self, ctx: &egui::Context) {
         self.window_visible = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
     }
 
     fn close_window(&mut self, ctx: &egui::Context) {
+        if self.pinned {
+            return;
+        }
+
         if self.can_restore() {
             self.hide(ctx);
         } else {
@@ -1129,6 +1172,24 @@ impl eframe::App for PopupApp {
                         _ => (String::new(), Duration::ZERO),
                     };
 
+                    if !text.is_empty() {
+                        let source = self
+                            .detected_source
+                            .unwrap_or(self.source.as_str())
+                            .to_string();
+
+                        translator_core::history::push(
+                            &mut self.history,
+                            HistoryEntry {
+                                source,
+                                target: self.target.clone(),
+                                text: text.clone(),
+                                translation: translation.clone(),
+                            },
+                        );
+                        translator_core::history::save(&self.history);
+                    }
+
                     self.translation = TranslationState::Done {
                         text,
                         translation,
@@ -1226,7 +1287,15 @@ impl eframe::App for PopupApp {
         }
 
         if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-            self.close_window(ctx);
+            if self.history_open {
+                self.history_open = false;
+            } else {
+                self.close_window(ctx);
+            }
+        }
+
+        if ctx.input(|input| input.modifiers.command && input.key_pressed(egui::Key::H)) {
+            self.history_open = !self.history_open;
         }
 
         if ctx.input(|input| {
@@ -1349,6 +1418,24 @@ impl eframe::App for PopupApp {
                     self.start_update_install(asset.url.clone());
                 }
             }
+        }
+
+        if actions.toggle_history {
+            self.history_open = !self.history_open;
+        }
+
+        if actions.toggle_pin {
+            self.pinned = !self.pinned;
+        }
+
+        if actions.clear_history {
+            self.history.clear();
+            translator_core::history::save(&self.history);
+            self.history_open = false;
+        }
+
+        if let Some(index) = actions.load_history {
+            self.load_history(index);
         }
 
         if actions.close_window {
@@ -1480,14 +1567,19 @@ impl PopupApp {
             });
 
         header.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let close = ui.add(
-                egui::Button::new(egui::RichText::new("×").size(17.0).weak())
-                    .frame(false)
-                    .min_size(egui::vec2(26.0, 26.0)),
-            );
+            if self.pinned {
+                ui.label(egui::RichText::new("已固定").weak().size(11.0))
+                    .on_hover_text("点击下方“取消固定”后 Esc/× 才会隐藏窗口");
+            } else {
+                let close = ui.add(
+                    egui::Button::new(egui::RichText::new("×").size(17.0).weak())
+                        .frame(false)
+                        .min_size(egui::vec2(26.0, 26.0)),
+                );
 
-            if close.on_hover_text("隐藏").clicked() {
-                actions.close_window = true;
+                if close.on_hover_text("隐藏（Esc）").clicked() {
+                    actions.close_window = true;
+                }
             }
         });
 
@@ -1589,6 +1681,13 @@ impl PopupApp {
     }
 
     fn body(&mut self, ui: &mut egui::Ui, actions: &mut Actions, max_window_height: f32) -> f32 {
+        let mut content = 0.0;
+
+        if self.history_open {
+            content += self.history_panel(ui, actions);
+            ui.add_space(6.0);
+        }
+
         let source = self.source_text().map(str::to_string);
 
         if let Some(source) = source {
@@ -1636,7 +1735,61 @@ impl PopupApp {
         self.footer(ui, actions);
         let footer_height = ui.min_rect().height() - footer_top;
 
-        above + translation_height + 6.0 + footer_height
+        content + above + translation_height + 6.0 + footer_height
+    }
+
+    fn history_panel(&self, ui: &mut egui::Ui, actions: &mut Actions) -> f32 {
+        let mut height = 0.0;
+
+        egui::Frame::new()
+            .fill(ui.visuals().faint_bg_color)
+            .corner_radius(10)
+            .inner_margin(egui::Margin::symmetric(12, 8))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("最近翻译").strong().size(13.0));
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if !self.history.is_empty() && ui.small_button("清空").clicked() {
+                            actions.clear_history = true;
+                        }
+                    });
+                });
+
+                ui.add_space(4.0);
+
+                if self.history.is_empty() {
+                    ui.label(egui::RichText::new("暂无历史").weak().size(12.0));
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt("history_scroll")
+                        .max_height(150.0)
+                        .show(ui, |ui| {
+                            for (index, entry) in self.history.iter().enumerate() {
+                                let label = format!(
+                                    "{} · {} → {}",
+                                    languages::label(&entry.target),
+                                    history_preview(&entry.text, 16),
+                                    history_preview(&entry.translation, 22),
+                                );
+
+                                if ui
+                                    .selectable_label(
+                                        false,
+                                        egui::RichText::new(label).size(12.5),
+                                    )
+                                    .clicked()
+                                {
+                                    actions.load_history = Some(index);
+                                }
+                            }
+                        });
+                }
+
+                height = ui.min_rect().height();
+            });
+
+        height
     }
 
     fn translation_area(&mut self, ui: &mut egui::Ui, actions: &mut Actions) {
@@ -1888,6 +2041,31 @@ impl PopupApp {
                         .clicked()
                 {
                     actions.quit = true;
+                }
+
+                let pin_label = if self.pinned { "取消固定" } else { "固定" };
+                let pin = egui::Button::new(egui::RichText::new(pin_label).size(13.0).color(
+                    if self.pinned {
+                        egui::Color32::WHITE
+                    } else {
+                        ui.visuals().text_color()
+                    },
+                ))
+                .fill(if self.pinned {
+                    ACCENT.gamma_multiply(0.85)
+                } else {
+                    ui.visuals().faint_bg_color
+                });
+
+                if ui.add(pin).clicked() {
+                    actions.toggle_pin = true;
+                }
+
+                if ui
+                    .add(egui::Button::new(egui::RichText::new("历史").size(13.0)))
+                    .clicked()
+                {
+                    actions.toggle_history = true;
                 }
             });
         });
@@ -2193,6 +2371,17 @@ mod tray_tests {
             tray_tooltip(&ModelState::Failed("模型文件不存在".to_string()), "Ctrl+Alt+T"),
             "OpenTranslator · 模型文件不存在"
         );
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::history_preview;
+
+    #[test]
+    fn truncates_long_values() {
+        assert_eq!(history_preview("短文本", 16), "短文本");
+        assert_eq!(history_preview("0123456789abcdefgh", 16), "0123456789abcdef…");
     }
 }
 

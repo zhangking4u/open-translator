@@ -29,10 +29,11 @@ Usage: translator-popup-desktop [OPTIONS]
 
 Desktop popup for OpenTranslator (Windows / macOS): select text and press
 Ctrl+Alt+T to translate it with the embedded model. The app stays resident;
-Esc hides the window, 退出 quits. Launching it manually shows the window;
-the login autostart (--autostart) starts silently in the tray. On first run
-the model is downloaded automatically. While running it also serves the
-local HTTP API on service_url for the browser extension.
+Esc hides the window (unless 固定 is active), 退出 quits; Ctrl+H shows the
+recent translations. Launching it manually shows the window; the login
+autostart (--autostart) starts silently in the tray. On first run the model
+is downloaded automatically. While running it also serves the local HTTP API
+on service_url for the browser extension.
 
 Options:
   -s, --source <LANG>   Source language tag (default: auto; auto detects

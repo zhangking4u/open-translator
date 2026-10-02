@@ -37,6 +37,11 @@ pub fn config_path() -> Option<PathBuf> {
     Some(base.join("open-translator").join("config"))
 }
 
+/// Translation history lives next to the config file.
+pub fn history_path() -> Option<PathBuf> {
+    Some(config_path()?.with_file_name("history.json"))
+}
+
 #[cfg(target_os = "windows")]
 pub fn state_dir() -> PathBuf {
     env::var_os("LOCALAPPDATA")
