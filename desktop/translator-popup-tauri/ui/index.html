@@ -10,24 +10,81 @@
     <main class="card">
       <header class="titlebar" data-tauri-drag-region>
         <span class="dot" id="dot"></span>
-        <span class="title" data-tauri-drag-region>OpenTranslator</span>
+        <span class="title" id="title" data-tauri-drag-region>OpenTranslator</span>
         <span class="spacer" data-tauri-drag-region></span>
+        <button id="pin" class="icon" title="固定窗口">📌</button>
         <button id="close" class="icon" title="隐藏（Esc）">×</button>
       </header>
 
-      <section id="source" class="source" hidden></section>
+      <div id="translator-view">
+        <section id="source" class="source" hidden></section>
 
-      <section id="translation" class="translation">
-        <p class="hint">等待划词</p>
-        <p class="sub">按 Ctrl+Alt+T 翻译选中文本</p>
-      </section>
+        <section id="translation" class="translation">
+          <p class="hint">等待划词</p>
+          <p class="sub">按 Ctrl+Alt+T 翻译选中文本</p>
+        </section>
 
-      <footer class="footer">
-        <span id="status" class="status"></span>
-        <span class="spacer"></span>
-        <button id="retranslate" hidden>重新翻译</button>
-        <button id="copy" class="primary" disabled>复制译文</button>
-      </footer>
+        <footer class="footer">
+          <span id="status" class="status"></span>
+          <span class="spacer"></span>
+          <button id="retranslate" hidden>重新翻译</button>
+          <button id="copy" class="primary" disabled>复制译文</button>
+        </footer>
+      </div>
+
+      <div id="settings-view" hidden>
+        <div class="page-head">
+          <span class="page-title">设置</span>
+          <span class="spacer"></span>
+          <button id="settings-back">返回翻译</button>
+        </div>
+
+        <p class="field-label">快捷键</p>
+        <div class="row">
+          <input id="hotkey-input" class="text-input mono" spellcheck="false" />
+          <button id="hotkey-apply">应用</button>
+          <span id="hotkey-error" class="error-text" hidden></span>
+        </div>
+        <p class="sub">例如 Ctrl+Alt+T；应用后立即生效，被占用时会保留原快捷键</p>
+
+        <p class="field-label">模型路径</p>
+        <div class="row">
+          <input
+            id="model-input"
+            class="text-input"
+            placeholder="留空使用默认位置"
+            spellcheck="false"
+          />
+          <button id="model-save">保存</button>
+          <span id="model-saved" class="ok-text" hidden>已保存</span>
+        </div>
+        <p class="sub">模型文件（.gguf）的完整路径，下次启动生效</p>
+
+        <label class="check"
+          ><input type="checkbox" id="switch-auto" /> 自动下载模型</label
+        >
+        <label class="check"
+          ><input type="checkbox" id="switch-updates" /> 启动时检查更新</label
+        >
+        <label class="check"
+          ><input type="checkbox" id="switch-extension" /> 提供浏览器扩展接口</label
+        >
+
+        <div class="row config-row">
+          <button id="open-config">打开配置目录</button>
+          <span id="config-path" class="dim-text"></span>
+        </div>
+      </div>
+
+      <div id="history-view" hidden>
+        <div class="page-head">
+          <span class="page-title">最近翻译</span>
+          <span class="spacer"></span>
+          <button id="history-clear">清空</button>
+          <button id="history-back">返回翻译</button>
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </div>
     </main>
     <script src="main.js"></script>
   </body>

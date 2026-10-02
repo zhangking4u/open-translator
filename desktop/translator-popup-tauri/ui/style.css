@@ -187,3 +187,101 @@ progress::-webkit-progress-value {
   font-size: 13px;
   line-height: 1.45;
 }
+
+button.icon.active {
+  color: var(--accent);
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.page-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.field-label {
+  margin: 6px 0 4px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.text-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--fg);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  outline: none;
+  user-select: text;
+}
+
+.text-input:focus {
+  border-color: var(--accent);
+}
+
+.text-input.mono {
+  font-family: Consolas, "Cascadia Mono", monospace;
+}
+
+.error-text {
+  font-size: 11.5px;
+  color: #e05a5a;
+  max-width: 200px;
+}
+
+.ok-text {
+  font-size: 11.5px;
+  color: #3db57a;
+}
+
+.dim-text {
+  font-size: 10.5px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin: 6px 0;
+}
+
+.config-row {
+  margin-top: 10px;
+}
+
+.history-list {
+  max-height: 240px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-entry {
+  text-align: left;
+  justify-content: flex-start;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

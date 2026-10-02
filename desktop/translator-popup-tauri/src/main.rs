@@ -11,6 +11,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use translator_core::history::HistoryEntry;
 use translator_service::domain::prompt::PromptStyle;
 use translator_service::domain::translation::TranslationRequest;
 use translator_service::engine::llama_cpp::LlamaCppEngine;
@@ -18,10 +19,14 @@ use translator_service::engine::llama_cpp::LlamaCppEngine;
 const DEFAULT_HOTKEY: &str = "Ctrl+Alt+T";
 const DEFAULT_N_CTX: u32 = 4096;
 
+struct InitialView(Mutex<Option<String>>);
+
 struct AppState {
     engine: Mutex<Option<Arc<LlamaCppEngine>>>,
     pending: Mutex<Option<String>>,
     last_text: Mutex<Option<String>>,
+    history: Mutex<Vec<HistoryEntry>>,
+    pinned: Mutex<bool>,
 }
 
 #[derive(Clone)]
@@ -29,6 +34,16 @@ struct TranslateConfig {
     source: String,
     target: String,
     hotkey_label: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct SettingsPayload {
+    hotkey: String,
+    model_path: String,
+    auto_download: bool,
+    check_updates: bool,
+    serve_extension: bool,
+    config_path: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -97,7 +112,14 @@ fn main() {
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_HOTKEY.to_string());
 
-    let show_on_start = !args.autostart || args.stdin || args.settings;
+    let show_on_start = !args.autostart || args.stdin || args.settings || args.history;
+    let initial_view = if args.settings {
+        Some("settings".to_string())
+    } else if args.history {
+        Some("history".to_string())
+    } else {
+        None
+    };
     let stdin_text = if args.stdin {
         translator_core::args::read_stdin().unwrap_or_default()
     } else {
@@ -114,8 +136,11 @@ fn main() {
             engine: Mutex::new(None),
             pending: Mutex::new(None),
             last_text: Mutex::new(None),
+            history: Mutex::new(translator_core::history::load()),
+            pinned: Mutex::new(false),
         })
-        .manage(translate_config)
+        .manage(Mutex::new(translate_config))
+        .manage(InitialView(Mutex::new(initial_view)))
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main(app);
         }))
@@ -133,7 +158,17 @@ fn main() {
             quit_app,
             resize_window,
             copy_text,
-            retranslate
+            retranslate,
+            get_settings,
+            save_hotkey,
+            save_model_path,
+            save_switch,
+            open_config_dir,
+            get_history,
+            load_history_entry,
+            clear_history,
+            set_pinned,
+            get_initial_view
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -149,6 +184,8 @@ fn main() {
                         true,
                         None::<&str>,
                     )?,
+                    &MenuItem::with_id(&handle, "history", "历史…", true, None::<&str>)?,
+                    &MenuItem::with_id(&handle, "settings", "设置…", true, None::<&str>)?,
                     &MenuItem::with_id(&handle, "quit", "退出", true, None::<&str>)?,
                 ],
             )?;
@@ -161,6 +198,14 @@ fn main() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => show_main(app),
                     "translate" => trigger_translation(app),
+                    "history" => {
+                        show_main(app);
+                        let _ = app.emit("open-history", ());
+                    }
+                    "settings" => {
+                        show_main(app);
+                        let _ = app.emit("open-settings", ());
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -192,7 +237,10 @@ fn main() {
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+
+                if !*window.state::<AppState>().pinned.lock().unwrap() {
+                    let _ = window.hide();
+                }
             }
         })
         .run(tauri::generate_context!())
@@ -322,7 +370,12 @@ fn spawn_model_startup(
                 let _ = app.emit("model-ready", ());
 
                 if downloaded_now && window_hidden(&app) {
-                    let hotkey = app.state::<TranslateConfig>().hotkey_label.clone();
+                    let hotkey = app
+                        .state::<Mutex<TranslateConfig>>()
+                        .lock()
+                        .unwrap()
+                        .hotkey_label
+                        .clone();
                     notify::show(
                         "OpenTranslator",
                         &format!("模型下载完成，按 {hotkey} 开始翻译"),
@@ -382,15 +435,19 @@ fn translate_text(app: &AppHandle, text: String) {
         return;
     };
 
-    let config = app.state::<TranslateConfig>().inner().clone();
+    let config = app
+        .state::<Mutex<TranslateConfig>>()
+        .lock()
+        .unwrap()
+        .clone();
     let app = app.clone();
     let _ = app.emit("source", SourcePayload { text: text.clone() });
 
     std::thread::spawn(move || {
         let request = TranslationRequest {
-            text,
-            source: config.source,
-            target: config.target,
+            text: text.clone(),
+            source: config.source.clone(),
+            target: config.target.clone(),
         };
 
         let delta_app = app.clone();
@@ -400,7 +457,24 @@ fn translate_text(app: &AppHandle, text: String) {
 
         match result {
             Ok(result) => {
+                {
+                    let state = app.state::<AppState>();
+                    let mut history = state.history.lock().unwrap();
+
+                    translator_core::history::push(
+                        &mut history,
+                        HistoryEntry {
+                            source: config.source.clone(),
+                            target: config.target.clone(),
+                            text,
+                            translation: result.translated_text.clone(),
+                        },
+                    );
+                    translator_core::history::save(&history);
+                }
+
                 let _ = app.emit("done", result.translated_text);
+                let _ = app.emit("history-changed", ());
             }
             Err(error) => {
                 let _ = app.emit(
@@ -481,12 +555,21 @@ fn set_tooltip(app: &AppHandle, text: &str) {
 }
 
 fn tooltip_ready(app: &AppHandle) -> String {
-    let hotkey = app.state::<TranslateConfig>().hotkey_label.clone();
+    let hotkey = app
+        .state::<Mutex<TranslateConfig>>()
+        .lock()
+        .unwrap()
+        .hotkey_label
+        .clone();
     format!("OpenTranslator（{hotkey}）")
 }
 
 #[tauri::command]
-fn hide_window(window: WebviewWindow) {
+fn hide_window(app: AppHandle, window: WebviewWindow) {
+    if *app.state::<AppState>().pinned.lock().unwrap() {
+        return;
+    }
+
     let _ = window.hide();
 }
 
@@ -521,6 +604,150 @@ fn retranslate(app: AppHandle) {
     if let Some(text) = text {
         translate_text(&app, text);
     }
+}
+
+#[tauri::command]
+fn get_settings(app: AppHandle) -> SettingsPayload {
+    let config = translator_core::settings::load_config();
+    let hotkey = app
+        .state::<Mutex<TranslateConfig>>()
+        .lock()
+        .unwrap()
+        .hotkey_label
+        .clone();
+
+    SettingsPayload {
+        hotkey,
+        model_path: config.model_path.unwrap_or_default(),
+        auto_download: config.auto_download.as_deref() != Some("false"),
+        check_updates: config.check_updates.as_deref() != Some("false"),
+        serve_extension: config.serve_extension.as_deref() != Some("false"),
+        config_path: translator_core::paths::config_path()
+            .map(|path| path.to_string_lossy().to_string()),
+    }
+}
+
+#[tauri::command]
+fn save_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
+    let spec = spec.trim().to_string();
+    let previous = app
+        .state::<Mutex<TranslateConfig>>()
+        .lock()
+        .unwrap()
+        .hotkey_label
+        .clone();
+
+    let _ = app.global_shortcut().unregister_all();
+
+    match app.global_shortcut().register(spec.as_str()) {
+        Ok(()) => {
+            app.state::<Mutex<TranslateConfig>>()
+                .lock()
+                .unwrap()
+                .hotkey_label = spec.clone();
+            translator_core::settings::persist_value("hotkey", &spec);
+            set_tooltip(&app, &tooltip_ready(&app));
+            Ok(())
+        }
+        Err(error) => {
+            let _ = app.global_shortcut().register(previous.as_str());
+            Err(format!("{error}（已保留 {previous}）"))
+        }
+    }
+}
+
+#[tauri::command]
+fn save_model_path(value: String) {
+    translator_core::settings::persist_value("model_path", value.trim());
+}
+
+#[tauri::command]
+fn save_switch(key: String, value: bool) -> Result<(), String> {
+    let key = match key.as_str() {
+        "auto_download" | "check_updates" | "serve_extension" => key,
+        other => return Err(format!("unknown setting: {other}")),
+    };
+
+    translator_core::settings::persist_value(&key, if value { "true" } else { "false" });
+    Ok(())
+}
+
+#[tauri::command]
+fn open_config_dir() {
+    if let Some(dir) = translator_core::paths::config_path()
+        .and_then(|path| path.parent().map(|dir| dir.to_path_buf()))
+    {
+        open_path(&dir);
+    }
+}
+
+fn open_path(path: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("cmd")
+        .args(["/C", "start", ""])
+        .arg(path)
+        .spawn();
+
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(path).spawn();
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+}
+
+#[tauri::command]
+fn get_history(app: AppHandle) -> Vec<HistoryEntry> {
+    app.state::<AppState>().history.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn load_history_entry(app: AppHandle, index: usize) -> Result<(), String> {
+    let entry = app
+        .state::<AppState>()
+        .history
+        .lock()
+        .unwrap()
+        .get(index)
+        .cloned()
+        .ok_or_else(|| "history entry not found".to_string())?;
+
+    *app.state::<AppState>().last_text.lock().unwrap() = Some(entry.text.clone());
+
+    {
+        let state = app.state::<Mutex<TranslateConfig>>();
+        let mut config = state.lock().unwrap();
+        config.source = entry.source.clone();
+        config.target = entry.target.clone();
+    }
+
+    translator_core::settings::persist_source(&entry.source);
+    translator_core::settings::persist_target(&entry.target);
+
+    let _ = app.emit("source", SourcePayload { text: entry.text });
+    let _ = app.emit("done", entry.translation);
+
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_history(app: AppHandle) {
+    {
+        let state = app.state::<AppState>();
+        state.history.lock().unwrap().clear();
+        translator_core::history::save(&state.history.lock().unwrap());
+    }
+
+    let _ = app.emit("history-changed", ());
+}
+
+#[tauri::command]
+fn set_pinned(app: AppHandle, pinned: bool) {
+    *app.state::<AppState>().pinned.lock().unwrap() = pinned;
+}
+
+#[tauri::command]
+fn get_initial_view(app: AppHandle) -> Option<String> {
+    app.state::<InitialView>().0.lock().unwrap().clone()
 }
 
 fn parse_bool(key: &str, value: &str) -> Result<bool, String> {
