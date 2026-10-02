@@ -1355,6 +1355,44 @@ Verification:
 ---
 
 
+## Milestone: System Notifications (post-v0.2.2)
+
+
+Added:
+
+- `desktop/translator-popup-desktop/src/notify.rs` reports model download completion, model load/download failures and hotkey registration failures through the system notification center while the window is hidden: WinRT toast on Windows (`tauri-winrt-notification`), `mac-notification-sys` on macOS, no-op elsewhere
+- Notifications are gated on the window being hidden (`PopupApp::window_visible`, maintained by `show_window`/`hide`) so a visible window with its error cards is never duplicated
+
+
+Verification:
+
+- Live on Windows: `--autostart` + a corrupt `TRANSLATOR_MODEL_PATH` → 1 toast, window stays hidden; `--autostart` with the hotkey held by another instance → 1 toast, window stays hidden; manual launch + the same model error → window visible with the error card and 0 toasts
+- Desktop client: 12 unit tests pass; macOS compilation of the new dependency is covered by CI
+
+
+---
+
+
+## Milestone: One-Click Update (post-v0.2.2)
+
+
+Added:
+
+- `translator_core::update::ReleaseInfo` now carries the release `assets` (`ReleaseAsset { name, url }`) parsed from the GitHub response
+- On Windows the update banner and the tray 有新版本 item offer 立即更新: the client downloads `OpenTranslator-windows-x64.zip` to `%TEMP%\open-translator-update`, extracts it with `Expand-Archive`, verifies `install.ps1` + the exe are present and starts the installer; the installer stops the app, replaces the binary and restarts the new version in the tray, so the old process quits after `Installed`
+- The banner shows download progress and 更新失败 + 重试; macOS/Linux keep opening the release page
+
+
+Verification:
+
+- translator-core: 55 tests pass (`reports_a_newer_release` now covers asset parsing)
+- Desktop client: 14 tests pass, including a Windows pipeline test (a local stub server serves a zip built with `Compress-Archive`; the extracted installer script runs and the worker reports progress + `Installed`)
+- Live on Windows: a stub release server + crafted package, UIAutomation clicked 立即更新 in the real banner → download, extraction, stub installer and app exit all verified
+
+
+---
+
+
 # Git History
 
 Commit:

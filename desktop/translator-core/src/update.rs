@@ -9,9 +9,16 @@ pub const DEFAULT_RELEASES_URL: &str =
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseAsset {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseInfo {
     pub version: String,
     pub url: String,
+    pub assets: Vec<ReleaseAsset>,
 }
 
 #[derive(Debug)]
@@ -102,10 +109,30 @@ pub async fn check(
         .and_then(|value| value.as_str())
         .unwrap_or(DEFAULT_RELEASES_URL);
 
+    let assets = body
+        .get("assets")
+        .and_then(|value| value.as_array())
+        .map(|assets| {
+            assets
+                .iter()
+                .filter_map(|asset| {
+                    let name = asset.get("name")?.as_str()?;
+                    let url = asset.get("browser_download_url")?.as_str()?;
+
+                    Some(ReleaseAsset {
+                        name: name.to_string(),
+                        url: url.to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     if is_newer(&version, current) {
         Ok(Some(ReleaseInfo {
             version,
             url: url.to_string(),
+            assets,
         }))
     } else {
         Ok(None)
@@ -209,7 +236,7 @@ mod tests {
     #[tokio::test]
     async fn reports_a_newer_release() {
         let url = stub_url(
-            r#"{"tag_name":"v0.2.0","html_url":"https://example.com/releases/v0.2.0"}"#.to_string(),
+            r#"{"tag_name":"v0.2.0","html_url":"https://example.com/releases/v0.2.0","assets":[{"name":"OpenTranslator-windows-x64.zip","browser_download_url":"https://example.com/download/win.zip"},{"name":"OpenTranslator-macos-arm64.dmg"}]}"#.to_string(),
             200,
         );
 
@@ -218,6 +245,9 @@ mod tests {
 
         assert_eq!(info.version, "0.2.0");
         assert_eq!(info.url, "https://example.com/releases/v0.2.0");
+        assert_eq!(info.assets.len(), 1);
+        assert_eq!(info.assets[0].name, "OpenTranslator-windows-x64.zip");
+        assert_eq!(info.assets[0].url, "https://example.com/download/win.zip");
     }
 
     #[tokio::test]

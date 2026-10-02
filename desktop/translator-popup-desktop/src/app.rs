@@ -8,7 +8,7 @@ use translator_core::args::{Args, read_stdin};
 use translator_core::detect;
 use translator_core::languages;
 use translator_core::settings::{persist_recent_targets, persist_source, persist_target};
-use translator_core::update::ReleaseInfo;
+use translator_core::update::{ReleaseAsset, ReleaseInfo};
 use translator_service::domain::prompt::PromptStyle;
 use translator_service::domain::translation::TranslationRequest;
 use translator_service::engine::llama_cpp::LlamaCppEngine;
@@ -56,6 +56,18 @@ enum Progress {
     Error(String),
 }
 
+/// Progress and outcome of the one-click update download/install worker.
+enum UpdateEvent {
+    Progress { downloaded: u64, total: Option<u64> },
+    Installed,
+    Failed(String),
+}
+
+enum UpdateProgress {
+    Downloading { downloaded: u64, total: Option<u64> },
+    Failed(String),
+}
+
 /// Progress and health of the embedded model, independent from translation.
 enum ModelState {
     Downloading { downloaded: u64, total: Option<u64> },
@@ -95,6 +107,7 @@ struct Actions {
     dismiss_update: bool,
     dismiss_notice: bool,
     open_url: Option<String>,
+    install_update: bool,
 }
 
 pub struct PopupApp {
@@ -113,6 +126,8 @@ pub struct PopupApp {
     update: Option<ReleaseInfo>,
     update_receiver: Option<Receiver<ReleaseInfo>>,
     update_dismissed: bool,
+    update_progress: Option<UpdateProgress>,
+    update_install_receiver: Option<Receiver<UpdateEvent>>,
     copied_at: Option<Instant>,
     replaced_at: Option<Instant>,
     replace_window: Option<isize>,
@@ -123,6 +138,7 @@ pub struct PopupApp {
     tray: Option<Tray>,
     tray_status: Option<String>,
     window: Option<isize>,
+    window_visible: bool,
     quit: bool,
 }
 
@@ -338,6 +354,34 @@ fn max_window_height(ctx: &egui::Context) -> f32 {
         .max(MIN_WINDOW_HEIGHT)
 }
 
+/// One-click update package for this platform. Windows ships a zip that
+/// contains `install.ps1`; other platforms keep opening the release page.
+#[cfg(target_os = "windows")]
+fn update_asset(info: &ReleaseInfo) -> Option<&ReleaseAsset> {
+    info.assets
+        .iter()
+        .find(|asset| asset.name == "OpenTranslator-windows-x64.zip")
+}
+
+#[cfg(not(target_os = "windows"))]
+fn update_asset(_info: &ReleaseInfo) -> Option<&ReleaseAsset> {
+    None
+}
+
+fn format_update_progress(downloaded: u64, total: Option<u64>) -> String {
+    const MB: f64 = 1_000_000.0;
+
+    match total {
+        Some(total) if total > 0 => format!(
+            "正在下载更新：{:.0}%（{:.0}/{:.0} MB）",
+            downloaded as f64 / total as f64 * 100.0,
+            downloaded as f64 / MB,
+            total as f64 / MB
+        ),
+        _ => format!("正在下载更新：已下载 {:.0} MB", downloaded as f64 / MB),
+    }
+}
+
 /// Tray tooltip for the current model state. Download/load progress and errors
 /// are surfaced here because the window stays hidden until the user asks for it.
 fn tray_tooltip(model: &ModelState, hotkey_label: &str) -> String {
@@ -503,6 +547,8 @@ impl PopupApp {
             update: None,
             update_receiver: None,
             update_dismissed: false,
+            update_progress: None,
+            update_install_receiver: None,
             copied_at: None,
             replaced_at: None,
             replace_window: None,
@@ -513,6 +559,7 @@ impl PopupApp {
             tray: None,
             tray_status: None,
             window,
+            window_visible: false,
             quit: false,
         };
 
@@ -523,6 +570,7 @@ impl PopupApp {
         }
 
         let mut show_on_start = false;
+        let mut startup_notice: Option<String> = None;
 
         match startup {
             Startup::Loaded(Ok(engine)) => {
@@ -530,7 +578,9 @@ impl PopupApp {
                 app.maybe_start_server();
             }
             Startup::Loaded(Err(error)) => {
-                app.model = ModelState::Failed(format!("模型加载失败：{error}"));
+                let message = format!("模型加载失败：{error}");
+                app.model = ModelState::Failed(message.clone());
+                startup_notice = Some(message);
             }
             Startup::Download {
                 dest,
@@ -548,9 +598,14 @@ impl PopupApp {
             }
         }
 
+        let mut hotkey_error: Option<String> = None;
+
         match Hotkey::register(hotkey_spec) {
             Ok(hotkey) => app.hotkey = Some(hotkey),
-            Err(error) => app.notice = Some(error),
+            Err(error) => {
+                hotkey_error = Some(error.clone());
+                app.notice = Some(error);
+            }
         }
 
         match Tray::new(&format!("OpenTranslator（{hotkey_spec}）")) {
@@ -577,9 +632,20 @@ impl PopupApp {
         // stays silent; a manual launch shows the window, and without a
         // registered hotkey or tray there is no way to bring it back, so
         // surface it instead of starting silent.
-        if show_on_start || !app.args.autostart || !app.can_restore() {
+        let start_hidden = !show_on_start && app.args.autostart && app.can_restore();
+
+        if !start_hidden {
             app.show_window(&cc.egui_ctx);
         } else {
+            // While hidden there is no other surface for problems, so report
+            // them through the system notification center.
+            if let Some(error) = hotkey_error {
+                crate::notify::show("OpenTranslator", &format!("快捷键注册失败：{error}"));
+            }
+            if let Some(message) = startup_notice {
+                crate::notify::show("OpenTranslator", &message);
+            }
+
             // eframe forces the window visible after the first painted frame
             // (its white-flash fix), which overrides
             // `ViewportBuilder::with_visible(false)`. Queue a hide command so
@@ -613,7 +679,8 @@ impl PopupApp {
         }
     }
 
-    fn show_window(&self, ctx: &egui::Context) {
+    fn show_window(&mut self, ctx: &egui::Context) {
+        self.window_visible = true;
         self.place_near_cursor(ctx);
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -635,6 +702,16 @@ impl PopupApp {
         }
 
         self.tray_status = Some(tooltip);
+    }
+
+    fn start_update_install(&mut self, asset_url: String) {
+        let (sender, receiver) = channel();
+        self.update_install_receiver = Some(receiver);
+        self.update_progress = Some(UpdateProgress::Downloading {
+            downloaded: 0,
+            total: None,
+        });
+        spawn_update_install(asset_url, sender);
     }
 
     fn place_near_cursor(&self, ctx: &egui::Context) {
@@ -833,6 +910,7 @@ impl PopupApp {
     }
 
     fn hide(&mut self, ctx: &egui::Context) {
+        self.window_visible = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
     }
 
@@ -1015,8 +1093,11 @@ impl eframe::App for PopupApp {
                 self.show_window(ctx);
             }
             Some(TrayCommand::Update) => {
-                if let Some(info) = &self.update {
-                    open_url(&info.url);
+                if let Some(info) = self.update.clone() {
+                    match update_asset(&info) {
+                        Some(asset) => self.start_update_install(asset.url.clone()),
+                        None => open_url(&info.url),
+                    }
                 }
             }
             Some(TrayCommand::Quit) => {
@@ -1077,9 +1158,19 @@ impl eframe::App for PopupApp {
                     self.model = ModelState::Downloading { downloaded, total };
                 }
                 StartupEvent::Ready(engine) => {
+                    let was_downloading =
+                        matches!(self.model, ModelState::Downloading { .. });
+
                     self.engine = Some(engine);
                     self.model = ModelState::Ready;
                     self.maybe_start_server();
+
+                    if was_downloading && !self.window_visible {
+                        crate::notify::show(
+                            "OpenTranslator",
+                            &format!("模型下载完成，按 {} 开始翻译", self.hotkey_label),
+                        );
+                    }
 
                     if let TranslationState::Waiting { text } =
                         std::mem::replace(&mut self.translation, TranslationState::Idle)
@@ -1088,7 +1179,37 @@ impl eframe::App for PopupApp {
                     }
                 }
                 StartupEvent::Failed(error) => {
-                    self.model = ModelState::Failed(error);
+                    self.model = ModelState::Failed(error.clone());
+
+                    if !self.window_visible {
+                        crate::notify::show(
+                            "OpenTranslator",
+                            &format!("模型加载失败：{error}"),
+                        );
+                    }
+                }
+            }
+        }
+
+        let install_messages: Vec<UpdateEvent> = self
+            .update_install_receiver
+            .as_ref()
+            .map(|receiver| receiver.try_iter().collect())
+            .unwrap_or_default();
+
+        for message in install_messages {
+            match message {
+                UpdateEvent::Progress { downloaded, total } => {
+                    self.update_progress = Some(UpdateProgress::Downloading { downloaded, total });
+                }
+                UpdateEvent::Installed => {
+                    // The installer replaces the binary and starts the new
+                    // version, so it is time to make room for it.
+                    self.quit = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                UpdateEvent::Failed(error) => {
+                    self.update_progress = Some(UpdateProgress::Failed(error));
                 }
             }
         }
@@ -1220,6 +1341,14 @@ impl eframe::App for PopupApp {
 
         if let Some(url) = actions.open_url {
             open_url(&url);
+        }
+
+        if actions.install_update {
+            if let Some(info) = self.update.clone() {
+                if let Some(asset) = update_asset(&info) {
+                    self.start_update_install(asset.url.clone());
+                }
+            }
         }
 
         if actions.close_window {
@@ -1409,25 +1538,48 @@ impl PopupApp {
             return;
         };
 
+        let downloading = matches!(
+            self.update_progress,
+            Some(UpdateProgress::Downloading { .. })
+        );
+        let failed = matches!(self.update_progress, Some(UpdateProgress::Failed(_)));
+        let installable = update_asset(&info).is_some();
+
         egui::Frame::new()
             .fill(ACCENT.gamma_multiply(0.14))
             .corner_radius(10)
             .inner_margin(egui::Margin::symmetric(12, 6))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!("发现新版本 v{}", info.version))
-                            .strong()
-                            .size(13.0),
+                    let text = match &self.update_progress {
+                        Some(UpdateProgress::Downloading { downloaded, total }) => {
+                            format_update_progress(*downloaded, *total)
+                        }
+                        Some(UpdateProgress::Failed(error)) => {
+                            format!("更新失败：{error}")
+                        }
+                        None => format!("发现新版本 v{}", info.version),
+                    };
+
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(text).strong().size(13.0)).wrap(),
                     );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("忽略").clicked() {
+                        if !downloading && ui.small_button("忽略").clicked() {
                             actions.dismiss_update = true;
                         }
 
-                        if ui.small_button("查看").clicked() {
+                        if !downloading && ui.small_button("查看").clicked() {
                             actions.open_url = Some(info.url.clone());
+                        }
+
+                        if installable && !downloading {
+                            let label = if failed { "重试" } else { "立即更新" };
+
+                            if ui.small_button(label).clicked() {
+                                actions.install_update = true;
+                            }
                         }
                     });
                 });
@@ -1824,6 +1976,97 @@ fn spawn_update_check(sender: Sender<ReleaseInfo>) {
     });
 }
 
+fn spawn_update_install(asset_url: String, sender: Sender<UpdateEvent>) {
+    std::thread::spawn(move || {
+        #[cfg(target_os = "windows")]
+        {
+            if let Err(error) = run_update_install(&asset_url, &sender) {
+                let _ = sender.send(UpdateEvent::Failed(error));
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        let _ = (asset_url, sender);
+    });
+}
+
+/// Download the release package, extract it and start its installer. The
+/// installer stops this process, replaces the binary and starts the new
+/// version in the tray, so the UI quits after `Installed`.
+#[cfg(target_os = "windows")]
+fn run_update_install(asset_url: &str, sender: &Sender<UpdateEvent>) -> Result<(), String> {
+    let client = translator_core::models::download_client().map_err(|error| error.to_string())?;
+
+    let dir = std::env::temp_dir().join("open-translator-update");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|error| format!("创建更新目录失败：{error}"))?;
+
+    let archive = dir.join("OpenTranslator-windows-x64.zip");
+    let progress_sender = sender.clone();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| format!("初始化更新下载失败：{error}"))?;
+
+    runtime
+        .block_on(translator_core::models::download(
+            &client,
+            asset_url,
+            &archive,
+            None,
+            move |downloaded, total| {
+                let _ = progress_sender.send(UpdateEvent::Progress { downloaded, total });
+            },
+        ))
+        .map_err(|error| format!("下载更新失败：{error}"))?;
+
+    let package = dir.join("package");
+    let expand = format!(
+        "Expand-Archive -LiteralPath {} -DestinationPath {} -Force",
+        ps_quote(&archive.to_string_lossy()),
+        ps_quote(&package.to_string_lossy())
+    );
+
+    let status = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+        ])
+        .arg(&expand)
+        .status()
+        .map_err(|error| format!("解压更新失败：{error}"))?;
+
+    if !status.success() {
+        return Err("解压更新失败".to_string());
+    }
+
+    let installer = package.join("install.ps1");
+    let exe = package.join("translator-popup-desktop.exe");
+
+    if !installer.is_file() || !exe.is_file() {
+        return Err("更新包内容不完整".to_string());
+    }
+
+    std::process::Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&installer)
+        .spawn()
+        .map_err(|error| format!("启动安装程序失败：{error}"))?;
+
+    let _ = sender.send(UpdateEvent::Installed);
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn ps_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
 pub fn open_url(url: &str) {
     #[cfg(target_os = "windows")]
     let (program, args): (&str, Vec<&str>) = ("cmd", vec!["/C", "start", "", url]);
@@ -1950,5 +2193,105 @@ mod tray_tests {
             tray_tooltip(&ModelState::Failed("模型文件不存在".to_string()), "Ctrl+Alt+T"),
             "OpenTranslator · 模型文件不存在"
         );
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod update_tests {
+    use super::{UpdateEvent, format_update_progress, run_update_install};
+    use std::sync::mpsc::channel;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn formats_update_progress() {
+        assert_eq!(
+            format_update_progress(50_000_000, Some(100_000_000)),
+            "正在下载更新：50%（50/100 MB）"
+        );
+        assert_eq!(
+            format_update_progress(12_000_000, None),
+            "正在下载更新：已下载 12 MB"
+        );
+    }
+
+    #[test]
+    fn downloads_extracts_and_launches_the_installer() {
+        let marker = std::env::temp_dir().join("open-translator-update-test-marker.txt");
+        let _ = std::fs::remove_file(&marker);
+
+        let staging = std::env::temp_dir().join("open-translator-update-test-staging");
+        let _ = std::fs::remove_dir_all(&staging);
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(
+            staging.join("install.ps1"),
+            format!("Set-Content -LiteralPath '{}' -Value ok", marker.display()),
+        )
+        .unwrap();
+        std::fs::write(staging.join("translator-popup-desktop.exe"), b"stub").unwrap();
+
+        let archive = std::env::temp_dir().join("open-translator-update-test.zip");
+        let _ = std::fs::remove_file(&archive);
+
+        let status = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(format!(
+                "Compress-Archive -Path '{}' -DestinationPath '{}' -Force",
+                staging.join("*").display(),
+                archive.display()
+            ))
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let payload = std::fs::read(&archive).unwrap();
+        let app = axum::Router::new().route(
+            "/pkg.zip",
+            axum::routing::get(move || {
+                let payload = payload.clone();
+                async move { payload }
+            }),
+        );
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async move {
+                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                axum::serve(listener, app).await.unwrap();
+            });
+        });
+
+        let (sender, receiver) = channel();
+        run_update_install(&format!("http://{address}/pkg.zip"), &sender).unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !marker.is_file() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(marker.is_file(), "the installer script did not run");
+
+        let mut progress = false;
+        let mut installed = false;
+
+        while let Ok(event) = receiver.try_recv() {
+            match event {
+                UpdateEvent::Progress { .. } => progress = true,
+                UpdateEvent::Installed => installed = true,
+                UpdateEvent::Failed(error) => panic!("update failed: {error}"),
+            }
+        }
+
+        assert!(progress);
+        assert!(installed);
+
+        let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_file(&archive);
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("open-translator-update"));
     }
 }

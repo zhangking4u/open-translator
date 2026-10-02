@@ -3,6 +3,7 @@
 mod app;
 mod capture;
 mod hotkey;
+mod notify;
 mod server;
 mod single_instance;
 mod tray;

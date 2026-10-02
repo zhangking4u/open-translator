@@ -514,3 +514,18 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 
 - `--autostart` (installers' login entry) starts silently in the tray; launching the exe manually shows the window so first-run download progress and model errors are visible
 - Windows installers restart the app in the tray after an in-place upgrade unless `-NoStart` is given
+
+
+## System Notifications (post-v0.2.2)
+
+
+- While the window is hidden, model download completion, model load/download failures and hotkey registration failures raise a system notification (`src/notify.rs`: WinRT toast on Windows, `mac-notification-sys` on macOS; no-op elsewhere)
+- Notifications are suppressed when the window is visible; verified live on Windows (toast on hidden failures, none on manual launch)
+
+
+## One-Click Update (post-v0.2.2)
+
+
+- Release assets are parsed (`ReleaseAsset`); on Windows 立即更新 downloads the release zip to `%TEMP%\open-translator-update`, extracts it and runs `install.ps1`, which replaces the binary and restarts the tray app
+- The banner shows download progress and offers 重试 on failure; macOS/Linux keep the release-page link
+- Verified with a stub release server and a UIAutomation click through the real banner (download, extraction, installer, app exit)
