@@ -570,3 +570,12 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - README/AGENTS/release skill and the deb's README.txt describe the Tauri client as shipped (no automatic shortcut registration, webkit2gtk-4.1 runtime); the legacy GTK/eframe clients are labeled as legacy and keep their own build commands
 - Tauri tests: the cursor/work-area clamping is a pure `card_position` helper with five unit tests; the Windows update pipeline is testable (`run_update_install_with`) with a stub-server test that runs in CI
 - CI: the Tauri matrix runs `cargo test --release` on ubuntu/windows/macos and a `tauri-frontend` job validates the config JSON plus `node --check ui/main.js`
+
+
+## v0.3.0 Release (2026-10-02)
+
+
+- Tag `v0.3.0` at `8341470`; release run 36973900935 built the Tauri client on Linux/macOS/Windows and published `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg` and `OpenTranslator-linux-x64.deb`
+- First release shipping the Tauri client on all three platforms; the notes document the highlights, the Linux `open-translator-setup` step and the v0.2.x upgrade path (the old eframe client cannot one-click update — download the zip and run `install.ps1` once)
+- Windows/Linux real-machine verified; macOS CI-built only (flagged in the release notes)
+- Remaining: macOS real-machine verification and the legacy GTK/eframe client cleanup

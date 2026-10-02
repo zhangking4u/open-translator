@@ -1476,8 +1476,8 @@ Remaining work, in the agreed order:
 6. Known issues
    - Local incremental builds can mis-embed `OPEN_TRANSLATOR_VERSION` (the update banner shows even for newer builds); clean CI/release builds are correct
    - Windows keeps the opaque full-window card for now (tao does not use `WS_EX_LAYERED` there, so the transparent path was not enabled on Windows)
-7. Release v0.3.0
-   - Cut the tag with the release skill; verify the three assets plus the Tauri→Tauri one-click update round-trip (macOS is CI-built only; note it as real-machine-unverified)
+7. (Done 2026-10-02 — see the v0.3.0 Release milestone) Release v0.3.0
+   - Tagged with the release skill, three assets published, release notes document the v0.2.x upgrade path; macOS is CI-built only and flagged as pending real-machine verification
 
 
 ---
@@ -1517,7 +1517,20 @@ Remaining:
 - README/AGENTS/release skill now describe the Tauri client as the shipped desktop client (install/upgrade steps, platform table, repo layout, dev commands, CI/release descriptions); `packaging/linux/README.txt` no longer claims the shortcut is registered automatically and lists the real runtime dependencies
 - Tauri client tests: `card_position` is a pure helper with unit tests (normal placement, bottom-edge slide, corner clamps, negative monitor origins, oversized card); `run_update_install_with` is testable and a Windows test downloads a stub zip from an axum server, extracts it, runs the stub `install.ps1` and checks the reported progress
 - CI: the Tauri job runs `cargo test --release` on ubuntu/windows/macos and a new `tauri-frontend` job validates `tauri.conf.json`/`capabilities` JSON plus `node --check ui/main.js`
-- Migration notes for v0.2.x eframe users are in the README and the release skill; the v0.3.0 release notes will repeat them
+- Migration notes for v0.2.x eframe users are in the README, the release skill and the v0.3.0 release notes
+
+
+---
+
+
+## Milestone: v0.3.0 Release (2026-10-02)
+
+
+Released:
+
+- Tag `v0.3.0` at `8341470` (CI run 36973212111 green first); release run 36973900935 passed the Linux (~8m), macOS (~7m23s) and Windows (~11m45s) package jobs and published `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg` and `OpenTranslator-linux-x64.deb`
+- First release shipping the Tauri client on all three platforms; the release notes list the highlights (tray/hotkey/history/pin/settings, in-app Windows updates, XWayland behavior), the Linux `open-translator-setup` step and the v0.2.x upgrade path (the old eframe client cannot one-click update: download the zip and run `install.ps1` once)
+- Windows and Linux are real-machine verified; the macOS dmg is CI-built only and flagged as pending real-machine verification in the release notes
 
 
 ---
