@@ -30,7 +30,9 @@ Usage: translator-popup-desktop [OPTIONS]
 Desktop popup for OpenTranslator (Windows / macOS): select text and press
 Ctrl+Alt+T to translate it with the embedded model. The app stays resident;
 Esc hides the window (unless 固定 is active), 退出 quits; Ctrl+H shows the
-recent translations. Launching it manually shows the window; the login
+recent translations and the tray menu's 设置… opens a settings page that
+edits the hotkey, model path and the auto_download / check_updates /
+serve_extension switches. Launching it manually shows the window; the login
 autostart (--autostart) starts silently in the tray. On first run the model
 is downloaded automatically. While running it also serves the local HTTP API
 on service_url for the browser extension.
@@ -44,6 +46,7 @@ Options:
                         release builds are GUI-only without a console)
       --autostart       Start silently in the tray (used by the login
                         autostart shortcut; without it the window is shown)
+      --settings        Open the settings page on startup
       --service <URL>   Also used as the bind address for the extension API
                         (default: http://127.0.0.1:17890)
   -h, --help            Show this help

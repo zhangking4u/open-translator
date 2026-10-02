@@ -113,6 +113,9 @@ struct Actions {
     toggle_pin: bool,
     clear_history: bool,
     load_history: Option<usize>,
+    toggle_settings: bool,
+    apply_hotkey: bool,
+    save_model_path: bool,
 }
 
 pub struct PopupApp {
@@ -135,6 +138,14 @@ pub struct PopupApp {
     update_install_receiver: Option<Receiver<UpdateEvent>>,
     history: Vec<HistoryEntry>,
     history_open: bool,
+    settings_open: bool,
+    settings_hotkey: String,
+    settings_hotkey_error: Option<String>,
+    settings_model_path: String,
+    settings_auto_download: bool,
+    settings_check_updates: bool,
+    settings_serve_extension: bool,
+    settings_saved_at: Option<Instant>,
     pinned: bool,
     copied_at: Option<Instant>,
     replaced_at: Option<Instant>,
@@ -390,6 +401,18 @@ fn format_update_progress(downloaded: u64, total: Option<u64>) -> String {
     }
 }
 
+fn bool_value(value: Option<&str>, default: bool) -> bool {
+    match value {
+        Some("true") => true,
+        Some("false") => false,
+        _ => default,
+    }
+}
+
+fn bool_str(value: bool) -> &'static str {
+    if value { "true" } else { "false" }
+}
+
 fn history_preview(value: &str, max_chars: usize) -> String {
     let mut preview: String = value.chars().take(max_chars).collect();
 
@@ -548,6 +571,7 @@ impl PopupApp {
         }
 
         let recent_targets = languages::recent_target_list(&args.recent_targets, &args.target);
+        let file_config = translator_core::settings::load_config();
 
         let mut app = Self {
             source: args.source.clone(),
@@ -569,6 +593,14 @@ impl PopupApp {
             update_install_receiver: None,
             history: translator_core::history::load(),
             history_open: false,
+            settings_open: false,
+            settings_hotkey: hotkey_spec.to_string(),
+            settings_hotkey_error: None,
+            settings_model_path: file_config.model_path.clone().unwrap_or_default(),
+            settings_auto_download: bool_value(file_config.auto_download.as_deref(), true),
+            settings_check_updates: bool_value(file_config.check_updates.as_deref(), true),
+            settings_serve_extension: bool_value(file_config.serve_extension.as_deref(), true),
+            settings_saved_at: None,
             pinned: false,
             copied_at: None,
             replaced_at: None,
@@ -592,6 +624,11 @@ impl PopupApp {
 
         let mut show_on_start = false;
         let mut startup_notice: Option<String> = None;
+
+        if app.args.settings {
+            app.settings_open = true;
+            show_on_start = true;
+        }
 
         match startup {
             Startup::Loaded(Ok(engine)) => {
@@ -680,6 +717,8 @@ impl PopupApp {
     }
 
     fn trigger(&mut self) {
+        self.settings_open = false;
+        self.history_open = false;
         self.replace_window = capture::foreground_window();
 
         match capture::capture_selection() {
@@ -930,6 +969,32 @@ impl PopupApp {
         }
     }
 
+    fn apply_hotkey(&mut self) {
+        let spec = self.settings_hotkey.trim().to_string();
+        let previous = self.hotkey_label.clone();
+
+        // Drop the current binding first so re-applying the same spec works;
+        // restore it if the new one cannot be registered.
+        self.hotkey = None;
+
+        match Hotkey::register(&spec) {
+            Ok(hotkey) => {
+                self.hotkey = Some(hotkey);
+                self.hotkey_label = spec.clone();
+                self.settings_hotkey_error = None;
+                self.settings_saved_at = Some(Instant::now());
+                translator_core::settings::persist_value("hotkey", &spec);
+            }
+            Err(error) => {
+                if let Ok(old) = Hotkey::register(&previous) {
+                    self.hotkey = Some(old);
+                }
+
+                self.settings_hotkey_error = Some(format!("{error}（已保留 {previous}）"));
+            }
+        }
+    }
+
     fn load_history(&mut self, index: usize) {
         let Some(entry) = self.history.get(index).cloned() else {
             return;
@@ -1067,6 +1132,12 @@ impl PopupApp {
             .unwrap_or(false)
     }
 
+    fn settings_saved_recently(&self) -> bool {
+        self.settings_saved_at
+            .map(|at| at.elapsed() < COPIED_FEEDBACK)
+            .unwrap_or(false)
+    }
+
     fn replaced_recently(&self) -> bool {
         self.replaced_at
             .map(|at| at.elapsed() < COPIED_FEEDBACK)
@@ -1133,6 +1204,16 @@ impl eframe::App for PopupApp {
             Some(TrayCommand::Show) => self.show_window(ctx),
             Some(TrayCommand::Translate) => {
                 self.trigger();
+                self.show_window(ctx);
+            }
+            Some(TrayCommand::History) => {
+                self.history_open = true;
+                self.settings_open = false;
+                self.show_window(ctx);
+            }
+            Some(TrayCommand::Settings) => {
+                self.settings_open = true;
+                self.history_open = false;
                 self.show_window(ctx);
             }
             Some(TrayCommand::Update) => {
@@ -1287,7 +1368,9 @@ impl eframe::App for PopupApp {
         }
 
         if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-            if self.history_open {
+            if self.settings_open {
+                self.settings_open = false;
+            } else if self.history_open {
                 self.history_open = false;
             } else {
                 self.close_window(ctx);
@@ -1422,6 +1505,22 @@ impl eframe::App for PopupApp {
 
         if actions.toggle_history {
             self.history_open = !self.history_open;
+            self.settings_open = false;
+        }
+
+        if actions.toggle_settings {
+            self.settings_open = !self.settings_open;
+            self.history_open = false;
+            self.settings_hotkey_error = None;
+        }
+
+        if actions.apply_hotkey {
+            self.apply_hotkey();
+        }
+
+        if actions.save_model_path {
+            translator_core::settings::persist_value("model_path", self.settings_model_path.trim());
+            self.settings_saved_at = Some(Instant::now());
         }
 
         if actions.toggle_pin {
@@ -1681,6 +1780,10 @@ impl PopupApp {
     }
 
     fn body(&mut self, ui: &mut egui::Ui, actions: &mut Actions, max_window_height: f32) -> f32 {
+        if self.settings_open {
+            return self.settings_page(ui, actions);
+        }
+
         let mut content = 0.0;
 
         if self.history_open {
@@ -1736,6 +1839,144 @@ impl PopupApp {
         let footer_height = ui.min_rect().height() - footer_top;
 
         content + above + translation_height + 6.0 + footer_height
+    }
+
+    fn settings_page(&mut self, ui: &mut egui::Ui, actions: &mut Actions) -> f32 {
+        let mut height = 0.0;
+
+        egui::Frame::new()
+            .fill(ui.visuals().faint_bg_color)
+            .corner_radius(10)
+            .inner_margin(egui::Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("设置").strong().size(14.0));
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("返回翻译").clicked() {
+                            actions.toggle_settings = true;
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+
+                ui.label(egui::RichText::new("快捷键").weak().size(12.0));
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.settings_hotkey)
+                            .desired_width(150.0)
+                            .font(egui::TextStyle::Monospace),
+                    );
+
+                    if ui.small_button("应用").clicked() {
+                        actions.apply_hotkey = true;
+                    }
+
+                    if let Some(error) = &self.settings_hotkey_error {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(error)
+                                    .size(11.5)
+                                    .color(ui.visuals().error_fg_color),
+                            )
+                            .wrap(),
+                        );
+                    }
+                });
+                ui.label(
+                    egui::RichText::new("例如 Ctrl+Alt+T；应用后立即生效，被占用时会保留原快捷键")
+                        .weak()
+                        .size(11.0),
+                );
+
+                ui.add_space(8.0);
+
+                ui.label(egui::RichText::new("模型路径").weak().size(12.0));
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.settings_model_path)
+                            .desired_width(300.0)
+                            .hint_text("留空使用默认位置"),
+                    );
+
+                    if ui.small_button("保存").clicked() {
+                        actions.save_model_path = true;
+                    }
+
+                    if self.settings_saved_recently() {
+                        ui.label(
+                            egui::RichText::new("已保存")
+                                .size(11.5)
+                                .color(egui::Color32::from_rgb(0x3D, 0xB5, 0x7A)),
+                        );
+                    }
+                });
+                ui.label(
+                    egui::RichText::new("模型文件（.gguf）的完整路径，下次启动生效")
+                        .weak()
+                        .size(11.0),
+                );
+
+                ui.add_space(8.0);
+
+                if ui
+                    .checkbox(&mut self.settings_auto_download, "自动下载模型")
+                    .on_hover_text("模型文件缺失时从 ModelScope 下载（约 1.1 GB）；下次启动生效")
+                    .changed()
+                {
+                    translator_core::settings::persist_value(
+                        "auto_download",
+                        bool_str(self.settings_auto_download),
+                    );
+                }
+
+                if ui
+                    .checkbox(&mut self.settings_check_updates, "启动时检查更新")
+                    .on_hover_text("下次启动生效")
+                    .changed()
+                {
+                    translator_core::settings::persist_value(
+                        "check_updates",
+                        bool_str(self.settings_check_updates),
+                    );
+                }
+
+                if ui
+                    .checkbox(&mut self.settings_serve_extension, "提供浏览器扩展接口")
+                    .on_hover_text("在 service_url 上提供本地 HTTP API；下次启动生效")
+                    .changed()
+                {
+                    translator_core::settings::persist_value(
+                        "serve_extension",
+                        bool_str(self.settings_serve_extension),
+                    );
+                }
+
+                ui.add_space(8.0);
+
+                if let Some(path) = translator_core::paths::config_path() {
+                    ui.horizontal(|ui| {
+                        if ui.small_button("打开配置目录").clicked() {
+                            if let Some(dir) = path.parent() {
+                                actions.open_url = Some(dir.to_string_lossy().to_string());
+                            }
+                        }
+
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(path.to_string_lossy())
+                                    .weak()
+                                    .size(10.5),
+                            )
+                            .wrap(),
+                        );
+                    });
+                }
+
+                height = ui.min_rect().height();
+            });
+
+        height
     }
 
     fn history_panel(&self, ui: &mut egui::Ui, actions: &mut Actions) -> f32 {
@@ -2035,14 +2276,6 @@ impl PopupApp {
                     actions.retranslate = true;
                 }
 
-                if !self.tray_active()
-                    && ui
-                        .add(egui::Button::new(egui::RichText::new("退出").size(13.0)))
-                        .clicked()
-                {
-                    actions.quit = true;
-                }
-
                 let pin_label = if self.pinned { "取消固定" } else { "固定" };
                 let pin = egui::Button::new(egui::RichText::new(pin_label).size(13.0).color(
                     if self.pinned {
@@ -2061,11 +2294,29 @@ impl PopupApp {
                     actions.toggle_pin = true;
                 }
 
-                if ui
-                    .add(egui::Button::new(egui::RichText::new("历史").size(13.0)))
-                    .clicked()
-                {
-                    actions.toggle_history = true;
+                // The tray menu owns 历史…/设置…/退出; without a tray the
+                // window keeps its own entry points so the app stays usable.
+                if !self.tray_active() {
+                    if ui
+                        .add(egui::Button::new(egui::RichText::new("退出").size(13.0)))
+                        .clicked()
+                    {
+                        actions.quit = true;
+                    }
+
+                    if ui
+                        .add(egui::Button::new(egui::RichText::new("历史").size(13.0)))
+                        .clicked()
+                    {
+                        actions.toggle_history = true;
+                    }
+
+                    if ui
+                        .add(egui::Button::new(egui::RichText::new("设置").size(13.0)))
+                        .clicked()
+                    {
+                        actions.toggle_settings = true;
+                    }
                 }
             });
         });
@@ -2382,6 +2633,25 @@ mod history_tests {
     fn truncates_long_values() {
         assert_eq!(history_preview("短文本", 16), "短文本");
         assert_eq!(history_preview("0123456789abcdefgh", 16), "0123456789abcdef…");
+    }
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::{bool_str, bool_value};
+
+    #[test]
+    fn parses_config_bools() {
+        assert!(bool_value(None, true));
+        assert!(!bool_value(Some("false"), true));
+        assert!(bool_value(Some("true"), false));
+        assert!(bool_value(Some("bogus"), true));
+    }
+
+    #[test]
+    fn formats_config_bools() {
+        assert_eq!(bool_str(true), "true");
+        assert_eq!(bool_str(false), "false");
     }
 }
 

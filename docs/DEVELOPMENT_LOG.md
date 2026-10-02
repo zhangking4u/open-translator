@@ -1411,6 +1411,30 @@ Verification:
 ---
 
 
+## Milestone: Settings Panel (post-v0.2.2)
+
+
+Added:
+
+- The footer 设置 button opens a panel that edits the hotkey (应用 re-registers immediately; when the new binding is invalid or taken the old one is restored and the error shown), the model path (保存; empty means the per-user default) and the `auto_download` / `check_updates` / `serve_extension` switches (persisted through `settings::persist_value`, next start), plus 打开配置目录
+- Esc closes the settings panel before hiding the window; opening 设置 closes the history list and vice versa
+
+
+Verification:
+
+- Desktop client: 17 tests pass (new `bool_value` / `bool_str` tests)
+- Live on Windows via UIAutomation with a backed-up config: the panel renders; toggling 自动下载模型 writes `auto_download = false`; typing Ctrl+Alt+Y and 应用 updates the window hint and writes `hotkey = Ctrl+Alt+Y`; applying the taken Ctrl+Alt+T shows the error and keeps the old binding
+
+
+Follow-up (layout):
+
+- Review feedback: settings do not belong inside the translation card, so the tray menu now carries 历史… and 设置… (TrayCommand::History/Settings): both show the window, 设置 renders as a full-page view (返回翻译/Esc backs out) instead of a banner panel, and the footer only carries translation actions (复制译文 / 替换原文 / 重新翻译 / 固定), with 历史/设置/退出 kept only when no tray is available; `--settings` opens the page directly
+- Live-verified with `--settings`: the page replaces the translation content, 返回翻译 restores it, and a tray-active footer has no 历史/设置 buttons
+
+
+---
+
+
 # Git History
 
 Commit:

@@ -7,6 +7,8 @@ mod platform {
     pub enum TrayCommand {
         Show,
         Translate,
+        History,
+        Settings,
         Update,
         Quit,
     }
@@ -15,6 +17,8 @@ mod platform {
         _tray: TrayIcon,
         show_id: MenuId,
         translate_id: MenuId,
+        history_id: MenuId,
+        settings_id: MenuId,
         update_id: MenuId,
         quit_id: MenuId,
         update_item: MenuItem,
@@ -30,12 +34,18 @@ mod platform {
 
             let show = MenuItem::with_id("show", "显示窗口", true, None);
             let translate = MenuItem::with_id("translate", "立即翻译选中文本", true, None);
+            let history = MenuItem::with_id("history", "历史…", true, None);
+            let settings = MenuItem::with_id("settings", "设置…", true, None);
             let update = MenuItem::with_id("update", "有新版本可用", false, None);
             let quit = MenuItem::with_id("quit", "退出", true, None);
 
             menu.append(&show)
                 .map_err(|error| format!("failed to build tray menu: {error}"))?;
             menu.append(&translate)
+                .map_err(|error| format!("failed to build tray menu: {error}"))?;
+            menu.append(&history)
+                .map_err(|error| format!("failed to build tray menu: {error}"))?;
+            menu.append(&settings)
                 .map_err(|error| format!("failed to build tray menu: {error}"))?;
             menu.append(&update)
                 .map_err(|error| format!("failed to build tray menu: {error}"))?;
@@ -53,6 +63,8 @@ mod platform {
                 _tray: tray,
                 show_id: show.id().clone(),
                 translate_id: translate.id().clone(),
+                history_id: history.id().clone(),
+                settings_id: settings.id().clone(),
                 update_id: update.id().clone(),
                 quit_id: quit.id().clone(),
                 update_item: update,
@@ -76,6 +88,10 @@ mod platform {
                     command = Some(TrayCommand::Show);
                 } else if event.id == self.translate_id {
                     command = Some(TrayCommand::Translate);
+                } else if event.id == self.history_id {
+                    command = Some(TrayCommand::History);
+                } else if event.id == self.settings_id {
+                    command = Some(TrayCommand::Settings);
                 } else if event.id == self.update_id {
                     command = Some(TrayCommand::Update);
                 } else if event.id == self.quit_id {
@@ -135,6 +151,8 @@ pub use platform::{Tray, TrayCommand};
 pub enum TrayCommand {
     Show,
     Translate,
+    History,
+    Settings,
     Update,
     Quit,
 }

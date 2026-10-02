@@ -537,3 +537,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Completed translations are recorded in `%APPDATA%\open-translator\history.json` (`translator-core::history`, max 10, deduped); 历史/Ctrl+H lists them and clicking restores the translation
 - 固定 prevents Esc/× from hiding the window (已固定 replaces the close button); Esc closes the history panel first
 - Verified live via UI Automation and unit tests (translator-core 60, desktop 15)
+
+
+## Settings Page (post-v0.2.2)
+
+
+- The tray menu's 设置… opens a full-page settings view (返回翻译/Esc backs out); 历史… opens the history list; the translation card footer keeps only 复制译文/替换原文/重新翻译/固定 and falls back to 历史/设置/退出 when no tray exists
+- Edits the hotkey (applied immediately; invalid/taken bindings keep the old one), model_path and the auto_download / check_updates / serve_extension switches (next start, written with `settings::persist_value`), and opens the config folder; `--settings` starts on the page
+- Verified live: config writes and hotkey re-registration through the real UI (desktop client now 17 tests)
