@@ -1467,8 +1467,8 @@ Remaining work, in the agreed order:
    - Build the dmg from the Tauri client; confirm the app starts in the tray/menu bar (LSUIElement), the Accessibility prompt for Cmd+C capture, the transparent floating card, the LaunchAgent (`--autostart`) and the browser fallback for updates
 3. Release migration notes
    - Installed v0.2.x eframe clients cannot one-click update to the Tauri package (their updater requires `translator-popup-desktop.exe` in the zip); release notes must tell users to download the new zip and run `install.ps1` once. Tauri→Tauri one-click updates are already verified. (README and the release skill now carry the upgrade note; the v0.3.0 release notes remain)
-4. Legacy client cleanup, once v0.3.0 proves the Tauri client
-   - Remove `desktop/translator-popup-desktop` (eframe) and/or `desktop/translator-popup` (GTK), drop their CI jobs (`desktop-popup`, `desktop`) and update AGENTS/the release skill; until then they remain buildable
+4. (Done 2026-10-02 — see the Legacy Client Cleanup milestone) Legacy client cleanup
+   - `desktop/translator-popup-desktop` (eframe), `desktop/translator-popup` (GTK) and `desktop/install.sh` were removed; their CI jobs (`desktop-popup`, `desktop`) were dropped and the docs describe the Tauri client as the only desktop client
 5. (Done 2026-10-02 — see the Docs/Tests/CI Cleanup milestone) Docs and tests
    - README/AGENTS/release skill describe the Tauri client as shipped; `packaging/linux/README.txt` no longer claims automatic shortcut registration or GTK4
    - The Windows update-pipeline test runs in the Tauri crate and the cursor/work-area clamping is a unit-tested pure helper
@@ -1531,6 +1531,17 @@ Released:
 - Tag `v0.3.0` at `8341470` (CI run 36973212111 green first); release run 36973900935 passed the Linux (~8m), macOS (~7m23s) and Windows (~11m45s) package jobs and published `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg` and `OpenTranslator-linux-x64.deb`
 - First release shipping the Tauri client on all three platforms; the release notes list the highlights (tray/hotkey/history/pin/settings, in-app Windows updates, XWayland behavior), the Linux `open-translator-setup` step and the v0.2.x upgrade path (the old eframe client cannot one-click update: download the zip and run `install.ps1` once)
 - Windows and Linux are real-machine verified; the macOS dmg is CI-built only and flagged as pending real-machine verification in the release notes
+
+
+---
+
+
+## Milestone: Legacy Client Cleanup (2026-10-02, after v0.3.0)
+
+
+- Removed `desktop/translator-popup` (GTK), `desktop/translator-popup-desktop` (eframe) and `desktop/install.sh`; both clients stay available in git history and the pre-v0.3.0 release tags (v0.2.2 remains downloadable as a macOS fallback)
+- CI dropped the `desktop` and `desktop-popup` jobs; the Tauri job covers all three platforms
+- README/AGENTS/ARCHITECTURE/PROJECT_STATUS now describe the Tauri client as the only desktop client, and `desktop/translator-core`'s core-binary test fixture points at the Tauri binary; the Windows installers still stop/delete the legacy eframe exe so v0.2.x users upgrade cleanly
 
 
 ---

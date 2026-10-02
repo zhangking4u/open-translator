@@ -85,8 +85,7 @@ Responsibility:
 
 Status:
 
-- Linux/GNOME: `desktop/translator-popup` — Wayland selection → core `/translate` → GTK4 window with target-language switch; checks `/health` and self-starts ollama + core; GNOME shortcut via `desktop/install.sh`
-- Windows/macOS: `desktop/translator-popup-desktop` — eframe app, resident with a tray/menu-bar icon, `Ctrl+Alt+T` (Ctrl+C/Cmd+C capture); embeds the llama.cpp engine (no external service), downloads the model on first run and serves the HTTP API for the browser extension while running
+- Windows/macOS/Linux: `desktop/translator-popup-tauri` — Tauri v2 client, resident with a tray/menu-bar icon and a global shortcut (`Ctrl+Alt+T`; Linux/GNOME via `open-translator-setup`); embeds the llama.cpp engine (no external service), downloads the model on first run and serves the HTTP API for the browser extension while running; Wayland sessions prefer the X11 backend so keep-above/raise works
 
 
 ---
@@ -210,10 +209,9 @@ Completed:
 - Rust core service (Axum API; engines: Mock / Ollama / in-process llama.cpp via `core/inference`)
 - Model evaluation (HY-MT1.5-1.8B default; TranslateGemma 4B quality option) with per-style prompts/sampling
 - API layer split (`src/api`) with unit and integration tests
-- Linux desktop: GTK popup with service self-start and `desktop/install.sh`
-- Windows/macOS desktop: eframe client embedding the engine, tray/menu-bar, `Ctrl+Alt+T`, first-run model download, in-process HTTP for the extension
+- Desktop client: Tauri v2 (`desktop/translator-popup-tauri`) on Windows/macOS/Linux, embedding the engine, tray/menu-bar, `Ctrl+Alt+T`, first-run model download, in-process HTTP for the extension; the legacy GTK/eframe clients were removed in v0.3.0
 - Browser extension: Firefox MV2 (signed) + Chrome MV3, bubble language switch and auto-translate
-- CI on ubuntu/windows/macos plus a Chrome e2e job; release packaging (Windows zip installer, macOS dmg)
+- CI on ubuntu/windows/macos plus a Chrome e2e job; release packaging (Windows zip installer, macOS dmg, Linux deb)
 
 
 In Progress:

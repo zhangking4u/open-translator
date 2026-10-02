@@ -184,7 +184,8 @@ mod tests {
 
     #[test]
     fn derives_core_binary_from_popup_location() {
-        let exe = Path::new("/repo/desktop/translator-popup/target/release/translator-popup");
+        let exe =
+            Path::new("/repo/desktop/translator-popup-tauri/target/release/translator-popup-tauri");
 
         assert_eq!(
             core_bin_from_exe(exe).unwrap(),

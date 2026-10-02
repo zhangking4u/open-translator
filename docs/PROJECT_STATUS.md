@@ -149,9 +149,8 @@ open-translator/
 │   └── inference/            (llama.cpp engine, no HTTP)
 ├── desktop/
 │   ├── translator-core/          (platform-agnostic desktop lib)
-│   ├── translator-popup/         (Linux/GNOME GTK popup)
-│   ├── translator-popup-desktop/ (Windows/macOS eframe client)
-│   └── install.sh / install-*.ps1
+│   ├── translator-popup-tauri/   (Tauri v2 client; shipped on Windows/macOS/Linux)
+│   └── install-windows.ps1 / install-macos.sh
 ├── browser/extension/        (Firefox MV2 + Chrome MV3)
 ├── packaging/                (installers used by the release workflow)
 ├── models/                   (HY-MT → Ollama import script)
@@ -578,4 +577,12 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Tag `v0.3.0` at `8341470`; release run 36973900935 built the Tauri client on Linux/macOS/Windows and published `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg` and `OpenTranslator-linux-x64.deb`
 - First release shipping the Tauri client on all three platforms; the notes document the highlights, the Linux `open-translator-setup` step and the v0.2.x upgrade path (the old eframe client cannot one-click update — download the zip and run `install.ps1` once)
 - Windows/Linux real-machine verified; macOS CI-built only (flagged in the release notes)
-- Remaining: macOS real-machine verification and the legacy GTK/eframe client cleanup
+- Remaining: macOS real-machine verification
+
+
+## Legacy Client Cleanup (2026-10-02, after v0.3.0)
+
+
+- Removed `desktop/translator-popup` (GTK), `desktop/translator-popup-desktop` (eframe) and `desktop/install.sh`; the crates stay in git history and pre-v0.3.0 release tags (v0.2.2 remains downloadable as a macOS fallback)
+- CI dropped the legacy `desktop`/`desktop-popup` jobs; README/AGENTS/ARCHITECTURE describe the Tauri client as the only desktop client
+- The Windows installers still stop the legacy `translator-popup-desktop` process and delete its exe during an upgrade from v0.2.x

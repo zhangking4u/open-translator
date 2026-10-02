@@ -28,7 +28,7 @@
 
 ### 开发 / 进阶用户
 
-按下面的步骤从源码运行（桌面端发布包是 Tauri 客户端，见第 2 节；下面也保留了核心服务与旧版 GTK 弹窗的源码路径）。
+按下面的步骤从源码运行（桌面端为 Tauri 客户端，见第 2 节；核心服务可独立运行）。
 
 ### 0. 运行时与模型（Ollama）
 
@@ -100,8 +100,6 @@ target = zh
 
 弹窗内可用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语；⇄ 互换语言对，`Ctrl+1/2/3` 切换最近使用的目标语言。译文流式显示并同步显示已接收字数。卡片提供 复制译文 / 替换原文（Windows）/ 重新翻译 / 固定，`Ctrl+Enter` 重译、`Ctrl+Shift+C` 复制；托盘菜单提供 显示窗口 / 立即翻译 / 历史… / 设置… / 有新版本 / 退出。
 
-旧版 Linux GTK 弹窗（`desktop/translator-popup`，`./desktop/install.sh`）和旧版 Windows/macOS eframe 客户端（`desktop/translator-popup-desktop`）仍保留在仓库，构建与测试命令见「开发」一节。
-
 ### 3. 浏览器扩展（Firefox / Chrome）
 
 ```bash
@@ -136,7 +134,6 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 - Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 构建**内嵌模型推理**的 Tauri 客户端（`translator-popup-tauri.exe`）并加入开机启动；把 GGUF 放到 `%LOCALAPPDATA%\open-translator\models\hy-mt1.5-1.8b-q4_k_m.gguf`（或配置 `model_path`）。选中文字按 `Ctrl+Alt+T`（模拟 `Ctrl+C` + 剪贴板取词）；托盘菜单提供 显示窗口 / 立即翻译 / 历史… / 设置… / 有新版本 / 退出。运行期间在 `127.0.0.1:17890` 提供 HTTP 供浏览器扩展；客户端内「立即更新」会下载 `OpenTranslator-windows-x64.zip`、解压并运行其中的 `install.ps1`（会先关闭运行中的旧版）。
 - macOS 桌面划词：发布包为 dmg（把 `OpenTranslator.app` 拖入「应用程序」）；源码安装 `./desktop/install-macos.sh` 构建内嵌推理的 Tauri 客户端到 `~/Applications/OpenTranslator.app` 并注册 LaunchAgent 开机启动。模型放到 `~/Library/Application Support/open-translator/models/`（或配置 `model_path`）。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」允许 OpenTranslator（模拟 `Cmd+C` 取词所需）；菜单栏图标提供 显示窗口 / 立即翻译 / 历史… / 设置… / 有新版本 / 退出（更新在浏览器打开 release 页）。
 - 桌面客户端配置（Windows `%APPDATA%\open-translator\config`、macOS `~/Library/Application Support/open-translator/config`）：`model_path`、`prompt_style`（默认 `hymt`）、`serve_extension`（默认 `true`）、`auto_download`（默认 `true`，首启自动从 ModelScope 下载模型，支持断点续传与 SHA-256 校验）、`check_updates`（默认 `true`，启动时检查 GitHub 新版本并在窗口/托盘提示）、`hotkey`、`source`（默认 `auto`，自动识别源语言）、`target`；环境变量 `TRANSLATOR_MODEL_PATH` / `TRANSLATOR_PROMPT_STYLE` / `TRANSLATOR_HOTKEY` / `TRANSLATOR_CHECK_UPDATES` 可临时覆盖。
-- 旧版 Linux GTK 弹窗（`desktop/translator-popup`，仍在仓库）默认同样使用进程内 llama.cpp + 首次运行自动下载模型；`TRANSLATOR_ENGINE=ollama` 可切回外部核心服务 + Ollama。发布的 Linux 客户端是 Tauri deb。
 - Windows/macOS 上也可只用浏览器扩展：安装 Ollama + 运行核心服务（`cargo run --release`）即可；HY-MT 导入脚本（Windows 需 Git Bash）或按脚本内 Modelfile 手动 `ollama create`。
 
 ## 常见问题
@@ -152,11 +149,8 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 core/translator-service/          核心服务（Rust）
 core/inference/                   进程内 llama.cpp 推理（Rust）
 desktop/translator-popup-tauri/   桌面客户端（Tauri v2，Windows/macOS/Linux 发布包）
-desktop/translator-popup/         旧版 Linux GTK 弹窗
-desktop/translator-popup-desktop/ 旧版 Windows/macOS eframe 客户端
 desktop/install-windows.ps1       Windows 源码安装（Tauri）
 desktop/install-macos.sh          macOS 源码安装（Tauri）
-desktop/install.sh                旧版 GTK 一键安装
 browser/extension/                Firefox 扩展（纯 JS，无构建）
 packaging/                        deb / zip / dmg 打包脚本
 models/                           HY-MT → Ollama 导入脚本
@@ -170,8 +164,6 @@ cd core/translator-service && cargo test    # 核心服务
 cd core/inference && cargo test             # 进程内推理（构建 llama.cpp 需 cmake + clang/libclang）
 cd desktop/translator-core && cargo test    # 桌面共享库（跨平台：参数/配置/翻译调用/服务自启）
 cd desktop/translator-popup-tauri && cargo test  # 桌面客户端（Tauri；Linux 需 webkit2gtk-4.1 等构建依赖）
-cd desktop/translator-popup && cargo test   # 旧版 Linux GTK 弹窗
-cd desktop/translator-popup-desktop && cargo test  # 旧版 Windows/macOS eframe 客户端
 ./browser/test.sh                           # Chrome MV3 端到端（服务未运行会自启 mock 引擎）
 
 # Linux 安装包：先 cargo build --release --manifest-path desktop/translator-popup-tauri/Cargo.toml
@@ -181,7 +173,7 @@ cd desktop/translator-popup-desktop && cargo test  # 旧版 Windows/macOS eframe
 - 架构设计：`docs/ARCHITECTURE.md`
 - 当前状态与进度：`docs/PROJECT_STATUS.md`
 - 开发日志：`docs/DEVELOPMENT_LOG.md`
-- CI：`.github/workflows/ci.yml`（core/inference/desktop-core 测试、core Windows 测试、Tauri 三平台测试与前端静态检查、旧版 GTK 弹窗测试、扩展静态检查/lint + Chrome 端到端）
+- CI：`.github/workflows/ci.yml`（core/inference/desktop-core 测试、core Windows 测试、Tauri 三平台测试与前端静态检查、扩展静态检查/lint + Chrome 端到端）
 
 ## 许可证
 

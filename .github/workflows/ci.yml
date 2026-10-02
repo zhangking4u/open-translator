@@ -65,25 +65,6 @@ jobs:
           workspaces: desktop/translator-core
       - run: cargo test
 
-  desktop-popup:
-    name: Desktop client (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: desktop/translator-popup-desktop
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/translator-popup-desktop
-      - run: cargo test
-      - run: cargo build --release
-
   tauri:
     name: Tauri client (${{ matrix.os }})
     strategy:
@@ -121,21 +102,6 @@ jobs:
           for file in desktop/translator-popup-tauri/ui/*.js; do
             node --check "$file"
           done
-
-  desktop:
-    name: Desktop popup tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: desktop/translator-popup
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev pkg-config
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/translator-popup
-      - run: cargo test
 
   browser:
     name: Browser extension checks
