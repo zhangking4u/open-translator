@@ -930,8 +930,10 @@ fn clear_history(app: AppHandle) {
 }
 
 #[tauri::command]
-fn set_pinned(app: AppHandle, pinned: bool) {
+fn set_pinned(app: AppHandle, window: WebviewWindow, pinned: bool) {
     *app.state::<AppState>().pinned.lock().unwrap() = pinned;
+    // 固定 means the card stays in front of every other window until unpinned.
+    let _ = window.set_always_on_top(pinned);
 }
 
 #[tauri::command]

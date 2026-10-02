@@ -160,7 +160,7 @@ pin.addEventListener("click", async () => {
   pinned = !pinned;
   await invoke("set_pinned", { pinned });
   pin.classList.toggle("active", pinned);
-  pin.title = pinned ? "取消固定" : "固定窗口";
+  pin.title = pinned ? "取消固定（取消置顶）" : "固定窗口（保持最前）";
   close.hidden = pinned;
 });
 
