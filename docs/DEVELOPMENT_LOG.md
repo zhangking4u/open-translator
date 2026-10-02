@@ -1322,6 +1322,19 @@ Verification:
 ---
 
 
+## Milestone: v0.2.2 Release
+
+
+Released:
+
+- Tag `v0.2.2` at `8cb4640` (CI run 36940722141 green first); release run 36943753792 passed the Linux (1m07s), macOS (1m05s) and Windows (1m41s) jobs and published the three assets
+- Patch release carrying the "actually hidden at login" and "upgrade the Windows install in place" fixes; release notes document the fixes plus update steps (Windows re-run `install.ps1`, macOS replace the app, Linux `apt install` upgrade in place)
+- The first publish (run 36941897001) shipped only auto-generated notes; the tag was deleted and re-pushed so the release matches the usual title/notes format
+
+
+---
+
+
 # Git History
 
 Commit:

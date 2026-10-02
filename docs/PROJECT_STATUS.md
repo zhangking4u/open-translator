@@ -498,4 +498,12 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - The Windows/macOS client no longer shows its window at launch: first-run download and model errors used to force it visible, so the window sat on screen after login; progress/errors now live in the tray tooltip and the window appears only on hotkey/tray/`--stdin`
 - Follow-up to v0.2.0 — installed users need the next release to pick up the fix
 - Shipped in v0.2.1 (`26f292f`, release run 36862981211, three assets)
-- Incomplete in v0.2.1: eframe 0.36 force-shows the window after the first painted frame (`EpiIntegration::post_rendering`), so `with_visible(false)` alone did not keep it hidden; post-v0.2.1 `PopupApp::new` queues `ViewportCommand::Visible(false)` for silent startup, live-verified on Windows (patched build stays `IsWindowVisible=false`) — needs v0.2.2 to reach installed users
+- Incomplete in v0.2.1: eframe 0.36 force-shows the window after the first painted frame (`EpiIntegration::post_rendering`), so `with_visible(false)` alone did not keep it hidden; post-v0.2.1 `PopupApp::new` queues `ViewportCommand::Visible(false)` for silent startup, live-verified on Windows (patched build stays `IsWindowVisible=false`) — shipped in v0.2.2
+
+
+## v0.2.2 Release (2026-10-02)
+
+
+- Tag `v0.2.2` at `8cb4640`; release run 36943753792 passed the Linux, macOS and Windows package jobs and published the three assets with the usual release notes (the first publish, run 36941897001, carried only auto-generated notes, so the tag was re-pushed)
+- The Windows installer now upgrades in place while the old version runs: `packaging/windows/install.ps1` stops the running instance before replacing the exe and retries the copy, `desktop/install-windows.ps1` waits for the binary to unlock before relinking, and the packaging README documents re-running `install.ps1` as the upgrade path
+- Installed v0.2.1 users get the real silent-autostart behavior with this release
