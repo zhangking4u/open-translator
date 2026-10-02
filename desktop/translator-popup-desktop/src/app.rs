@@ -1781,7 +1781,11 @@ impl PopupApp {
 
     fn body(&mut self, ui: &mut egui::Ui, actions: &mut Actions, max_window_height: f32) -> f32 {
         if self.settings_open {
-            return self.settings_page(ui, actions);
+            // Include everything above (header and banners) like the normal
+            // path does; otherwise the window ends up too short and clips the
+            // bottom of the settings page.
+            let above = ui.min_rect().height();
+            return above + self.settings_page(ui, actions);
         }
 
         let mut content = 0.0;
@@ -1842,9 +1846,9 @@ impl PopupApp {
     }
 
     fn settings_page(&mut self, ui: &mut egui::Ui, actions: &mut Actions) -> f32 {
-        let mut height = 0.0;
-
-        egui::Frame::new()
+        // Measure the frame's outer rect: `ui.min_rect()` inside the closure
+        // misses the frame's own margins, which left the last row clipped.
+        let response = egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
             .corner_radius(10)
             .inner_margin(egui::Margin::symmetric(12, 10))
@@ -1972,11 +1976,9 @@ impl PopupApp {
                         );
                     });
                 }
-
-                height = ui.min_rect().height();
             });
 
-        height
+        response.response.rect.height()
     }
 
     fn history_panel(&self, ui: &mut egui::Ui, actions: &mut Actions) -> f32 {

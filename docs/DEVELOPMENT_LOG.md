@@ -1430,6 +1430,7 @@ Follow-up (layout):
 
 - Review feedback: settings do not belong inside the translation card, so the tray menu now carries 历史… and 设置… (TrayCommand::History/Settings): both show the window, 设置 renders as a full-page view (返回翻译/Esc backs out) instead of a banner panel, and the footer only carries translation actions (复制译文 / 替换原文 / 重新翻译 / 固定), with 历史/设置/退出 kept only when no tray is available; `--settings` opens the page directly
 - Live-verified with `--settings`: the page replaces the translation content, 返回翻译 restores it, and a tray-active footer has no 历史/设置 buttons
+- The first live pass clipped the page's last row (打开配置目录): `body`/`settings_page` now include the header/banners above the page and measure the frame's outer rect; re-measured with 61 px clearance and verified by the user
 
 
 ---
