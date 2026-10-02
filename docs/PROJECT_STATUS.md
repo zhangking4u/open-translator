@@ -543,8 +543,8 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 
 
 - `desktop/translator-popup-tauri` (Tauri v2 + HTML/CSS/JS) now mirrors the eframe client: tray/hotkey/single-instance, cursor placement, streaming translation, notifications, history/pin/settings pages, extension HTTP API, update banner and Windows one-click update, replace-in-place
-- Linux packaging switched to it (`make-deb.sh` ships the Tauri binary; `open-translator-setup` writes the shortcut `--translate` plus the `--autostart` entry); CI gained an ubuntu Tauri build job and the release Linux job builds it
-- Windows behavior verified live per slice; Linux compilation is gated by the new CI job (no local Linux toolchain)
+- Linux packaging switched to it (`make-deb.sh` ships the Tauri binary; `open-translator-setup` writes the shortcut `--translate` plus the `--autostart` entry); the release jobs build the Tauri client on all three platforms and CI tests it on ubuntu/windows/macos
+- Windows behavior verified live per slice; Linux verified (see the Linux Real-Machine Verification section); macOS is CI-built only
 
 
 ## Settings Page (post-v0.2.2)
@@ -562,3 +562,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Tray clicks could not raise an already-visible card (GNOME refuses token-less focus/raise and sets `_NET_WM_STATE_DEMANDS_ATTENTION`); `show_main` now pulses always-on-top for 700 ms, and `固定` works because the client prefers the X11 backend on Wayland sessions (XWayland), which also sidesteps blank tray-menu labels under native Wayland (`GDK_BACKEND=wayland` opts out)
 - After a login autostart the tray menu labels stayed blank (the AppIndicator extension cancels its property fetch when a concurrent layout update races it and never retries); the client now nudges the update menu item while the menu is closed (4 s/15 s after an autostart launch) so the next open re-reads every label
 - Completed: the Wayland pass (upgrades, setup, tray, engine/API, forwarding, capture/history, notifications, visuals), the Xorg session pass (positioning and pin) and the login-autostart check (including the tray nudge)
+
+
+## Docs/Tests/CI Cleanup (2026-10-02, post-v0.2.2)
+
+
+- README/AGENTS/release skill and the deb's README.txt describe the Tauri client as shipped (no automatic shortcut registration, webkit2gtk-4.1 runtime); the legacy GTK/eframe clients are labeled as legacy and keep their own build commands
+- Tauri tests: the cursor/work-area clamping is a pure `card_position` helper with five unit tests; the Windows update pipeline is testable (`run_update_install_with`) with a stub-server test that runs in CI
+- CI: the Tauri matrix runs `cargo test --release` on ubuntu/windows/macos and a `tauri-frontend` job validates the config JSON plus `node --check ui/main.js`

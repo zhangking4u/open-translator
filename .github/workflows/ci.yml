@@ -102,7 +102,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/translator-popup-tauri
-      - run: cargo build --release
+      - run: cargo test --release
+
+  tauri-frontend:
+    name: Tauri frontend checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Static checks
+        run: |
+          python3 -m json.tool desktop/translator-popup-tauri/tauri.conf.json > /dev/null
+          for file in desktop/translator-popup-tauri/capabilities/*.json; do
+            python3 -m json.tool "$file" > /dev/null
+          done
+          for file in desktop/translator-popup-tauri/ui/*.js; do
+            node --check "$file"
+          done
 
   desktop:
     name: Desktop popup tests

@@ -709,26 +709,58 @@ fn place_near_cursor(app: &AppHandle, window: &WebviewWindow) {
     let margin = (12.0 * scale) as i32;
     let offset = (18.0 * scale) as i32;
 
-    let work_right = work.position.x + work.size.width as i32;
-    let work_bottom = work.position.y + work.size.height as i32;
-
-    let mut x = cursor.x as i32 + margin;
-    let mut y = cursor.y as i32 + offset;
-
-    // Slide the card above the cursor when it would overflow the bottom edge.
-    if y + size.height as i32 + margin > work_bottom {
-        y = cursor.y as i32 - size.height as i32 - margin;
-    }
-
-    let min_x = work.position.x + margin;
-    let min_y = work.position.y + margin;
-    let max_x = work_right - size.width as i32 - margin;
-    let max_y = work_bottom - size.height as i32 - margin;
-
-    x = x.clamp(min_x, max_x.max(min_x));
-    y = y.clamp(min_y, max_y.max(min_y));
+    let (x, y) = card_position(
+        (cursor.x as i32, cursor.y as i32),
+        (size.width as i32, size.height as i32),
+        WorkArea {
+            x: work.position.x,
+            y: work.position.y,
+            width: work.size.width,
+            height: work.size.height,
+        },
+        margin,
+        offset,
+    );
 
     let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+#[derive(Clone, Copy)]
+struct WorkArea {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+/// Places the card beside the cursor and keeps it inside the work area,
+/// sliding it above the cursor when the bottom edge would overflow.
+fn card_position(
+    cursor: (i32, i32),
+    size: (i32, i32),
+    work: WorkArea,
+    margin: i32,
+    offset: i32,
+) -> (i32, i32) {
+    let work_right = work.x + work.width as i32;
+    let work_bottom = work.y + work.height as i32;
+
+    let x = cursor.0 + margin;
+    let mut y = cursor.1 + offset;
+
+    if y + size.1 + margin > work_bottom {
+        y = cursor.1 - size.1 - margin;
+    }
+
+    let min_x = work.x + margin;
+    let min_y = work.y + margin;
+    let max_x = work_right - size.0 - margin;
+    let max_y = work_bottom - size.1 - margin;
+
+    (
+        x.clamp(min_x, max_x.max(min_x)),
+        y.clamp(min_y, max_y.max(min_y)),
+    )
 }
 
 fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
@@ -1352,6 +1384,19 @@ fn start_update_install(app: &AppHandle) {
 /// restarts the new one in the tray.
 #[cfg(target_os = "windows")]
 fn run_update_install(app: &AppHandle, asset_url: &str) -> Result<(), String> {
+    run_update_install_with(asset_url, &mut |downloaded, total| {
+        let _ = app.emit(
+            "update-progress",
+            ProgressPayload { downloaded, total },
+        );
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn run_update_install_with(
+    asset_url: &str,
+    on_progress: &mut dyn FnMut(u64, Option<u64>),
+) -> Result<(), String> {
     let client = translator_core::models::download_client().map_err(|error| error.to_string())?;
 
     let dir = std::env::temp_dir().join("open-translator-update");
@@ -1359,7 +1404,6 @@ fn run_update_install(app: &AppHandle, asset_url: &str) -> Result<(), String> {
     std::fs::create_dir_all(&dir).map_err(|error| format!("创建更新目录失败：{error}"))?;
 
     let archive = dir.join("OpenTranslator-windows-x64.zip");
-    let progress_app = app.clone();
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -1372,12 +1416,7 @@ fn run_update_install(app: &AppHandle, asset_url: &str) -> Result<(), String> {
             asset_url,
             &archive,
             None,
-            move |downloaded, total| {
-                let _ = progress_app.emit(
-                    "update-progress",
-                    ProgressPayload { downloaded, total },
-                );
-            },
+            on_progress,
         ))
         .map_err(|error| format!("下载更新失败：{error}"))?;
 
@@ -1491,4 +1530,164 @@ fn make_icon_rgba() -> Vec<u8> {
     }
 
     rgba
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{WorkArea, card_position};
+
+    fn work() -> WorkArea {
+        WorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        }
+    }
+
+    #[test]
+    fn places_below_and_right_of_the_cursor() {
+        assert_eq!(
+            card_position((100, 200), (520, 300), work(), 12, 18),
+            (112, 218)
+        );
+    }
+
+    #[test]
+    fn slides_above_the_cursor_near_the_bottom_edge() {
+        assert_eq!(
+            card_position((100, 900), (520, 300), work(), 12, 18),
+            (112, 588)
+        );
+    }
+
+    #[test]
+    fn clamps_to_the_work_area_corners() {
+        assert_eq!(
+            card_position((-50, -50), (520, 300), work(), 12, 18),
+            (12, 12)
+        );
+        assert_eq!(
+            card_position((2000, 2000), (520, 300), work(), 12, 18),
+            (1388, 768)
+        );
+    }
+
+    #[test]
+    fn handles_negative_monitor_origins() {
+        let left = WorkArea {
+            x: -1920,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+
+        assert_eq!(
+            card_position((-2000, 50), (520, 300), left, 12, 18),
+            (-1908, 68)
+        );
+    }
+
+    #[test]
+    fn keeps_the_margin_when_the_card_is_larger_than_the_work_area() {
+        let small = WorkArea {
+            x: 0,
+            y: 0,
+            width: 400,
+            height: 200,
+        };
+
+        assert_eq!(
+            card_position((100, 100), (520, 300), small, 12, 18),
+            (12, 12)
+        );
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod update_tests {
+    use super::run_update_install_with;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn downloads_extracts_and_launches_the_installer() {
+        let marker = std::env::temp_dir().join("open-translator-update-test-marker.txt");
+        let _ = std::fs::remove_file(&marker);
+
+        let staging = std::env::temp_dir().join("open-translator-update-test-staging");
+        let _ = std::fs::remove_dir_all(&staging);
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(
+            staging.join("install.ps1"),
+            format!("Set-Content -LiteralPath '{}' -Value ok", marker.display()),
+        )
+        .unwrap();
+        std::fs::write(staging.join("translator-popup-tauri.exe"), b"stub").unwrap();
+
+        let archive = std::env::temp_dir().join("open-translator-update-test.zip");
+        let _ = std::fs::remove_file(&archive);
+
+        let status = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(format!(
+                "Compress-Archive -Path '{}' -DestinationPath '{}' -Force",
+                staging.join("*").display(),
+                archive.display()
+            ))
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let payload = std::fs::read(&archive).unwrap();
+        let expected_total = payload.len() as u64;
+        let app = axum::Router::new().route(
+            "/pkg.zip",
+            axum::routing::get(move || {
+                let payload = payload.clone();
+                async move { payload }
+            }),
+        );
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async move {
+                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                axum::serve(listener, app).await.unwrap();
+            });
+        });
+
+        let progress = Arc::new(Mutex::new(Vec::new()));
+        let recorded = progress.clone();
+
+        run_update_install_with(
+            &format!("http://{address}/pkg.zip"),
+            &mut |downloaded, total| {
+                recorded.lock().unwrap().push((downloaded, total));
+            },
+        )
+        .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !marker.is_file() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(marker.is_file(), "the installer script did not run");
+
+        let progress = progress.lock().unwrap();
+        assert!(!progress.is_empty(), "no download progress was reported");
+
+        assert!(
+            progress
+                .iter()
+                .any(|(_, total)| total.is_some_and(|total| total == expected_total)),
+            "the reported total did not match the package size"
+        );
+    }
 }

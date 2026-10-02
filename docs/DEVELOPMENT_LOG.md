@@ -1463,22 +1463,21 @@ Remaining work, in the agreed order:
 1. (Done 2026-10-02 — see the Linux Real-Machine Verification milestone) Linux real-machine verification (compilation was CI-gated only before)
    - Install the deb on Ubuntu 24.04 on both Wayland and X11: `open-translator-setup` (GNOME shortcut `<bin> --translate` plus the `--autostart` entry), single-instance forwarding, tray icon (GNOME may need the AppIndicator extension), `wl-paste` selection capture, model download, cursor placement / pin / bottom clamp, the transparent floating card, `notify-send` notifications and the desktop entry/icon
    - Check `apt install` in-place upgrades over the previous deb
-2. macOS verification
+2. macOS verification (postponed — no machine available)
    - Build the dmg from the Tauri client; confirm the app starts in the tray/menu bar (LSUIElement), the Accessibility prompt for Cmd+C capture, the transparent floating card, the LaunchAgent (`--autostart`) and the browser fallback for updates
 3. Release migration notes
-   - Installed v0.2.x eframe clients cannot one-click update to the Tauri package (their updater requires `translator-popup-desktop.exe` in the zip); release notes must tell users to download the new zip and run `install.ps1` once. Tauri→Tauri one-click updates are already verified
+   - Installed v0.2.x eframe clients cannot one-click update to the Tauri package (their updater requires `translator-popup-desktop.exe` in the zip); release notes must tell users to download the new zip and run `install.ps1` once. Tauri→Tauri one-click updates are already verified. (README and the release skill now carry the upgrade note; the v0.3.0 release notes remain)
 4. Legacy client cleanup, once v0.3.0 proves the Tauri client
    - Remove `desktop/translator-popup-desktop` (eframe) and/or `desktop/translator-popup` (GTK), drop their CI jobs (`desktop-popup`, `desktop`) and update AGENTS/the release skill; until then they remain buildable
-5. Docs and tests
-   - README/AGENTS/release skill still describe the eframe client as shipped in places; switch them to the Tauri client
-   - Port the Windows update-pipeline test (`run_update_install` with a stub server) to the Tauri crate and extract the cursor/work-area clamping into unit-testable helpers
-   - Add frontend static checks to CI (`node --check ui/main.js`, JSON validation of the tauri configs)
+5. (Done 2026-10-02 — see the Docs/Tests/CI Cleanup milestone) Docs and tests
+   - README/AGENTS/release skill describe the Tauri client as shipped; `packaging/linux/README.txt` no longer claims automatic shortcut registration or GTK4
+   - The Windows update-pipeline test runs in the Tauri crate and the cursor/work-area clamping is a unit-tested pure helper
+   - CI tests the Tauri client on ubuntu/windows/macos and a `tauri-frontend` job checks the config JSON and `ui/main.js`
 6. Known issues
    - Local incremental builds can mis-embed `OPEN_TRANSLATOR_VERSION` (the update banner shows even for newer builds); clean CI/release builds are correct
    - Windows keeps the opaque full-window card for now (tao does not use `WS_EX_LAYERED` there, so the transparent path was not enabled on Windows)
-   - Replace-in-place, notifications and tray/menu behavior on Linux are untested until (1)
 7. Release v0.3.0
-   - Cut the tag with the release skill; verify the three assets plus the Tauri→Tauri one-click update round-trip
+   - Cut the tag with the release skill; verify the three assets plus the Tauri→Tauri one-click update round-trip (macOS is CI-built only; note it as real-machine-unverified)
 
 
 ---
@@ -1507,6 +1506,18 @@ Fixed:
 Remaining:
 
 - None — the Xorg session pass and the login-autostart check both passed on 2026-10-02 (the logout/login that verified the tray-menu nudge also covered them)
+
+
+---
+
+
+## Milestone: Docs/Tests/CI Cleanup (2026-10-02, post-v0.2.2)
+
+
+- README/AGENTS/release skill now describe the Tauri client as the shipped desktop client (install/upgrade steps, platform table, repo layout, dev commands, CI/release descriptions); `packaging/linux/README.txt` no longer claims the shortcut is registered automatically and lists the real runtime dependencies
+- Tauri client tests: `card_position` is a pure helper with unit tests (normal placement, bottom-edge slide, corner clamps, negative monitor origins, oversized card); `run_update_install_with` is testable and a Windows test downloads a stub zip from an axum server, extracts it, runs the stub `install.ps1` and checks the reported progress
+- CI: the Tauri job runs `cargo test --release` on ubuntu/windows/macos and a new `tauri-frontend` job validates `tauri.conf.json`/`capabilities` JSON plus `node --check ui/main.js`
+- Migration notes for v0.2.x eframe users are in the README and the release skill; the v0.3.0 release notes will repeat them
 
 
 ---

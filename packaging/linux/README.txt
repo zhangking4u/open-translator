@@ -1,36 +1,36 @@
 OpenTranslator for Linux (GNOME)
 ================================
 
-1. The global shortcut is registered automatically on first launch (default
-   Ctrl+Alt+T). To register or change it manually, as your desktop user:
+1. Register the global shortcut once, as your desktop user (the deb's postinst
+   prints this; the shortcut is not registered automatically):
 
      open-translator-setup [--binding "<Control><Alt>t"]
 
-   (The popup only auto-registers when the shortcut is missing, so a custom
-   binding is never overwritten.)
+   This also writes the --autostart entry so the app starts hidden in the tray.
 
-2. Select text in any application and press the shortcut. The first run
-   downloads the model (~1.1 GB) from ModelScope into
-   ~/.local/share/open-translator/models/ and starts the translator service
-   automatically. Later runs reuse the loaded service.
+2. Select text in any application and press the shortcut (default Ctrl+Alt+T).
+   The client embeds llama.cpp (no separate service); the first run downloads
+   the model (~1.1 GB) from ModelScope into
+   ~/.local/share/open-translator/models/ .
 
 Configuration: ~/.config/open-translator/config
 
   service_url = http://127.0.0.1:17890
-  source = en
+  source = auto
   target = zh
   model_path = <path to a .gguf model>   (optional; default is the models dir)
   prompt_style = hymt                    (generic / translategemma / hymt)
   auto_download = true                   (download the default model on first run)
   check_updates = true                   (check GitHub for a newer release)
+  hotkey = Ctrl+Alt+T                    (global shortcut)
 
-The environment can override the auto-start behaviour:
-TRANSLATOR_ENGINE=ollama switches back to a local Ollama server,
-TRANSLATOR_MODEL_PATH points at an existing GGUF file,
-TRANSLATOR_AUTO_DOWNLOAD=false disables the first-run download.
+Environment overrides: TRANSLATOR_MODEL_PATH (existing GGUF),
+TRANSLATOR_HOTKEY (shortcut), TRANSLATOR_CHECK_UPDATES=false (disable the
+update check).
 
-Logs: ~/.local/state/open-translator/
-Remove the shortcut: open-translator-setup --uninstall
+Remove the shortcut and the autostart entry: open-translator-setup --uninstall
 
-Requirements: glibc >= 2.39 (built on Ubuntu 24.04), GTK4 >= 4.10, a Wayland
-session with wl-clipboard (part of the package dependencies).
+Requirements: glibc >= 2.39 (built on Ubuntu 24.04), a Wayland or X11 session
+with wl-clipboard; the runtime dependencies (libwebkit2gtk-4.1-0, libgtk-3-0,
+libayatana-appindicator3-1, wl-clipboard, libnotify-bin, libgomp1) are
+installed by apt.
