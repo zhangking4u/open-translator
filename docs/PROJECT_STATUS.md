@@ -586,3 +586,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Removed `desktop/translator-popup` (GTK), `desktop/translator-popup-desktop` (eframe) and `desktop/install.sh`; the crates stay in git history and pre-v0.3.0 release tags (v0.2.2 remains downloadable as a macOS fallback)
 - CI dropped the legacy `desktop`/`desktop-popup` jobs; README/AGENTS/ARCHITECTURE describe the Tauri client as the only desktop client
 - The Windows installers still stop the legacy `translator-popup-desktop` process and delete its exe during an upgrade from v0.2.x
+
+
+## Update UI in Settings (2026-10-02, after v0.3.0)
+
+
+- The update banner was removed from the translation card (review feedback: a full row with 查看/立即更新 does not belong in the translation popup); update handling now lives in the settings page's 版本与更新 section — current version, 检查更新, 更新说明/前往下载, the primary 更新/重试 action and inline download progress
+- New commands: `check_update_now` runs a manual check and reports 正在检查/已是最新版本/检查失败 (`update-checking`/`update-none`/`update-check-failed` events; the startup check still stays quiet about those), `get_update_state` re-seeds the settings page when the startup check finished before the webview was listening; `SettingsPayload` carries `app_version` (`OPEN_TRANSLATOR_VERSION`)
+- The tray 有新版本 v… item is unchanged and remains the notification channel while the window is hidden; the Windows download/install path is unchanged

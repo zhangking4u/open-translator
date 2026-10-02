@@ -229,20 +229,20 @@ button.icon.active {
   color: var(--accent);
 }
 
-.update-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(79, 124, 255, 0.14);
-  border-radius: 10px;
-  padding: 6px 10px;
-  margin-bottom: 8px;
-  font-size: 13px;
-  font-weight: 600;
+.update-version {
+  font-size: 12.5px;
+  color: var(--dim);
 }
 
-.update-banner button {
-  font-weight: 400;
+.update-status {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+.update-status.error {
+  color: #e05a5a;
 }
 
 .page-head {

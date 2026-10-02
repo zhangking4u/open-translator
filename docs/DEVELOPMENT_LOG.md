@@ -1547,6 +1547,24 @@ Released:
 ---
 
 
+## Milestone: Update UI in Settings (2026-10-02, after v0.3.0)
+
+
+Review feedback: the update banner crowded the translation card (one row with the message, ×, 查看 and 立即更新), so update handling moved into the settings page.
+
+- The translation view no longer shows any update UI; the settings page gained a 版本与更新 section with the current version (`OPEN_TRANSLATOR_VERSION`), 检查更新, 更新说明/前往下载 (macOS/Linux) and the primary 更新/重试 action, plus the download progress bar inline
+- `UpdateInfo` now stores the version and `can_install`; the new `check_update_now` command runs a manual check and reports `update-checking`/`update-none`/`update-check-failed` (the startup check stays silent about those), and `get_update_state` re-seeds the page when the startup check finished before the webview was listening; `SettingsPayload` carries `app_version`
+- The tray 有新版本 v… item is unchanged and remains the notification channel while the window is hidden; the Windows download/install path is untouched
+
+
+Verification:
+
+- `node --check ui/main.js` passes; `cargo check --locked` passes; `cargo test --locked` on Windows: 6 tests pass, including the update-pipeline stub-server test
+
+
+---
+
+
 # Git History
 
 Commit:

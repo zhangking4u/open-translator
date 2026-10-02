@@ -272,17 +272,14 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-const updateBanner = document.getElementById("update-banner");
-const updateText = document.getElementById("update-text");
-const updateInstall = document.getElementById("update-install");
+const appVersion = document.getElementById("app-version");
+const updateStatus = document.getElementById("update-status");
+const updateProgress = document.getElementById("update-progress");
+const updateNotes = document.getElementById("update-notes");
+const updateCheck = document.getElementById("update-check");
+const updateAction = document.getElementById("update-action");
 
-function showUpdate(text, canInstall, retry) {
-  updateBanner.hidden = false;
-  updateText.textContent = text;
-  updateInstall.hidden = !canInstall;
-  updateInstall.textContent = retry ? "重试" : "立即更新";
-  resize();
-}
+let updateState = { phase: "idle", version: "", canInstall: false, message: "" };
 
 function formatUpdateProgress(downloaded, total) {
   const megabytes = (value) => (value / 1000000).toFixed(0);
@@ -302,16 +299,57 @@ function formatUpdateProgress(downloaded, total) {
   return "正在下载更新：已下载 " + megabytes(downloaded) + " MB";
 }
 
-document.getElementById("update-dismiss").addEventListener("click", () => {
-  updateBanner.hidden = true;
+function renderUpdate() {
+  const { phase, version, canInstall } = updateState;
+  const hasVersion = version.length > 0;
+  const failed = phase === "install-error" || phase === "check-error";
+
+  updateNotes.hidden = !hasVersion || phase === "downloading";
+  updateNotes.textContent = canInstall ? "更新说明" : "前往下载";
+  updateCheck.hidden = phase === "downloading";
+  updateCheck.disabled = phase === "checking";
+  updateCheck.textContent = phase === "checking" ? "检查中…" : "检查更新";
+  updateAction.hidden = !(
+    canInstall &&
+    (phase === "available" || phase === "install-error" || phase === "check-error")
+  );
+  updateAction.textContent = phase === "install-error" ? "重试" : "更新";
+  updateProgress.hidden = phase !== "downloading";
+  updateStatus.hidden = phase === "idle";
+  updateStatus.classList.toggle("error", failed);
+
+  if (phase === "checking") {
+    updateStatus.textContent = "正在检查更新…";
+  } else if (phase === "latest") {
+    updateStatus.textContent = "已是最新版本";
+  } else if (phase === "available") {
+    updateStatus.textContent =
+      "发现新版本 v" + version + (canInstall ? "" : "，请前往发布页下载");
+  } else if (phase === "install-error") {
+    updateStatus.textContent = "更新失败：" + updateState.message;
+  } else if (phase === "check-error") {
+    updateStatus.textContent = "检查更新失败：" + updateState.message;
+  }
+
   resize();
+}
+
+updateCheck.addEventListener("click", () => {
+  updateState = { ...updateState, phase: "checking", message: "" };
+  renderUpdate();
+  invoke("check_update_now");
 });
 
-document.getElementById("update-install").addEventListener("click", () => {
+updateAction.addEventListener("click", () => {
+  updateState = { ...updateState, phase: "downloading", message: "" };
+  updateStatus.textContent = "正在准备更新…";
+  updateProgress.max = 100;
+  updateProgress.value = 0;
+  renderUpdate();
   invoke("start_update");
 });
 
-document.getElementById("update-open").addEventListener("click", () => {
+updateNotes.addEventListener("click", () => {
   invoke("open_release_page");
 });
 
@@ -366,7 +404,22 @@ async function openSettings() {
   document.getElementById("switch-updates").checked = settings.check_updates;
   document.getElementById("switch-extension").checked = settings.serve_extension;
   document.getElementById("config-path").textContent = settings.config_path ?? "";
+  appVersion.textContent = "当前版本 v" + settings.app_version;
 
+  if (updateState.phase === "idle") {
+    const state = await invoke("get_update_state");
+
+    if (state.version) {
+      updateState = {
+        phase: "available",
+        version: state.version,
+        canInstall: state.can_install,
+        message: "",
+      };
+    }
+  }
+
+  renderUpdate();
   showView("settings");
 }
 
@@ -463,24 +516,49 @@ listen("history-changed", () => {
   }
 });
 
+listen("update-checking", () => {
+  updateState = { ...updateState, phase: "checking", message: "" };
+  renderUpdate();
+});
+
 listen("update-available", (event) => {
-  showUpdate(
-    "发现新版本 v" + event.payload.version,
-    event.payload.can_install,
-    false
-  );
+  updateState = {
+    phase: "available",
+    version: event.payload.version,
+    canInstall: event.payload.can_install,
+    message: "",
+  };
+  renderUpdate();
+});
+
+listen("update-none", () => {
+  updateState = { phase: "latest", version: "", canInstall: false, message: "" };
+  renderUpdate();
+});
+
+listen("update-check-failed", (event) => {
+  updateState = { ...updateState, phase: "check-error", message: event.payload.message };
+  renderUpdate();
 });
 
 listen("update-progress", (event) => {
-  showUpdate(
-    formatUpdateProgress(event.payload.downloaded, event.payload.total),
-    false,
-    false
-  );
+  updateState = { ...updateState, phase: "downloading" };
+  updateStatus.hidden = false;
+  updateStatus.textContent = formatUpdateProgress(event.payload.downloaded, event.payload.total);
+
+  if (event.payload.total && event.payload.total > 0) {
+    updateProgress.max = event.payload.total;
+    updateProgress.value = event.payload.downloaded;
+  } else {
+    updateProgress.removeAttribute("value");
+  }
+
+  renderUpdate();
 });
 
 listen("update-error", (event) => {
-  showUpdate("更新失败：" + event.payload.message, true, true);
+  updateState = { ...updateState, phase: "install-error", message: event.payload.message };
+  renderUpdate();
 });
 
 showWaiting();

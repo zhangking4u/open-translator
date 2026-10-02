@@ -17,14 +17,6 @@
       </header>
 
       <div id="translator-view">
-        <section id="update-banner" class="update-banner" hidden>
-          <span id="update-text"></span>
-          <span class="spacer"></span>
-          <button id="update-dismiss" class="icon" title="忽略">×</button>
-          <button id="update-open">查看</button>
-          <button id="update-install" class="primary">立即更新</button>
-        </section>
-
         <div class="language-row">
           <select id="source-select" title="源语言"></select>
           <button id="swap" class="icon" title="交换语言（译文变为新原文）">⇄</button>
@@ -90,6 +82,17 @@
           <button id="open-config">打开配置目录</button>
           <span id="config-path" class="dim-text"></span>
         </div>
+
+        <p class="field-label">版本与更新</p>
+        <div class="row">
+          <span id="app-version" class="update-version"></span>
+          <span class="spacer"></span>
+          <button id="update-notes" hidden>更新说明</button>
+          <button id="update-check">检查更新</button>
+          <button id="update-action" class="primary" hidden>更新</button>
+        </div>
+        <p id="update-status" class="update-status" hidden></p>
+        <progress id="update-progress" max="100" value="0" hidden></progress>
       </div>
 
       <div id="history-view" hidden>

@@ -31,8 +31,10 @@ struct ServerPlan {
 
 #[derive(Clone)]
 struct UpdateInfo {
+    version: String,
     url: String,
     asset_url: Option<String>,
+    can_install: bool,
 }
 
 #[derive(Default)]
@@ -45,6 +47,12 @@ struct UpdateSlot {
 #[derive(Clone, serde::Serialize)]
 struct UpdatePayload {
     version: String,
+    can_install: bool,
+}
+
+#[derive(serde::Serialize)]
+struct UpdateStatePayload {
+    version: Option<String>,
     can_install: bool,
 }
 
@@ -89,6 +97,7 @@ struct SettingsPayload {
     check_updates: bool,
     serve_extension: bool,
     config_path: Option<String>,
+    app_version: String,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -270,6 +279,8 @@ fn main() {
             platform,
             start_update,
             open_release_page,
+            check_update_now,
+            get_update_state,
             replace_text,
             get_languages,
             get_language_state,
@@ -329,7 +340,7 @@ fn main() {
             );
 
             if config.check_updates.as_deref() != Some("false") {
-                spawn_update_check(handle.clone());
+                spawn_update_check(handle.clone(), false);
             }
 
             if show_on_start {
@@ -934,6 +945,7 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
         serve_extension: config.serve_extension.as_deref() != Some("false"),
         config_path: translator_core::paths::config_path()
             .map(|path| path.to_string_lossy().to_string()),
+        app_version: translator_core::update::current_version().to_string(),
     }
 }
 
@@ -1279,25 +1291,30 @@ fn resolve_prompt_style(
     }
 }
 
-fn spawn_update_check(app: AppHandle) {
+/// `manual` additionally reports the quiet outcomes (nothing found, check
+/// failure); the startup check stays silent about them.
+fn spawn_update_check(app: AppHandle, manual: bool) {
     std::thread::spawn(move || {
-        let Ok(client) = translator_core::translate::build_client() else {
-            return;
-        };
+        if manual {
+            let _ = app.emit("update-checking", ());
+        }
 
-        let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        else {
-            return;
-        };
+        let info = match run_update_check() {
+            Ok(Some(info)) => info,
+            Ok(None) => {
+                if manual {
+                    let _ = app.emit("update-none", ());
+                }
 
-        let Ok(Some(info)) = runtime.block_on(translator_core::update::check(
-            &client,
-            translator_core::update::current_version(),
-            &translator_core::update::api_url(),
-        )) else {
-            return;
+                return;
+            }
+            Err(message) => {
+                if manual {
+                    let _ = app.emit("update-check-failed", ErrorPayload { message });
+                }
+
+                return;
+            }
         };
 
         let asset_url = update_asset(&info).map(|asset| asset.url.clone());
@@ -1307,8 +1324,10 @@ fn spawn_update_check(app: AppHandle) {
             let slot = app.state::<UpdateSlot>();
 
             *slot.info.lock().unwrap() = Some(UpdateInfo {
+                version: info.version.clone(),
                 url: info.url.clone(),
                 asset_url,
+                can_install,
             });
 
             if let Some(item) = slot.item.lock().unwrap().as_ref() {
@@ -1325,6 +1344,22 @@ fn spawn_update_check(app: AppHandle) {
             },
         );
     });
+}
+
+fn run_update_check() -> Result<Option<ReleaseInfo>, String> {
+    let client = translator_core::translate::build_client()?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())?;
+
+    runtime
+        .block_on(translator_core::update::check(
+            &client,
+            translator_core::update::current_version(),
+            &translator_core::update::api_url(),
+        ))
+        .map_err(|error| error.to_string())
 }
 
 fn update_asset(info: &ReleaseInfo) -> Option<&translator_core::update::ReleaseAsset> {
@@ -1492,6 +1527,22 @@ fn open_release_page(app: AppHandle) {
 
     if let Some(url) = url {
         open_url(&url);
+    }
+}
+
+#[tauri::command]
+fn check_update_now(app: AppHandle) {
+    spawn_update_check(app, true);
+}
+
+#[tauri::command]
+fn get_update_state(app: AppHandle) -> UpdateStatePayload {
+    let slot = app.state::<UpdateSlot>();
+    let info = slot.info.lock().unwrap();
+
+    UpdateStatePayload {
+        version: info.as_ref().map(|info| info.version.clone()),
+        can_install: info.as_ref().map_or(false, |info| info.can_install),
     }
 }
 
