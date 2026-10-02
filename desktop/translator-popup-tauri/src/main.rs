@@ -1,6 +1,7 @@
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 
 mod capture;
+mod notify;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -8,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use translator_service::domain::prompt::PromptStyle;
 use translator_service::domain::translation::TranslationRequest;
@@ -167,12 +168,13 @@ fn main() {
 
             if let Err(error) = app.global_shortcut().register(hotkey_spec.as_str()) {
                 eprintln!("failed to register {hotkey_spec}: {error}");
-                let _ = app.emit(
-                    "error",
-                    ErrorPayload {
-                        message: format!("快捷键注册失败：{error}"),
-                    },
-                );
+                let message = format!("快捷键注册失败：{error}");
+
+                if window_hidden(&handle) {
+                    notify::show("OpenTranslator", &message);
+                }
+
+                let _ = app.emit("error", ErrorPayload { message });
             }
 
             spawn_model_startup(handle.clone(), model_path, auto_download, prompt_style);
@@ -243,6 +245,8 @@ fn spawn_model_startup(
     prompt_style: PromptStyle,
 ) {
     std::thread::spawn(move || {
+        let mut downloaded_now = false;
+
         if !model_path.is_file() {
             if !auto_download {
                 fail_model(
@@ -299,6 +303,8 @@ fn spawn_model_startup(
                 fail_model(&app, format!("模型下载失败：{error}"));
                 return;
             }
+
+            downloaded_now = true;
         }
 
         match LlamaCppEngine::load(
@@ -315,6 +321,14 @@ fn spawn_model_startup(
                 set_tooltip(&app, &tooltip_ready(&app));
                 let _ = app.emit("model-ready", ());
 
+                if downloaded_now && window_hidden(&app) {
+                    let hotkey = app.state::<TranslateConfig>().hotkey_label.clone();
+                    notify::show(
+                        "OpenTranslator",
+                        &format!("模型下载完成，按 {hotkey} 开始翻译"),
+                    );
+                }
+
                 let pending = app.state::<AppState>().pending.lock().unwrap().take();
                 if let Some(text) = pending {
                     translate_text(&app, text);
@@ -327,7 +341,16 @@ fn spawn_model_startup(
 
 fn fail_model(app: &AppHandle, message: String) {
     set_tooltip(app, &format!("OpenTranslator · {message}"));
-    let _ = app.emit("model-error", ErrorPayload { message });
+    let _ = app.emit(
+        "model-error",
+        ErrorPayload {
+            message: message.clone(),
+        },
+    );
+
+    if window_hidden(app) {
+        notify::show("OpenTranslator", &message);
+    }
 }
 
 fn trigger_translation(app: &AppHandle) {
@@ -394,8 +417,61 @@ fn translate_text(app: &AppHandle, text: String) {
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
+        place_near_cursor(app, &window);
         let _ = window.set_focus();
     }
+}
+
+fn window_hidden(app: &AppHandle) -> bool {
+    app.get_webview_window("main")
+        .and_then(|window| window.is_visible().ok())
+        .map(|visible| !visible)
+        .unwrap_or(true)
+}
+
+fn place_near_cursor(app: &AppHandle, window: &WebviewWindow) {
+    let Ok(cursor) = app.cursor_position() else {
+        return;
+    };
+
+    let Ok(size) = window.outer_size().or_else(|_| window.inner_size()) else {
+        return;
+    };
+
+    let Some(monitor) = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+
+    let work = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let margin = (12.0 * scale) as i32;
+    let offset = (18.0 * scale) as i32;
+
+    let work_right = work.position.x + work.size.width as i32;
+    let work_bottom = work.position.y + work.size.height as i32;
+
+    let mut x = cursor.x as i32 + margin;
+    let mut y = cursor.y as i32 + offset;
+
+    // Slide the card above the cursor when it would overflow the bottom edge.
+    if y + size.height as i32 + margin > work_bottom {
+        y = cursor.y as i32 - size.height as i32 - margin;
+    }
+
+    let min_x = work.position.x + margin;
+    let min_y = work.position.y + margin;
+    let max_x = work_right - size.width as i32 - margin;
+    let max_y = work_bottom - size.height as i32 - margin;
+
+    x = x.clamp(min_x, max_x.max(min_x));
+    y = y.clamp(min_y, max_y.max(min_y));
+
+    let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
 fn set_tooltip(app: &AppHandle, text: &str) {
