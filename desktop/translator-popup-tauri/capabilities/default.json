@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Capability for the main translation card",
+  "windows": ["main"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

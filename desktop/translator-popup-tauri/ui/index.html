@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenTranslator</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="card">
+      <header class="titlebar" data-tauri-drag-region>
+        <span class="dot" id="dot"></span>
+        <span class="title" data-tauri-drag-region>OpenTranslator</span>
+        <span class="spacer" data-tauri-drag-region></span>
+        <button id="close" class="icon" title="隐藏（Esc）">×</button>
+      </header>
+
+      <section id="source" class="source" hidden></section>
+
+      <section id="translation" class="translation">
+        <p class="hint">等待划词</p>
+        <p class="sub">按 Ctrl+Alt+T 翻译选中文本</p>
+      </section>
+
+      <footer class="footer">
+        <span id="status" class="status"></span>
+        <span class="spacer"></span>
+        <button id="copy" class="primary" disabled>复制译文</button>
+      </footer>
+    </main>
+    <script src="main.js"></script>
+  </body>
+</html>
