@@ -1455,6 +1455,35 @@ Verification:
 ---
 
 
+## Next Steps: Tauri Client Completion (after v0.2.2)
+
+
+Remaining work, in the agreed order:
+
+1. Linux real-machine verification (only compilation is CI-gated so far, no local Linux toolchain)
+   - Install the deb on Ubuntu 24.04 on both Wayland and X11: `open-translator-setup` (GNOME shortcut `<bin> --translate` plus the `--autostart` entry), single-instance forwarding, tray icon (GNOME may need the AppIndicator extension), `wl-paste` selection capture, model download, cursor placement / pin / bottom clamp, the transparent floating card, `notify-send` notifications and the desktop entry/icon
+   - Check `apt install` in-place upgrades over the previous deb
+2. macOS verification
+   - Build the dmg from the Tauri client; confirm the app starts in the tray/menu bar (LSUIElement), the Accessibility prompt for Cmd+C capture, the transparent floating card, the LaunchAgent (`--autostart`) and the browser fallback for updates
+3. Release migration notes
+   - Installed v0.2.x eframe clients cannot one-click update to the Tauri package (their updater requires `translator-popup-desktop.exe` in the zip); release notes must tell users to download the new zip and run `install.ps1` once. Tauri→Tauri one-click updates are already verified
+4. Legacy client cleanup, once v0.3.0 proves the Tauri client
+   - Remove `desktop/translator-popup-desktop` (eframe) and/or `desktop/translator-popup` (GTK), drop their CI jobs (`desktop-popup`, `desktop`) and update AGENTS/the release skill; until then they remain buildable
+5. Docs and tests
+   - README/AGENTS/release skill still describe the eframe client as shipped in places; switch them to the Tauri client
+   - Port the Windows update-pipeline test (`run_update_install` with a stub server) to the Tauri crate and extract the cursor/work-area clamping into unit-testable helpers
+   - Add frontend static checks to CI (`node --check ui/main.js`, JSON validation of the tauri configs)
+6. Known issues
+   - Local incremental builds can mis-embed `OPEN_TRANSLATOR_VERSION` (the update banner shows even for newer builds); clean CI/release builds are correct
+   - Windows keeps the opaque full-window card for now (tao does not use `WS_EX_LAYERED` there, so the transparent path was not enabled on Windows)
+   - Replace-in-place, notifications and tray/menu behavior on Linux are untested until (1)
+7. Release v0.3.0
+   - Cut the tag with the release skill; verify the three assets plus the Tauri→Tauri one-click update round-trip
+
+
+---
+
+
 # Git History
 
 Commit:
