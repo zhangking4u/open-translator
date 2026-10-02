@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Install the OpenTranslator macOS desktop client for the current user:
-#   - builds the release binaries (core service + popup)
-#   - creates ~/Applications/OpenTranslator.app (both binaries inside)
-#   - installs a LaunchAgent so the popup starts at login
+# Install the OpenTranslator macOS desktop client (Tauri) for the current user:
+#   - builds the release client (the engine is embedded)
+#   - creates ~/Applications/OpenTranslator.app
+#   - installs a LaunchAgent so the client starts at login
 #
 # Usage: ./install-macos.sh [--uninstall]
 #
@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="OpenTranslator"
 APP_DIR="$HOME/Applications/$APP_NAME.app"
-BIN_NAME="translator-popup-desktop"
+BIN_NAME="translator-popup-tauri"
 LABEL="io.github.opentranslator.popup"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
@@ -27,15 +27,13 @@ if [ "${1:-}" = "--uninstall" ]; then
     exit 0
 fi
 
-echo "Building release binaries..."
-(cd "$REPO_ROOT/core/translator-service" && cargo build --release)
-(cd "$SCRIPT_DIR/translator-popup-desktop" && cargo build --release)
+echo "Building the release client..."
+(cd "$SCRIPT_DIR/translator-popup-tauri" && cargo build --release)
 
-BIN="$SCRIPT_DIR/translator-popup-desktop/target/release/$BIN_NAME"
-CORE_BIN="$REPO_ROOT/core/translator-service/target/release/translator-service"
+BIN="$SCRIPT_DIR/translator-popup-tauri/target/release/$BIN_NAME"
 
-if [ ! -x "$BIN" ] || [ ! -x "$CORE_BIN" ]; then
-    echo "release binaries missing after build" >&2
+if [ ! -x "$BIN" ]; then
+    echo "release binary missing after build: $BIN" >&2
     exit 1
 fi
 
@@ -47,7 +45,6 @@ fi
 
 mkdir -p "$APP_DIR/Contents/MacOS"
 cp "$BIN" "$APP_DIR/Contents/MacOS/$APP_NAME"
-cp "$CORE_BIN" "$APP_DIR/Contents/MacOS/translator-service"
 cp "$SCRIPT_DIR/../packaging/macos/Info.plist" "$APP_DIR/Contents/Info.plist"
 
 mkdir -p "$HOME/Library/LaunchAgents"
@@ -78,5 +75,6 @@ echo "  app:     $APP_DIR"
 echo "  agent:   $PLIST"
 echo
 echo "Select text and press Ctrl+Alt+T (Ctrl+C capture). Esc hides the window."
+echo "Tray menu: 显示窗口 / 立即翻译 / 历史… / 设置… / 退出."
 echo "First run: allow OpenTranslator under System Settings -> Privacy & Security -> Accessibility."
 echo "Logs: ~/Library/Logs/open-translator/"

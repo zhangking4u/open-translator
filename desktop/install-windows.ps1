@@ -1,6 +1,7 @@
-# Install the OpenTranslator Windows desktop client for the current user:
-#   - builds the release binaries (core service + popup)
-#   - adds a shortcut to the Startup folder so the popup starts with Windows
+# Install the OpenTranslator Windows desktop client (Tauri) for the current
+# user:
+#   - builds the release client (the engine is embedded)
+#   - adds a shortcut to the Startup folder so the client starts with Windows
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
@@ -12,14 +13,12 @@ param([switch]$Uninstall, [switch]$NoStart)
 $ErrorActionPreference = "Stop"
 
 $DesktopDir = $PSScriptRoot
-$RepoRoot = Split-Path -Parent $DesktopDir
-$PopupManifest = Join-Path $DesktopDir "translator-popup-desktop\Cargo.toml"
-$CoreManifest = Join-Path $RepoRoot "core\translator-service\Cargo.toml"
+$PopupManifest = Join-Path $DesktopDir "translator-popup-tauri\Cargo.toml"
 # Keep the cargo target dir short: MSBuild FileTracker (used while building
 # llama.cpp for the embedded engine) fails with MSB6003 when the repo path plus
 # <target>\release\build\llama-cpp-sys-2-*\out\build\CMakeScratch\... is too deep.
 $BuildDir = Join-Path $env:LOCALAPPDATA "OpenTranslator\build"
-$Exe = Join-Path $BuildDir "release\translator-popup-desktop.exe"
+$Exe = Join-Path $BuildDir "release\translator-popup-tauri.exe"
 $Startup = [Environment]::GetFolderPath("Startup")
 $Link = Join-Path $Startup "OpenTranslator.lnk"
 
@@ -34,12 +33,14 @@ if ($Uninstall) {
 }
 
 # Windows locks a running executable against overwrite, and MSBuild cannot
-# relink the binary while it runs, so stop any running instance before the
-# build; it can be started again (or comes back at next login).
-$running = Get-Process -Name "translator-popup-desktop" -ErrorAction SilentlyContinue
-if ($running) {
-    Write-Host "Stopping the running OpenTranslator instance..."
-    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+# relink the binary while it runs, so stop any running instance (Tauri or the
+# legacy eframe client) before the build; it comes back at next login.
+foreach ($name in "translator-popup-tauri", "translator-popup-desktop") {
+    $running = Get-Process -Name $name -ErrorAction SilentlyContinue
+    if ($running) {
+        Write-Host "Stopping the running OpenTranslator instance ($name)..."
+        $running | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # The old process can keep the image locked while it finishes exiting; wait
@@ -95,10 +96,6 @@ if (-not $env:LIBCLANG_PATH) {
 # PowerShell 5.1 turns that into a terminating NativeCommandError, so relax it
 # around the native calls and check their exit codes instead.
 $ErrorActionPreference = "Continue"
-cargo build --release --manifest-path $CoreManifest
-if ($LASTEXITCODE -ne 0) {
-    throw "cargo build failed with exit code $LASTEXITCODE`: $CoreManifest"
-}
 cargo build --release --manifest-path $PopupManifest
 if ($LASTEXITCODE -ne 0) {
     throw "cargo build failed with exit code $LASTEXITCODE`: $PopupManifest"
@@ -135,4 +132,4 @@ Write-Host "  shortcut: $Link"
 Write-Host "  binary:   $Exe"
 Write-Host ""
 Write-Host "Select text anywhere and press Ctrl+Alt+T. The app starts with Windows,"
-Write-Host "hides on Esc/close, and translates through the local service (started on demand)."
+Write-Host "hides on Esc/close, and translates with the embedded model (tray menu: 历史/设置)."

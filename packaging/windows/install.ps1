@@ -2,12 +2,22 @@ param([switch]$Uninstall, [switch]$NoStart)
 
 $ErrorActionPreference = "Stop"
 
-$Source = Join-Path $PSScriptRoot "translator-popup-desktop.exe"
+$Source = Join-Path $PSScriptRoot "translator-popup-tauri.exe"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\OpenTranslator"
-$Exe = Join-Path $InstallDir "translator-popup-desktop.exe"
+$Exe = Join-Path $InstallDir "translator-popup-tauri.exe"
+$LegacyExe = Join-Path $InstallDir "translator-popup-desktop.exe"
 $Startup = Join-Path ([Environment]::GetFolderPath("Startup")) "OpenTranslator.lnk"
 
+function Stop-RunningApp {
+    # Both the Tauri client and the legacy eframe client block the copy.
+    foreach ($name in "translator-popup-tauri", "translator-popup-desktop") {
+        Get-Process -Name $name -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+}
+
 if ($Uninstall) {
+    Stop-RunningApp
     Remove-Item $Startup -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue
     Write-Host "OpenTranslator uninstalled."
@@ -15,16 +25,12 @@ if ($Uninstall) {
 }
 
 if (-not (Test-Path $Source)) {
-    throw "translator-popup-desktop.exe not found next to this script"
+    throw "translator-popup-tauri.exe not found next to this script"
 }
 
 # Windows locks a running executable against overwrite, so stop any running
 # instance first; it can be started again (or comes back at next login).
-$running = Get-Process -Name "translator-popup-desktop" -ErrorAction SilentlyContinue
-if ($running) {
-    Write-Host "Stopping the running OpenTranslator instance..."
-    $running | Stop-Process -Force -ErrorAction SilentlyContinue
-}
+Stop-RunningApp
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
@@ -41,6 +47,11 @@ while ($true) {
         }
         Start-Sleep -Milliseconds 200
     }
+}
+
+# Upgrading from the eframe client: drop its binary once the new one is in place.
+if (Test-Path $LegacyExe) {
+    Remove-Item $LegacyExe -Force -ErrorAction SilentlyContinue
 }
 
 $shell = New-Object -ComObject WScript.Shell

@@ -11,11 +11,12 @@ OpenTranslator (Windows)
 2. 首次运行会自动从 ModelScope 下载模型（约 1.1GB，支持断点续传与校验），
    窗口会显示下载进度。
 
-3. 用法：任意应用选中文字，按 Ctrl+Alt+T 弹出翻译；托盘图标提供
-   显示窗口 / 立即翻译 / 退出。
+3. 用法：任意应用选中文字，按 Ctrl+Alt+T 弹出翻译；托盘右键菜单提供
+   显示窗口 / 立即翻译选中文本 / 历史… / 设置… / 有新版本 / 退出。
 
-4. 设置：%APPDATA%\open-translator\config（model_path、prompt_style、
-   hotkey、source、target、serve_extension、auto_download）。
+4. 设置：托盘右键 →「设置…」（快捷键、模型路径、auto_download、
+   check_updates、serve_extension，以及打开配置目录），也可直接编辑
+   %APPDATA%\open-translator\config；设置页与托盘均基于 Tauri 客户端。
 
 5. 卸载：powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
    （或删除上面的程序目录与启动快捷方式）
