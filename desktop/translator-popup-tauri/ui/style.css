@@ -192,6 +192,22 @@ button.icon.active {
   color: var(--accent);
 }
 
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(79, 124, 255, 0.14);
+  border-radius: 10px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.update-banner button {
+  font-weight: 400;
+}
+
 .page-head {
   display: flex;
   align-items: center;

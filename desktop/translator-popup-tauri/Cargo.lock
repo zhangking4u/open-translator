@@ -4834,6 +4834,7 @@ name = "translator-popup-tauri"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "axum",
  "enigo",
  "mac-notification-sys",
  "serde",

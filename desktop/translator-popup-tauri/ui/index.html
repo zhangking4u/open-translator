@@ -17,6 +17,14 @@
       </header>
 
       <div id="translator-view">
+        <section id="update-banner" class="update-banner" hidden>
+          <span id="update-text"></span>
+          <span class="spacer"></span>
+          <button id="update-dismiss" class="icon" title="忽略">×</button>
+          <button id="update-open">查看</button>
+          <button id="update-install" class="primary">立即更新</button>
+        </section>
+
         <section id="source" class="source" hidden></section>
 
         <section id="translation" class="translation">
@@ -27,6 +35,7 @@
         <footer class="footer">
           <span id="status" class="status"></span>
           <span class="spacer"></span>
+          <button id="replace" hidden>替换原文</button>
           <button id="retranslate" hidden>重新翻译</button>
           <button id="copy" class="primary" disabled>复制译文</button>
         </footer>

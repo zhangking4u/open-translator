@@ -12,12 +12,14 @@ const translation = document.getElementById("translation");
 const status = document.getElementById("status");
 const copy = document.getElementById("copy");
 const retranslate = document.getElementById("retranslate");
+const replace = document.getElementById("replace");
 const pin = document.getElementById("pin");
 const close = document.getElementById("close");
 
 let current = "";
 let lastSource = "";
 let streaming = false;
+let replaceable = false;
 let pinned = false;
 let view = "translator";
 
@@ -55,6 +57,7 @@ function showWaiting() {
   source.hidden = true;
   source.textContent = "";
   retranslate.hidden = true;
+  replace.hidden = true;
   setCopyEnabled(false);
   render('<p class="hint">等待划词</p><p class="sub">按 Ctrl+Alt+T 翻译选中文本</p>');
 }
@@ -64,15 +67,18 @@ function showEmpty() {
   source.hidden = true;
   source.textContent = "";
   retranslate.hidden = true;
+  replace.hidden = true;
   setCopyEnabled(false);
   render('<p class="hint">未选中文本</p><p class="sub">请在其它应用中选中要翻译的内容</p>');
 }
 
-function showSource(text) {
+function showSource(text, canReplace) {
   lastSource = text;
+  replaceable = canReplace;
   source.hidden = false;
   source.textContent = text;
   retranslate.hidden = false;
+  replace.hidden = !replaceable;
   resize();
 }
 
@@ -167,6 +173,20 @@ retranslate.addEventListener("click", () => {
   invoke("retranslate");
 });
 
+replace.addEventListener("click", async () => {
+  if (!current) {
+    return;
+  }
+
+  try {
+    await invoke("replace_text", { text: current });
+    setStatus("已替换");
+    window.setTimeout(() => setStatus(""), 1500);
+  } catch (message) {
+    setStatus(String(message));
+  }
+});
+
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") {
     return;
@@ -177,6 +197,49 @@ window.addEventListener("keydown", (event) => {
   } else {
     invoke("hide_window");
   }
+});
+
+const updateBanner = document.getElementById("update-banner");
+const updateText = document.getElementById("update-text");
+const updateInstall = document.getElementById("update-install");
+
+function showUpdate(text, canInstall, retry) {
+  updateBanner.hidden = false;
+  updateText.textContent = text;
+  updateInstall.hidden = !canInstall;
+  updateInstall.textContent = retry ? "重试" : "立即更新";
+  resize();
+}
+
+function formatUpdateProgress(downloaded, total) {
+  const megabytes = (value) => (value / 1000000).toFixed(0);
+
+  if (total && total > 0) {
+    return (
+      "正在下载更新：" +
+      Math.round((downloaded / total) * 100) +
+      "%（" +
+      megabytes(downloaded) +
+      "/" +
+      megabytes(total) +
+      " MB）"
+    );
+  }
+
+  return "正在下载更新：已下载 " + megabytes(downloaded) + " MB";
+}
+
+document.getElementById("update-dismiss").addEventListener("click", () => {
+  updateBanner.hidden = true;
+  resize();
+});
+
+document.getElementById("update-install").addEventListener("click", () => {
+  invoke("start_update");
+});
+
+document.getElementById("update-open").addEventListener("click", () => {
+  invoke("open_release_page");
 });
 
 document.getElementById("settings-back").addEventListener("click", () => showView("translator"));
@@ -276,7 +339,7 @@ document.getElementById("history-clear").addEventListener("click", async () => {
 });
 
 listen("source", (event) => {
-  showSource(event.payload.text);
+  showSource(event.payload.text, event.payload.replaceable === true);
 });
 
 listen("delta", (event) => {
@@ -321,6 +384,26 @@ listen("history-changed", () => {
   if (view === "history") {
     renderHistory();
   }
+});
+
+listen("update-available", (event) => {
+  showUpdate(
+    "发现新版本 v" + event.payload.version,
+    event.payload.can_install,
+    false
+  );
+});
+
+listen("update-progress", (event) => {
+  showUpdate(
+    formatUpdateProgress(event.payload.downloaded, event.payload.total),
+    false,
+    false
+  );
+});
+
+listen("update-error", (event) => {
+  showUpdate("更新失败：" + event.payload.message, true, true);
 });
 
 showWaiting();

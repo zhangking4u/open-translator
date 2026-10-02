@@ -2,12 +2,14 @@
 
 mod capture;
 mod notify;
+mod server;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
+use translator_core::update::ReleaseInfo;
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -21,12 +23,38 @@ const DEFAULT_N_CTX: u32 = 4096;
 
 struct InitialView(Mutex<Option<String>>);
 
+#[derive(Clone)]
+struct ServerPlan {
+    bind_addr: String,
+    model_name: String,
+}
+
+#[derive(Clone)]
+struct UpdateInfo {
+    url: String,
+    asset_url: Option<String>,
+}
+
+#[derive(Default)]
+struct UpdateSlot {
+    item: Mutex<Option<MenuItem<tauri::Wry>>>,
+    info: Mutex<Option<UpdateInfo>>,
+    running: Mutex<bool>,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct UpdatePayload {
+    version: String,
+    can_install: bool,
+}
+
 struct AppState {
     engine: Mutex<Option<Arc<LlamaCppEngine>>>,
     pending: Mutex<Option<String>>,
     last_text: Mutex<Option<String>>,
     history: Mutex<Vec<HistoryEntry>>,
     pinned: Mutex<bool>,
+    replace_window: Mutex<Option<isize>>,
 }
 
 #[derive(Clone)]
@@ -49,6 +77,7 @@ struct SettingsPayload {
 #[derive(Clone, serde::Serialize)]
 struct SourcePayload {
     text: String,
+    replaceable: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -112,6 +141,16 @@ fn main() {
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_HOTKEY.to_string());
 
+    let serve_extension = config.serve_extension.as_deref() != Some("false");
+    let server_plan = serve_extension.then(|| ServerPlan {
+        bind_addr: translator_core::services::bind_addr_from_service_url(&args.service_url)
+            .unwrap_or_else(|| "http://127.0.0.1:17890".to_string()),
+        model_name: model_path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default(),
+    });
+
     let show_on_start = !args.autostart || args.stdin || args.settings || args.history;
     let initial_view = if args.settings {
         Some("settings".to_string())
@@ -138,9 +177,11 @@ fn main() {
             last_text: Mutex::new(None),
             history: Mutex::new(translator_core::history::load()),
             pinned: Mutex::new(false),
+            replace_window: Mutex::new(None),
         })
         .manage(Mutex::new(translate_config))
         .manage(InitialView(Mutex::new(initial_view)))
+        .manage(UpdateSlot::default())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main(app);
         }))
@@ -168,27 +209,43 @@ fn main() {
             load_history_entry,
             clear_history,
             set_pinned,
-            get_initial_view
+            get_initial_view,
+            start_update,
+            open_release_page,
+            replace_text
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
 
+            let show_item = MenuItem::with_id(&handle, "show", "显示窗口", true, None::<&str>)?;
+            let translate_item = MenuItem::with_id(
+                &handle,
+                "translate",
+                "立即翻译选中文本",
+                true,
+                None::<&str>,
+            )?;
+            let history_item =
+                MenuItem::with_id(&handle, "history", "历史…", true, None::<&str>)?;
+            let settings_item =
+                MenuItem::with_id(&handle, "settings", "设置…", true, None::<&str>)?;
+            let update_item =
+                MenuItem::with_id(&handle, "update", "有新版本可用", false, None::<&str>)?;
+            let quit_item = MenuItem::with_id(&handle, "quit", "退出", true, None::<&str>)?;
+
             let menu = Menu::with_items(
                 &handle,
                 &[
-                    &MenuItem::with_id(&handle, "show", "显示窗口", true, None::<&str>)?,
-                    &MenuItem::with_id(
-                        &handle,
-                        "translate",
-                        "立即翻译选中文本",
-                        true,
-                        None::<&str>,
-                    )?,
-                    &MenuItem::with_id(&handle, "history", "历史…", true, None::<&str>)?,
-                    &MenuItem::with_id(&handle, "settings", "设置…", true, None::<&str>)?,
-                    &MenuItem::with_id(&handle, "quit", "退出", true, None::<&str>)?,
+                    &show_item,
+                    &translate_item,
+                    &history_item,
+                    &settings_item,
+                    &update_item,
+                    &quit_item,
                 ],
             )?;
+
+            *app.state::<UpdateSlot>().item.lock().unwrap() = Some(update_item);
 
             TrayIconBuilder::with_id("main")
                 .icon(Image::new_owned(make_icon_rgba(), 32, 32))
@@ -206,6 +263,17 @@ fn main() {
                         show_main(app);
                         let _ = app.emit("open-settings", ());
                     }
+                    "update" => {
+                        let info = app.state::<UpdateSlot>().info.lock().unwrap().clone();
+
+                        if let Some(info) = info {
+                            if info.asset_url.is_some() && cfg!(target_os = "windows") {
+                                start_update_install(app);
+                            } else {
+                                open_url(&info.url);
+                            }
+                        }
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -222,7 +290,17 @@ fn main() {
                 let _ = app.emit("error", ErrorPayload { message });
             }
 
-            spawn_model_startup(handle.clone(), model_path, auto_download, prompt_style);
+            spawn_model_startup(
+                handle.clone(),
+                model_path,
+                auto_download,
+                prompt_style,
+                server_plan,
+            );
+
+            if config.check_updates.as_deref() != Some("false") {
+                spawn_update_check(handle.clone());
+            }
 
             if show_on_start {
                 show_main(&handle);
@@ -291,6 +369,7 @@ fn spawn_model_startup(
     model_path: PathBuf,
     auto_download: bool,
     prompt_style: PromptStyle,
+    server_plan: Option<ServerPlan>,
 ) {
     std::thread::spawn(move || {
         let mut downloaded_now = false;
@@ -361,9 +440,25 @@ fn spawn_model_startup(
             DEFAULT_N_CTX,
         ) {
             Ok(engine) => {
+                let engine = Arc::new(engine);
+
                 {
                     let state = app.state::<AppState>();
-                    *state.engine.lock().unwrap() = Some(Arc::new(engine));
+                    *state.engine.lock().unwrap() = Some(Arc::clone(&engine));
+                }
+
+                if let Some(plan) = server_plan {
+                    if let Err(error) =
+                        server::start(engine, plan.bind_addr, plan.model_name)
+                    {
+                        let message = format!("扩展接口启动失败：{error}");
+
+                        if window_hidden(&app) {
+                            notify::show("OpenTranslator", &message);
+                        }
+
+                        let _ = app.emit("error", ErrorPayload { message });
+                    }
                 }
 
                 set_tooltip(&app, &tooltip_ready(&app));
@@ -410,18 +505,23 @@ fn trigger_translation(app: &AppHandle) {
     show_main(app);
 
     let app = app.clone();
-    std::thread::spawn(move || match capture::capture_selection() {
-        Ok(text) if text.trim().is_empty() => {
-            let _ = app.emit("empty", ());
-        }
-        Ok(text) => {
-            translate_text(&app, text);
-        }
-        Err(error) if error == "no selected text found" => {
-            let _ = app.emit("empty", ());
-        }
-        Err(error) => {
-            let _ = app.emit("error", ErrorPayload { message: error });
+    std::thread::spawn(move || {
+        let window = capture::foreground_window();
+        *app.state::<AppState>().replace_window.lock().unwrap() = window;
+
+        match capture::capture_selection() {
+            Ok(text) if text.trim().is_empty() => {
+                let _ = app.emit("empty", ());
+            }
+            Ok(text) => {
+                translate_text(&app, text);
+            }
+            Err(error) if error == "no selected text found" => {
+                let _ = app.emit("empty", ());
+            }
+            Err(error) => {
+                let _ = app.emit("error", ErrorPayload { message: error });
+            }
         }
     });
 }
@@ -440,8 +540,21 @@ fn translate_text(app: &AppHandle, text: String) {
         .lock()
         .unwrap()
         .clone();
+    let replaceable = cfg!(target_os = "windows")
+        && app
+            .state::<AppState>()
+            .replace_window
+            .lock()
+            .unwrap()
+            .is_some();
     let app = app.clone();
-    let _ = app.emit("source", SourcePayload { text: text.clone() });
+    let _ = app.emit(
+        "source",
+        SourcePayload {
+            text: text.clone(),
+            replaceable,
+        },
+    );
 
     std::thread::spawn(move || {
         let request = TranslationRequest {
@@ -723,10 +836,35 @@ fn load_history_entry(app: AppHandle, index: usize) -> Result<(), String> {
     translator_core::settings::persist_source(&entry.source);
     translator_core::settings::persist_target(&entry.target);
 
-    let _ = app.emit("source", SourcePayload { text: entry.text });
+    let _ = app.emit(
+        "source",
+        SourcePayload {
+            text: entry.text,
+            replaceable: false,
+        },
+    );
     let _ = app.emit("done", entry.translation);
 
     Ok(())
+}
+
+#[tauri::command]
+fn replace_text(app: AppHandle, text: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let window = *app.state::<AppState>().replace_window.lock().unwrap();
+        let Some(window) = window else {
+            return Err("没有可替换的原窗口".to_string());
+        };
+
+        capture::replace_selection(window, &text)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, text);
+        Err("替换原文仅支持 Windows".to_string())
+    }
 }
 
 #[tauri::command]
@@ -781,6 +919,215 @@ fn resolve_prompt_style(
     match value {
         Some(value) => PromptStyle::parse(&value),
         None => Ok(PromptStyle::HunYuanMt),
+    }
+}
+
+fn spawn_update_check(app: AppHandle) {
+    std::thread::spawn(move || {
+        let Ok(client) = translator_core::translate::build_client() else {
+            return;
+        };
+
+        let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            return;
+        };
+
+        let Ok(Some(info)) = runtime.block_on(translator_core::update::check(
+            &client,
+            translator_core::update::current_version(),
+            &translator_core::update::api_url(),
+        )) else {
+            return;
+        };
+
+        let asset_url = update_asset(&info).map(|asset| asset.url.clone());
+        let can_install = asset_url.is_some() && cfg!(target_os = "windows");
+
+        {
+            let slot = app.state::<UpdateSlot>();
+
+            *slot.info.lock().unwrap() = Some(UpdateInfo {
+                url: info.url.clone(),
+                asset_url,
+            });
+
+            if let Some(item) = slot.item.lock().unwrap().as_ref() {
+                let _ = item.set_text(format!("有新版本 v{}", info.version));
+                let _ = item.set_enabled(true);
+            }
+        }
+
+        let _ = app.emit(
+            "update-available",
+            UpdatePayload {
+                version: info.version,
+                can_install,
+            },
+        );
+    });
+}
+
+fn update_asset(info: &ReleaseInfo) -> Option<&translator_core::update::ReleaseAsset> {
+    info.assets
+        .iter()
+        .find(|asset| asset.name == "OpenTranslator-windows-x64.zip")
+}
+
+fn start_update_install(app: &AppHandle) {
+    let slot = app.state::<UpdateSlot>();
+
+    {
+        let mut running = slot.running.lock().unwrap();
+
+        if *running {
+            return;
+        }
+
+        *running = true;
+    }
+
+    let Some(asset_url) = slot
+        .info
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|info| info.asset_url.clone())
+    else {
+        return;
+    };
+
+    let app = app.clone();
+
+    #[cfg(target_os = "windows")]
+    std::thread::spawn(move || match run_update_install(&app, &asset_url) {
+        Ok(()) => {
+            let _ = app.emit("update-installed", ());
+            app.exit(0);
+        }
+        Err(error) => {
+            *app.state::<UpdateSlot>().running.lock().unwrap() = false;
+
+            if window_hidden(&app) {
+                notify::show("OpenTranslator", &error);
+            }
+
+            let _ = app.emit("update-error", ErrorPayload { message: error });
+        }
+    });
+
+    #[cfg(not(target_os = "windows"))]
+    let _ = (app, asset_url);
+}
+
+/// Downloads the release package, extracts it, verifies the installer and the
+/// Tauri binary and starts `install.ps1`, which replaces this build and
+/// restarts the new one in the tray.
+#[cfg(target_os = "windows")]
+fn run_update_install(app: &AppHandle, asset_url: &str) -> Result<(), String> {
+    let client = translator_core::models::download_client().map_err(|error| error.to_string())?;
+
+    let dir = std::env::temp_dir().join("open-translator-update");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|error| format!("创建更新目录失败：{error}"))?;
+
+    let archive = dir.join("OpenTranslator-windows-x64.zip");
+    let progress_app = app.clone();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| format!("初始化更新下载失败：{error}"))?;
+
+    runtime
+        .block_on(translator_core::models::download(
+            &client,
+            asset_url,
+            &archive,
+            None,
+            move |downloaded, total| {
+                let _ = progress_app.emit(
+                    "update-progress",
+                    ProgressPayload { downloaded, total },
+                );
+            },
+        ))
+        .map_err(|error| format!("下载更新失败：{error}"))?;
+
+    let package = dir.join("package");
+    let expand = format!(
+        "Expand-Archive -LiteralPath {} -DestinationPath {} -Force",
+        ps_quote(&archive.to_string_lossy()),
+        ps_quote(&package.to_string_lossy())
+    );
+
+    let status = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+        ])
+        .arg(&expand)
+        .status()
+        .map_err(|error| format!("解压更新失败：{error}"))?;
+
+    if !status.success() {
+        return Err("解压更新失败".to_string());
+    }
+
+    let installer = package.join("install.ps1");
+    let exe = package.join("translator-popup-tauri.exe");
+
+    if !installer.is_file() || !exe.is_file() {
+        return Err("更新包内容不完整（该版本尚未包含 Tauri 客户端）".to_string());
+    }
+
+    std::process::Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&installer)
+        .spawn()
+        .map_err(|error| format!("启动安装程序失败：{error}"))?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn ps_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn open_url(url: &str) {
+    #[cfg(target_os = "windows")]
+    let (program, args): (&str, Vec<&str>) = ("cmd", vec!["/C", "start", "", url]);
+    #[cfg(target_os = "macos")]
+    let (program, args): (&str, Vec<&str>) = ("open", vec![url]);
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let (program, args): (&str, Vec<&str>) = ("xdg-open", vec![url]);
+
+    let _ = std::process::Command::new(program).args(args).spawn();
+}
+
+#[tauri::command]
+fn start_update(app: AppHandle) {
+    start_update_install(&app);
+}
+
+#[tauri::command]
+fn open_release_page(app: AppHandle) {
+    let url = app
+        .state::<UpdateSlot>()
+        .info
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|info| info.url.clone());
+
+    if let Some(url) = url {
+        open_url(&url);
     }
 }
 
