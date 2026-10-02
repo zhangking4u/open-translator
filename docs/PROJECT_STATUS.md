@@ -539,6 +539,14 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Verified live via UI Automation and unit tests (translator-core 60, desktop 15)
 
 
+## Tauri Client Migration (post-v0.2.2)
+
+
+- `desktop/translator-popup-tauri` (Tauri v2 + HTML/CSS/JS) now mirrors the eframe client: tray/hotkey/single-instance, cursor placement, streaming translation, notifications, history/pin/settings pages, extension HTTP API, update banner and Windows one-click update, replace-in-place
+- Linux packaging switched to it (`make-deb.sh` ships the Tauri binary; `open-translator-setup` writes the shortcut `--translate` plus the `--autostart` entry); CI gained an ubuntu Tauri build job and the release Linux job builds it
+- Windows behavior verified live per slice; Linux compilation is gated by the new CI job (no local Linux toolchain)
+
+
 ## Settings Page (post-v0.2.2)
 
 

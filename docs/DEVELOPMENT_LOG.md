@@ -1436,6 +1436,25 @@ Follow-up (layout):
 ---
 
 
+## Milestone: Tauri Client Migration (post-v0.2.2)
+
+
+Added:
+
+- New `desktop/translator-popup-tauri` crate (Tauri v2 + plain HTML/CSS/JS): shell (tray/hotkey/single-instance/`--autostart`) → engine/capture/streaming → history, pin and settings pages → extension server, update check/one-click update and replace-in-place; every slice verified live on Windows (UIA against the real WebView via `--force-renderer-accessibility`, `--print`, and a stub release server)
+- Linux switched to the Tauri client: `packaging/linux/make-deb.sh` packages it as `/usr/lib/open-translator/translator-popup` (runtime deps webkit2gtk-4.1 / gtk3 / ayatana-appindicator), `open-translator-setup` registers the GNOME shortcut as `<bin> --translate` and writes a `~/.config/autostart` entry, and the Tauri single-instance plugin forwards `--translate`/`--settings`/`--history` to the resident app (Wayland-friendly because the shortcut only needs to launch the second instance)
+- `translator-core::args` gained `--translate`; CI has a Tauri job on ubuntu and the release Linux job builds the Tauri crate
+
+
+Verification:
+
+- Windows: engine `--print`, GUI streaming, cursor placement, hidden notifications, history/settings UIA flows, `/health`, stub-release one-click update (marker + exit) — all green as recorded in the individual commits
+- Linux: no local toolchain, so the new ubuntu `tauri` CI job is the build gate; the deb ships the Tauri client and the GTK popup stays in the tree
+
+
+---
+
+
 # Git History
 
 Commit:

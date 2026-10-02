@@ -105,11 +105,15 @@ if [ "$UNINSTALL" -eq 0 ] && [ "$IF_MISSING" -eq 1 ] && find_path_by_name >/dev/
     exit 0
 fi
 
+AUTOSTART_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+AUTOSTART_FILE="$AUTOSTART_DIR/open-translator.desktop"
+
 if [ "$UNINSTALL" -eq 1 ]; then
+    rm -f "$AUTOSTART_FILE"
     path="$(find_path_by_name || true)"
 
     if [ -z "$path" ]; then
-        echo "no shortcut named '$NAME' found; nothing to do"
+        echo "no shortcut named '$NAME' found; removed autostart entry only"
         exit 0
     fi
 
@@ -148,8 +152,18 @@ else
     set_paths $(list_paths)
 fi
 
+mkdir -p "$AUTOSTART_DIR"
+cat > "$AUTOSTART_FILE" <<EOF
+[Desktop Entry]
+Type=Application
+Name=OpenTranslator
+Comment=Local-first AI selection translation
+Exec=$POPUP_BIN --autostart
+X-GNOME-Autostart-enabled=true
+EOF
+
 gsettings set "$KEYBINDING_PREFIX:$path" name "$NAME"
-gsettings set "$KEYBINDING_PREFIX:$path" command "$POPUP_BIN"
+gsettings set "$KEYBINDING_PREFIX:$path" command "$POPUP_BIN --translate"
 gsettings set "$KEYBINDING_PREFIX:$path" binding "$BINDING"
 
 for candidate in $(list_paths); do
@@ -166,9 +180,11 @@ fi
 
 echo
 echo "Installed:"
-echo "  name:    $NAME"
-echo "  binding: $BINDING"
-echo "  command: $POPUP_BIN"
+echo "  name:     $NAME"
+echo "  binding:  $BINDING"
+echo "  command:  $POPUP_BIN --translate"
+echo "  autostart: $AUTOSTART_FILE"
 echo
-echo "Select text and press the shortcut; the model is downloaded on first use."
+echo "The client starts silently in the tray at login; the shortcut forwards to"
+echo "it (Wayland-friendly) or launches it when it is not running."
 echo "Logs: ~/.local/state/open-translator/"

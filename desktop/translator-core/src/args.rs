@@ -17,6 +17,7 @@ pub struct Args {
     pub autostart: bool,
     pub settings: bool,
     pub history: bool,
+    pub translate: bool,
     pub service_url: String,
 }
 
@@ -33,6 +34,7 @@ impl Default for Args {
             autostart: false,
             settings: false,
             history: false,
+            translate: false,
             service_url: std::env::var("TRANSLATOR_SERVICE_URL")
                 .unwrap_or_else(|_| DEFAULT_SERVICE_URL.to_string()),
         }
@@ -51,6 +53,7 @@ pub struct CliArgs {
     pub autostart: bool,
     pub settings: bool,
     pub history: bool,
+    pub translate: bool,
 }
 
 impl Args {
@@ -93,6 +96,7 @@ impl Args {
         args.autostart = cli.autostart;
         args.settings = cli.settings;
         args.history = cli.history;
+        args.translate = cli.translate;
 
         args
     }
@@ -135,6 +139,7 @@ pub fn parse_args(args: impl Iterator<Item = String>) -> Result<CliArgs, String>
             "--autostart" => parsed.autostart = true,
             "--settings" => parsed.settings = true,
             "--history" => parsed.history = true,
+            "--translate" => parsed.translate = true,
             other => return Err(format!("unknown argument: {other}")),
         }
     }
@@ -254,6 +259,7 @@ mod tests {
             "--autostart",
             "--settings",
             "--history",
+            "--translate",
             "--service",
             "http://127.0.0.1:9999/",
         ])
@@ -268,6 +274,7 @@ mod tests {
         assert!(parsed.autostart);
         assert!(parsed.settings);
         assert!(parsed.history);
+        assert!(parsed.translate);
         assert_eq!(parsed.service_url.as_deref(), Some("http://127.0.0.1:9999/"));
     }
 

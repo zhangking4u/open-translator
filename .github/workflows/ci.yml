@@ -84,6 +84,21 @@ jobs:
       - run: cargo test
       - run: cargo build --release
 
+  tauri:
+    name: Tauri client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop/translator-popup-tauri
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/translator-popup-tauri
+      - run: cargo build --release
+
   desktop:
     name: Desktop popup tests
     runs-on: ubuntu-latest

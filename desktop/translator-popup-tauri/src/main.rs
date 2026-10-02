@@ -151,7 +151,9 @@ fn main() {
             .unwrap_or_default(),
     });
 
-    let show_on_start = !args.autostart || args.stdin || args.settings || args.history;
+    let translate_on_start = args.translate;
+    let show_on_start =
+        !args.autostart || args.stdin || args.settings || args.history || translate_on_start;
     let initial_view = if args.settings {
         Some("settings".to_string())
     } else if args.history {
@@ -182,8 +184,18 @@ fn main() {
         .manage(Mutex::new(translate_config))
         .manage(InitialView(Mutex::new(initial_view)))
         .manage(UpdateSlot::default())
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            show_main(app);
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if argv.iter().any(|arg| arg == "--translate") {
+                trigger_translation(app);
+            } else if argv.iter().any(|arg| arg == "--settings") {
+                show_main(app);
+                let _ = app.emit("open-settings", ());
+            } else if argv.iter().any(|arg| arg == "--history") {
+                show_main(app);
+                let _ = app.emit("open-history", ());
+            } else {
+                show_main(app);
+            }
         }))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -308,6 +320,8 @@ fn main() {
 
             if !stdin_text.trim().is_empty() {
                 translate_text(&handle, stdin_text);
+            } else if translate_on_start {
+                trigger_translation(&handle);
             }
 
             Ok(())

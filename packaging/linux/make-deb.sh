@@ -4,10 +4,9 @@
 # Usage:
 #   VERSION=0.2.0 ARCH=amd64 ./make-deb.sh
 #
-# Expects release binaries at the default cargo locations (override with
-# POPUP_BIN / SERVICE_BIN):
-#   desktop/translator-popup/target/release/translator-popup
-#   core/translator-service/target/release/translator-service
+# Expects the release binary at the default cargo location (override with
+# POPUP_BIN):
+#   desktop/translator-popup-tauri/target/release/translator-popup-tauri
 #
 # Output: packaging/linux/build/OpenTranslator-linux-<arch>.deb
 
@@ -33,8 +32,7 @@ if ! [[ "$VERSION" =~ ^[0-9] ]]; then
 fi
 
 ARCH="${ARCH:-$(dpkg --print-architecture)}"
-POPUP_BIN="${POPUP_BIN:-$REPO_ROOT/desktop/translator-popup/target/release/translator-popup}"
-SERVICE_BIN="${SERVICE_BIN:-$REPO_ROOT/core/translator-service/target/release/translator-service}"
+POPUP_BIN="${POPUP_BIN:-$REPO_ROOT/desktop/translator-popup-tauri/target/release/translator-popup-tauri}"
 OUT_DIR="${OUT_DIR:-$SCRIPT_DIR/build}"
 
 case "$ARCH" in
@@ -43,19 +41,16 @@ case "$ARCH" in
     *) RELEASE_ARCH="$ARCH" ;;
 esac
 
-for bin in "$POPUP_BIN" "$SERVICE_BIN"; do
-    if [ ! -x "$bin" ]; then
-        echo "missing binary: $bin (build it with cargo build --release)" >&2
-        exit 1
-    fi
-done
+if [ ! -x "$POPUP_BIN" ]; then
+    echo "missing binary: $POPUP_BIN (build it with cargo build --release)" >&2
+    exit 1
+fi
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 chmod 755 "$STAGE"
 
 install -Dm755 "$POPUP_BIN" "$STAGE/usr/lib/open-translator/translator-popup"
-install -Dm755 "$SERVICE_BIN" "$STAGE/usr/lib/open-translator/translator-service"
 
 mkdir -p "$STAGE/usr/bin"
 ln -s /usr/lib/open-translator/translator-popup "$STAGE/usr/bin/translator-popup"
@@ -81,14 +76,15 @@ Section: utils
 Priority: optional
 Homepage: https://github.com/zhangking4u/open-translator
 Installed-Size: $INSTALLED_SIZE
-Depends: libc6 (>= 2.39), libgtk-4-1, wl-clipboard, libgomp1
+Depends: libc6 (>= 2.39), libwebkit2gtk-4.1-0, libgtk-3-0t64 | libgtk-3-0, libayatana-appindicator3-1, wl-clipboard, libgomp1
 Recommends: gnome-shell
 Description: Local-first AI selection translation
  Select text anywhere, press a global shortcut, and get an AI translation
  from a model running fully on your machine (llama.cpp, HY-MT 1.8B).
  .
- The model (~1.1 GB) is downloaded from ModelScope on first use.
- Run "open-translator-setup" once to bind the global shortcut.
+  The model (~1.1 GB) is downloaded from ModelScope on first use.
+  Run "open-translator-setup" once to bind the global shortcut and enable
+  the login autostart entry (the client lives in the tray).
 EOF
 
 mkdir -p "$OUT_DIR"
