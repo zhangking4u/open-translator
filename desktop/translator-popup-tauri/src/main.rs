@@ -191,9 +191,10 @@ fn main() {
     });
 
     let translate_on_start = args.translate;
+    let autostart = args.autostart;
     // A --translate cold start must not show the window before the capture
     // thread runs, or the synthesized Ctrl+C would land on our own window.
-    let show_on_start = !args.autostart || args.stdin || args.settings || args.history;
+    let show_on_start = !autostart || args.stdin || args.settings || args.history;
     let initial_view = if args.settings {
         Some("settings".to_string())
     } else if args.history {
@@ -279,67 +280,34 @@ fn main() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
-            let show_item = MenuItem::with_id(&handle, "show", "显示窗口", true, None::<&str>)?;
-            let translate_item = MenuItem::with_id(
-                &handle,
-                "translate",
-                "立即翻译选中文本",
-                true,
-                None::<&str>,
-            )?;
-            let history_item =
-                MenuItem::with_id(&handle, "history", "历史…", true, None::<&str>)?;
-            let settings_item =
-                MenuItem::with_id(&handle, "settings", "设置…", true, None::<&str>)?;
-            let update_item =
-                MenuItem::with_id(&handle, "update", "有新版本可用", false, None::<&str>)?;
-            let quit_item = MenuItem::with_id(&handle, "quit", "退出", true, None::<&str>)?;
+            build_tray(&handle, &hotkey_spec)?;
 
-            let menu = Menu::with_items(
-                &handle,
-                &[
-                    &show_item,
-                    &translate_item,
-                    &history_item,
-                    &settings_item,
-                    &update_item,
-                    &quit_item,
-                ],
-            )?;
+            if autostart {
+                // The AppIndicator extension can drop our menu labels when the
+                // app starts together with the session (a concurrent layout
+                // update cancels its property fetch and there is no retry), and
+                // it only re-reads the properties when an update arrives while
+                // the menu is closed. Nudge the update item once the Shell has
+                // settled so the next menu open refills the labels.
+                let nudged = handle.clone();
+                std::thread::spawn(move || {
+                    // Nudge at ~4 s and ~15 s after startup.
+                    for delay in [4u64, 11] {
+                        std::thread::sleep(std::time::Duration::from_secs(delay));
 
-            *app.state::<UpdateSlot>().item.lock().unwrap() = Some(update_item);
+                        let slot = nudged.state::<UpdateSlot>();
 
-            TrayIconBuilder::with_id("main")
-                .icon(Image::new_owned(make_icon_rgba(), 32, 32))
-                .tooltip(format!("OpenTranslator（{hotkey_spec}）"))
-                .menu(&menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => show_main(app),
-                    "translate" => trigger_translation(app),
-                    "history" => {
-                        show_main(app);
-                        let _ = app.emit("open-history", ());
-                    }
-                    "settings" => {
-                        show_main(app);
-                        let _ = app.emit("open-settings", ());
-                    }
-                    "update" => {
-                        let info = app.state::<UpdateSlot>().info.lock().unwrap().clone();
+                        if slot.info.lock().unwrap().is_some() {
+                            return;
+                        }
 
-                        if let Some(info) = info {
-                            if info.asset_url.is_some() && cfg!(target_os = "windows") {
-                                start_update_install(app);
-                            } else {
-                                open_url(&info.url);
-                            }
+                        if let Some(item) = slot.item.lock().unwrap().as_ref() {
+                            let _ = item.set_enabled(true);
+                            let _ = item.set_enabled(false);
                         }
                     }
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .build(&handle)?;
+                });
+            }
 
             if let Err(error) = app.global_shortcut().register(hotkey_spec.as_str()) {
                 eprintln!("failed to register {hotkey_spec}: {error}");
@@ -761,6 +729,69 @@ fn place_near_cursor(app: &AppHandle, window: &WebviewWindow) {
     y = y.clamp(min_y, max_y.max(min_y));
 
     let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
+    let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+    let translate_item = MenuItem::with_id(
+        app,
+        "translate",
+        "立即翻译选中文本",
+        true,
+        None::<&str>,
+    )?;
+    let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
+    let update_item = MenuItem::with_id(app, "update", "有新版本可用", false, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show_item,
+            &translate_item,
+            &history_item,
+            &settings_item,
+            &update_item,
+            &quit_item,
+        ],
+    )?;
+
+    *app.state::<UpdateSlot>().item.lock().unwrap() = Some(update_item);
+
+    TrayIconBuilder::with_id("main")
+        .icon(Image::new_owned(make_icon_rgba(), 32, 32))
+        .tooltip(format!("OpenTranslator（{hotkey_spec}）"))
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => show_main(app),
+            "translate" => trigger_translation(app),
+            "history" => {
+                show_main(app);
+                let _ = app.emit("open-history", ());
+            }
+            "settings" => {
+                show_main(app);
+                let _ = app.emit("open-settings", ());
+            }
+            "update" => {
+                let info = app.state::<UpdateSlot>().info.lock().unwrap().clone();
+
+                if let Some(info) = info {
+                    if info.asset_url.is_some() && cfg!(target_os = "windows") {
+                        start_update_install(app);
+                    } else {
+                        open_url(&info.url);
+                    }
+                }
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .build(app)?;
+
+    Ok(())
 }
 
 fn set_tooltip(app: &AppHandle, text: &str) {

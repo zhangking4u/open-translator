@@ -1501,11 +1501,12 @@ Fixed:
 - Tray menu clicks could not raise an already-visible card: GNOME refuses focus/raise to a token-less background app and sets `_NET_WM_STATE_DEMANDS_ATTENTION`; `show_main` now pulses `set_always_on_top(true)` for 700 ms (restoring the pin state afterwards) when the window was already visible
 - `固定` (always-on-top) cannot work on native Wayland (GTK keep-above is X11-only); the client now prefers the X11 backend when a Wayland session offers XWayland (`GDK_BACKEND=x11` when `GDK_BACKEND` is unset), and `GDK_BACKEND=wayland` opts back out
 - The native-Wayland tray menu rendered blank labels; the XWayland default also sidesteps that Shell rendering anomaly
+- The tray menu labels came back blank after an autostart login: the AppIndicator extension drops the label property fetch when a concurrent layout update cancels it and never retries, so manual restarts only masked it. The client now nudges the update menu item once while the menu is closed (4 s and 15 s after an autostart launch), making the next open re-read every label
 
 
 Remaining:
 
-- X11 (Ubuntu on Xorg) session pass and the login-autostart check
+- None — the Xorg session pass and the login-autostart check both passed on 2026-10-02 (the logout/login that verified the tray-menu nudge also covered them)
 
 
 ---
