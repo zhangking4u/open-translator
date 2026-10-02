@@ -8,6 +8,10 @@ const views = {
 };
 
 const source = document.getElementById("source");
+const sourceSelect = document.getElementById("source-select");
+const targetSelect = document.getElementById("target-select");
+const swapButton = document.getElementById("swap");
+const detectedLabel = document.getElementById("detected");
 const translation = document.getElementById("translation");
 const status = document.getElementById("status");
 const copy = document.getElementById("copy");
@@ -20,6 +24,59 @@ let current = "";
 let lastSource = "";
 let streaming = false;
 let replaceable = false;
+let languageOptions = [];
+let languageState = {
+  source: "auto",
+  target: "zh",
+  detected: null,
+  recent_targets: [],
+};
+
+function labelOf(tag) {
+  const option = languageOptions.find((entry) => entry.tag === tag);
+  return option ? option.label : tag;
+}
+
+function applyLanguageState(state) {
+  languageState = state;
+  sourceSelect.value = state.source;
+  targetSelect.value = state.target;
+  detectedLabel.textContent = state.detected ? "检测：" + labelOf(state.detected) : "";
+}
+
+async function initLanguages() {
+  languageOptions = await invoke("get_languages");
+
+  for (const select of [sourceSelect, targetSelect]) {
+    select.innerHTML = "";
+
+    for (const option of languageOptions) {
+      if (select === targetSelect && option.tag === "auto") {
+        continue;
+      }
+
+      const element = document.createElement("option");
+      element.value = option.tag;
+      element.textContent = option.label;
+      select.appendChild(element);
+    }
+  }
+
+  applyLanguageState(await invoke("get_language_state"));
+  resize();
+}
+
+sourceSelect.addEventListener("change", () => {
+  invoke("set_source", { source: sourceSelect.value });
+});
+
+targetSelect.addEventListener("change", () => {
+  invoke("set_target", { target: targetSelect.value });
+});
+
+swapButton.addEventListener("click", () => {
+  invoke("swap_languages");
+});
 let pinned = false;
 let view = "translator";
 
@@ -193,6 +250,17 @@ replace.addEventListener("click", async () => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (event.ctrlKey && !event.shiftKey && ["1", "2", "3"].includes(event.key)) {
+    const target = languageState.recent_targets?.[Number(event.key) - 1];
+
+    if (target) {
+      invoke("set_target", { target });
+      event.preventDefault();
+    }
+
+    return;
+  }
+
   if (event.key !== "Escape") {
     return;
   }
@@ -385,6 +453,10 @@ listen("open-history", () => {
   openHistory();
 });
 
+listen("language-state", (event) => {
+  applyLanguageState(event.payload);
+});
+
 listen("history-changed", () => {
   if (view === "history") {
     renderHistory();
@@ -413,6 +485,7 @@ listen("update-error", (event) => {
 
 showWaiting();
 resize();
+initLanguages();
 
 invoke("platform").then((os) => {
   // Windows keeps the window opaque, so the card fills it instead of floating.

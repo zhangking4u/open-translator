@@ -52,6 +52,8 @@ struct AppState {
     engine: Mutex<Option<Arc<LlamaCppEngine>>>,
     pending: Mutex<Option<String>>,
     last_text: Mutex<Option<String>>,
+    last_translation: Mutex<Option<String>>,
+    recents: Mutex<Vec<String>>,
     history: Mutex<Vec<HistoryEntry>>,
     pinned: Mutex<bool>,
     replace_window: Mutex<Option<isize>>,
@@ -61,7 +63,22 @@ struct AppState {
 struct TranslateConfig {
     source: String,
     target: String,
+    detected: Option<String>,
     hotkey_label: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct LanguageOption {
+    tag: String,
+    label: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct LanguageState {
+    source: String,
+    target: String,
+    detected: Option<String>,
+    recent_targets: Vec<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -78,6 +95,7 @@ struct SettingsPayload {
 struct SourcePayload {
     text: String,
     replaceable: bool,
+    detected: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -170,14 +188,18 @@ fn main() {
     let translate_config = TranslateConfig {
         source: args.source.clone(),
         target: args.target.clone(),
+        detected: None,
         hotkey_label: hotkey_spec.clone(),
     };
+    let recent_targets = args.recent_targets.clone();
 
     tauri::Builder::default()
         .manage(AppState {
             engine: Mutex::new(None),
             pending: Mutex::new(None),
             last_text: Mutex::new(None),
+            last_translation: Mutex::new(None),
+            recents: Mutex::new(recent_targets),
             history: Mutex::new(translator_core::history::load()),
             pinned: Mutex::new(false),
             replace_window: Mutex::new(None),
@@ -226,7 +248,12 @@ fn main() {
             platform,
             start_update,
             open_release_page,
-            replace_text
+            replace_text,
+            get_languages,
+            get_language_state,
+            set_source,
+            set_target,
+            swap_languages
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -554,11 +581,20 @@ fn translate_text(app: &AppHandle, text: String) {
         return;
     };
 
-    let config = app
-        .state::<Mutex<TranslateConfig>>()
-        .lock()
-        .unwrap()
-        .clone();
+    let (effective_source, detected, target, configured_source) = {
+        let state = app.state::<Mutex<TranslateConfig>>();
+        let mut config = state.lock().unwrap();
+        let (source, detected) = translator_core::detect::resolve_source(&config.source, &text);
+        config.detected = detected.map(str::to_string);
+
+        (
+            source,
+            config.detected.clone(),
+            config.target.clone(),
+            config.source.clone(),
+        )
+    };
+
     let replaceable = cfg!(target_os = "windows")
         && app
             .state::<AppState>()
@@ -572,14 +608,18 @@ fn translate_text(app: &AppHandle, text: String) {
         SourcePayload {
             text: text.clone(),
             replaceable,
+            detected: detected.clone(),
         },
     );
+    let _ = app.emit("language-state", language_state(&app));
+
+    let history_source = detected.unwrap_or(configured_source);
 
     std::thread::spawn(move || {
         let request = TranslationRequest {
             text: text.clone(),
-            source: config.source.clone(),
-            target: config.target.clone(),
+            source: effective_source,
+            target,
         };
 
         let delta_app = app.clone();
@@ -589,6 +629,9 @@ fn translate_text(app: &AppHandle, text: String) {
 
         match result {
             Ok(result) => {
+                *app.state::<AppState>().last_translation.lock().unwrap() =
+                    Some(result.translated_text.clone());
+
                 {
                     let state = app.state::<AppState>();
                     let mut history = state.history.lock().unwrap();
@@ -596,8 +639,8 @@ fn translate_text(app: &AppHandle, text: String) {
                     translator_core::history::push(
                         &mut history,
                         HistoryEntry {
-                            source: config.source.clone(),
-                            target: config.target.clone(),
+                            source: history_source,
+                            target: request.target.clone(),
                             text,
                             translation: result.translated_text.clone(),
                         },
@@ -887,11 +930,13 @@ fn load_history_entry(app: AppHandle, index: usize) -> Result<(), String> {
     translator_core::settings::persist_source(&entry.source);
     translator_core::settings::persist_target(&entry.target);
 
+    let _ = app.emit("language-state", language_state(&app));
     let _ = app.emit(
         "source",
         SourcePayload {
             text: entry.text,
             replaceable: false,
+            detected: None,
         },
     );
     let _ = app.emit("done", entry.translation);
@@ -944,6 +989,157 @@ fn get_initial_view(app: AppHandle) -> Option<String> {
 #[tauri::command]
 fn platform() -> &'static str {
     std::env::consts::OS
+}
+
+fn language_state(app: &AppHandle) -> LanguageState {
+    let (source, target, detected) = {
+        let state = app.state::<Mutex<TranslateConfig>>();
+        let config = state.lock().unwrap();
+
+        (
+            config.source.clone(),
+            config.target.clone(),
+            config.detected.clone(),
+        )
+    };
+
+    LanguageState {
+        source,
+        target,
+        detected,
+        recent_targets: app.state::<AppState>().recents.lock().unwrap().clone(),
+    }
+}
+
+fn retranslate_last(app: &AppHandle) {
+    let text = app.state::<AppState>().last_text.lock().unwrap().clone();
+
+    if let Some(text) = text {
+        translate_text(app, text);
+    }
+}
+
+#[tauri::command]
+fn get_languages() -> Vec<LanguageOption> {
+    let mut options = vec![LanguageOption {
+        tag: translator_core::languages::AUTO_CODE.to_string(),
+        label: translator_core::languages::AUTO_LABEL.to_string(),
+    }];
+
+    options.extend(
+        translator_core::languages::LANGUAGES
+            .iter()
+            .map(|(tag, label)| LanguageOption {
+                tag: tag.to_string(),
+                label: label.to_string(),
+            }),
+    );
+
+    options
+}
+
+#[tauri::command]
+fn get_language_state(app: AppHandle) -> LanguageState {
+    language_state(&app)
+}
+
+#[tauri::command]
+fn set_source(app: AppHandle, source: String) -> Result<(), String> {
+    if source != translator_core::languages::AUTO_CODE
+        && !translator_core::languages::is_supported(&source)
+    {
+        return Err(format!("unsupported language: {source}"));
+    }
+
+    {
+        let state = app.state::<Mutex<TranslateConfig>>();
+        let mut config = state.lock().unwrap();
+        config.source = source.clone();
+        config.detected = None;
+    }
+
+    translator_core::settings::persist_source(&source);
+    let _ = app.emit("language-state", language_state(&app));
+    retranslate_last(&app);
+
+    Ok(())
+}
+
+#[tauri::command]
+fn set_target(app: AppHandle, target: String) -> Result<(), String> {
+    if !translator_core::languages::is_supported(&target) {
+        return Err(format!("unsupported language: {target}"));
+    }
+
+    {
+        let state = app.state::<Mutex<TranslateConfig>>();
+        let mut config = state.lock().unwrap();
+        config.target = target.clone();
+    }
+
+    translator_core::settings::persist_target(&target);
+
+    {
+        let state = app.state::<AppState>();
+        let mut recents = state.recents.lock().unwrap();
+        *recents = translator_core::languages::recent_target_list(&recents, &target);
+        translator_core::settings::persist_recent_targets(&recents);
+    }
+
+    let _ = app.emit("language-state", language_state(&app));
+    retranslate_last(&app);
+
+    Ok(())
+}
+
+#[tauri::command]
+fn swap_languages(app: AppHandle) -> Result<(), String> {
+    let (source, target, detected) = {
+        let state = app.state::<Mutex<TranslateConfig>>();
+        let config = state.lock().unwrap();
+
+        (
+            config.source.clone(),
+            config.target.clone(),
+            config.detected.clone(),
+        )
+    };
+
+    let Some((new_source, new_target)) =
+        translator_core::languages::swapped_pair(&source, &target, detected.as_deref())
+    else {
+        return Err("当前语言对无法交换".to_string());
+    };
+
+    {
+        let state = app.state::<Mutex<TranslateConfig>>();
+        let mut config = state.lock().unwrap();
+        config.source = new_source.clone();
+        config.target = new_target.clone();
+        config.detected = None;
+    }
+
+    translator_core::settings::persist_source(&new_source);
+    translator_core::settings::persist_target(&new_target);
+    let _ = app.emit("language-state", language_state(&app));
+
+    // Like the eframe client, the previous translation becomes the new source
+    // text so ⇄ turns the result back into something to translate.
+    let previous = app
+        .state::<AppState>()
+        .last_translation
+        .lock()
+        .unwrap()
+        .clone();
+
+    if let Some(text) = previous.filter(|text| !text.trim().is_empty()) {
+        *app.state::<AppState>().last_text.lock().unwrap() = Some(text.clone());
+        translate_text(&app, text);
+    } else {
+        retranslate_last(&app);
+    }
+
+    Ok(())
 }
 
 fn parse_bool(key: &str, value: &str) -> Result<bool, String> {
