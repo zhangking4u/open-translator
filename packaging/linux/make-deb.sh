@@ -76,7 +76,7 @@ Section: utils
 Priority: optional
 Homepage: https://github.com/zhangking4u/open-translator
 Installed-Size: $INSTALLED_SIZE
-Depends: libc6 (>= 2.39), libwebkit2gtk-4.1-0, libgtk-3-0t64 | libgtk-3-0, libayatana-appindicator3-1, wl-clipboard, libgomp1
+Depends: libc6 (>= 2.39), libwebkit2gtk-4.1-0, libgtk-3-0t64 | libgtk-3-0, libayatana-appindicator3-1, wl-clipboard, libnotify-bin, libgomp1
 Recommends: gnome-shell
 Description: Local-first AI selection translation
  Select text anywhere, press a global shortcut, and get an AI translation
