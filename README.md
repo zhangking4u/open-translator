@@ -138,7 +138,7 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 
 - **网络**：`ollama.com` 与 HuggingFace 不可达；GitHub release 资产走代理（如 `https://gh-proxy.com/`）；模型从 ModelScope 下载。
 - **浏览器扩展连不上服务**：确认核心服务在运行；扩展权限的 match pattern 不能带端口（已用 `http://127.0.0.1/*`）；若 Firefox 配置了代理，确保 localhost 直连。
-- **GNOME Wayland 限制**：应用无法指定窗口位置（"贴近鼠标"需 GNOME Shell 扩展）；系统不提供 data-control 协议，选区读取依赖 `wl-paste`（`wl-clipboard` 包）。
+- **GNOME Wayland 限制**：原生 Wayland 不支持置顶（keep-above），托盘点击也没有激活令牌、GNOME 不允许后台窗口置顶/聚焦；Tauri 客户端因此在 Wayland 会话下默认走 XWayland（`GDK_BACKEND=wayland` 可退回原生 Wayland，此时「固定」仅阻止隐藏）。系统不提供 data-control 协议，选区读取依赖 `wl-paste`（`wl-clipboard` 包）。
 - **日志**：服务日志 `~/.local/state/open-translator/{ollama,translator-service}.log`；服务运行日志用 `RUST_LOG` 控制。
 
 ## 仓库结构

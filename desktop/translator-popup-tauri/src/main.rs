@@ -109,7 +109,28 @@ struct ErrorPayload {
     message: String,
 }
 
+/// Wayland has no keep-above protocol, so GTK's always-on-top (固定) is a
+/// no-op under a native Wayland backend; XWayland supports it. When a Wayland
+/// session offers X11, prefer the X11 backend unless the user explicitly chose
+/// one with GDK_BACKEND (they can opt out with GDK_BACKEND=wayland and pinned
+/// windows then only keep Esc/× from hiding them).
+#[cfg(target_os = "linux")]
+fn prefer_x11_backend() {
+    let x11_available = std::env::var_os("DISPLAY").is_some();
+    let on_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let backend_forced = std::env::var_os("GDK_BACKEND").is_some();
+
+    if x11_available && on_wayland && !backend_forced {
+        unsafe {
+            std::env::set_var("GDK_BACKEND", "x11");
+        }
+    }
+}
+
 fn main() {
+    #[cfg(target_os = "linux")]
+    prefer_x11_backend();
+
     let args = match translator_core::args::Args::from_process_env() {
         Ok(args) => args,
         Err(error) => {
@@ -665,9 +686,28 @@ fn translate_text(app: &AppHandle, text: String) {
 
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let was_visible = window.is_visible().unwrap_or(false);
         let _ = window.show();
         place_near_cursor(app, &window);
         let _ = window.set_focus();
+
+        // GNOME denies focus and raise to a background app whose tray click
+        // carries no activation token, so an already-visible card stays behind
+        // the active window and looks unresponsive. Briefly lift it with
+        // always-on-top to bring it to the front, then restore the pin state.
+        if was_visible && !*app.state::<AppState>().pinned.lock().unwrap() {
+            let _ = window.set_always_on_top(true);
+
+            let handle = window.clone();
+            let app_handle = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(700));
+
+                if !*app_handle.state::<AppState>().pinned.lock().unwrap() {
+                    let _ = handle.set_always_on_top(false);
+                }
+            });
+        }
     }
 }
 

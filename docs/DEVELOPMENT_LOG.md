@@ -1460,7 +1460,7 @@ Verification:
 
 Remaining work, in the agreed order:
 
-1. Linux real-machine verification (only compilation is CI-gated so far, no local Linux toolchain)
+1. (Done 2026-10-02 — see the Linux Real-Machine Verification milestone) Linux real-machine verification (compilation was CI-gated only before)
    - Install the deb on Ubuntu 24.04 on both Wayland and X11: `open-translator-setup` (GNOME shortcut `<bin> --translate` plus the `--autostart` entry), single-instance forwarding, tray icon (GNOME may need the AppIndicator extension), `wl-paste` selection capture, model download, cursor placement / pin / bottom clamp, the transparent floating card, `notify-send` notifications and the desktop entry/icon
    - Check `apt install` in-place upgrades over the previous deb
 2. macOS verification
@@ -1479,6 +1479,33 @@ Remaining work, in the agreed order:
    - Replace-in-place, notifications and tray/menu behavior on Linux are untested until (1)
 7. Release v0.3.0
    - Cut the tag with the release skill; verify the three assets plus the Tauri→Tauri one-click update round-trip
+
+
+---
+
+
+## Milestone: Linux Real-Machine Verification (2026-10-02, post-v0.2.2)
+
+
+Verified (Ubuntu 26.04 + GNOME Wayland, locally built deb):
+
+- `apt install` upgraded the installed 0.1.0 GTK package in place: the old `translator-service` was removed, the Tauri binary, `/usr/bin/translator-popup` symlink, desktop entry and icon installed, and `open-translator-setup` updated the existing GNOME shortcut to `/usr/bin/translator-popup --translate` plus the `--autostart` entry
+- The resident `--autostart` instance stays hidden and registers the AppIndicator item; `--stdin --print` and `POST /translate` both return translations (existing model, no download); `/health` reports the llama.cpp engine
+- Single-instance forwarding: `--translate`/`--settings`/`--history` second instances exit in ~0.07 s and the resident handles them; `--translate` captured the `wl-copy --primary` selection, translated it and recorded `history.json`
+- A hidden model failure raises the `notify-send` notification (captured on `org.freedesktop.Notifications` with dbus-monitor) while the window stays hidden
+- User-verified: tray icon, card transparency/rounded corners, cursor placement, bottom clamp and pin (固定) behavior
+
+
+Fixed:
+
+- Tray menu clicks could not raise an already-visible card: GNOME refuses focus/raise to a token-less background app and sets `_NET_WM_STATE_DEMANDS_ATTENTION`; `show_main` now pulses `set_always_on_top(true)` for 700 ms (restoring the pin state afterwards) when the window was already visible
+- `固定` (always-on-top) cannot work on native Wayland (GTK keep-above is X11-only); the client now prefers the X11 backend when a Wayland session offers XWayland (`GDK_BACKEND=x11` when `GDK_BACKEND` is unset), and `GDK_BACKEND=wayland` opts back out
+- The native-Wayland tray menu rendered blank labels; the XWayland default also sidesteps that Shell rendering anomaly
+
+
+Remaining:
+
+- X11 (Ubuntu on Xorg) session pass and the login-autostart check
 
 
 ---

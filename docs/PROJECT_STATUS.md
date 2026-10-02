@@ -553,3 +553,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - The tray menu's 设置… opens a full-page settings view (返回翻译/Esc backs out); 历史… opens the history list; the translation card footer keeps only 复制译文/替换原文/重新翻译/固定 and falls back to 历史/设置/退出 when no tray exists
 - Edits the hotkey (applied immediately; invalid/taken bindings keep the old one), model_path and the auto_download / check_updates / serve_extension switches (next start, written with `settings::persist_value`), and opens the config folder; `--settings` starts on the page
 - Verified live: config writes and hotkey re-registration through the real UI (desktop client now 17 tests)
+
+
+## Linux Real-Machine Verification (2026-10-02, post-v0.2.2)
+
+
+- Ubuntu 26.04 + GNOME Wayland: deb in-place upgrade (0.1.0 GTK → Tauri), shortcut/autostart registration, tray item, engine (`--print` and `POST /translate`), single-instance forwarding, `wl-paste` selection capture + history, hidden-failure notification and `/health` verified; user confirmed tray icon, transparency, cursor placement, bottom clamp and pin
+- Tray clicks could not raise an already-visible card (GNOME refuses token-less focus/raise and sets `_NET_WM_STATE_DEMANDS_ATTENTION`); `show_main` now pulses always-on-top for 700 ms, and `固定` works because the client prefers the X11 backend on Wayland sessions (XWayland), which also sidesteps blank tray-menu labels under native Wayland (`GDK_BACKEND=wayland` opts out)
+- Remaining Linux checks: Xorg session pass and login autostart
