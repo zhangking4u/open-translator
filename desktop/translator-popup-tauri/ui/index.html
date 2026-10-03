@@ -90,7 +90,16 @@
           <button id="settings-back">返回翻译</button>
         </div>
 
-        <p class="field-label">快捷键</p>
+        <p class="field-label">
+          快捷键
+          <span
+            class="info"
+            role="img"
+            title="点击后按下新快捷键，再按一次相同组合确认；Esc 取消。需包含 Ctrl/Alt/Super，可加 Shift；被占用时会保留原快捷键。"
+            aria-label="点击后按下新快捷键，再按一次相同组合确认；Esc 取消。需包含 Ctrl/Alt/Super，可加 Shift；被占用时会保留原快捷键。"
+            >i</span
+          >
+        </p>
         <div class="row">
           <button
             id="hotkey-recorder"
@@ -103,9 +112,17 @@
           <span id="hotkey-saved" class="ok-text" hidden>已应用</span>
           <span id="hotkey-error" class="error-text" hidden></span>
         </div>
-        <p id="hotkey-hint" class="sub">点击左侧按钮后按下新快捷键，再按一次相同组合确认；Esc 取消</p>
 
-        <p class="field-label">模型路径</p>
+        <p class="field-label">
+          模型路径
+          <span
+            class="info"
+            role="img"
+            title="模型文件（.gguf）的完整路径；修改后下次启动生效；文件不存在且开启自动下载时会下载默认模型。"
+            aria-label="模型文件（.gguf）的完整路径；修改后下次启动生效；文件不存在且开启自动下载时会下载默认模型。"
+            >i</span
+          >
+        </p>
         <div class="row">
           <input
             id="model-input"
@@ -116,7 +133,6 @@
           <button id="model-save">保存</button>
           <span id="model-saved" class="ok-text" hidden>已保存</span>
         </div>
-        <p class="sub">模型文件（.gguf）的完整路径，下次启动生效</p>
 
         <label class="check"
           ><input type="checkbox" id="switch-auto" /> 自动下载模型</label

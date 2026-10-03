@@ -374,7 +374,6 @@ document.getElementById("model-save").addEventListener("click", async () => {
 const hotkeyRecorder = document.getElementById("hotkey-recorder");
 const hotkeyApply = document.getElementById("hotkey-apply");
 const hotkeyReset = document.getElementById("hotkey-reset");
-const hotkeyHint = document.getElementById("hotkey-hint");
 const hotkeyError = document.getElementById("hotkey-error");
 const hotkeySaved = document.getElementById("hotkey-saved");
 
@@ -426,15 +425,16 @@ function renderHotkey() {
   hotkeyRecorder.classList.toggle("recording", hotkeyState.recording);
 
   let parts = [];
-  let placeholder = "";
+  let state = "";
 
   if (!hotkeyState.recording) {
     parts = hotkeyParts(hotkeyState.current);
-    if (!parts.length) placeholder = "未设置";
+    if (!parts.length) state = "未设置";
   } else if (hotkeyState.candidate) {
     parts = hotkeyParts(hotkeyState.candidate);
+    state = hotkeyState.confirmed ? "已确认" : "再按一次";
   } else {
-    placeholder = "请按下快捷键…";
+    state = "按下新组合键…";
   }
 
   const nodes = [];
@@ -443,23 +443,13 @@ function renderHotkey() {
     keycap.textContent = part;
     nodes.push(keycap);
   }
-  if (placeholder) {
+  if (state) {
     const span = document.createElement("span");
     span.className = "placeholder";
-    span.textContent = placeholder;
+    span.textContent = state;
     nodes.push(span);
   }
   hotkeyRecorder.replaceChildren(...nodes);
-
-  if (!hotkeyState.recording) {
-    hotkeyHint.textContent = "点击左侧按钮后按下新快捷键，再按一次相同组合确认；Esc 取消";
-  } else if (!hotkeyState.candidate) {
-    hotkeyHint.textContent = "请按下新快捷键（需包含 Ctrl/Alt/Super，可加 Shift）";
-  } else if (!hotkeyState.confirmed) {
-    hotkeyHint.textContent = "请再按一次相同组合确认";
-  } else {
-    hotkeyHint.textContent = "已确认，点击「应用」或按 Enter 生效";
-  }
 
   hotkeyApply.disabled = !(hotkeyState.recording && hotkeyState.confirmed);
   resize();
