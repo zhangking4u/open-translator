@@ -42,3 +42,4 @@ Flow: `src/api/mod.rs` (router + handlers + DTOs + error mapping) → `src/domai
 - `docs/ARCHITECTURE.md` is the design intent (modularity, model independence, local-first); keep the core crate model-agnostic and platform-independent.
 - Releases: use the `release` skill (`.kilo/skills/release/SKILL.md`) — pushing a `v*` tag builds the Windows zip + macOS dmg + Linux deb + browser extension zips and creates the GitHub release.
 - Local real-machine verification of the Windows client: use the `local-verify` skill (`.kilo/skills/local-verify/SKILL.md`) — build, stop the installed instance, replace and relaunch it.
+- Local real-machine verification of the Linux client: use the `local-verify-linux` skill (`.kilo/skills/local-verify-linux/SKILL.md`) — build with the release version injected, package the deb, install it through pkexec, restart the tray client and hand over for manual checks.

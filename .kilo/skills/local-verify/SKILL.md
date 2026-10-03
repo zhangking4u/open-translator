@@ -7,7 +7,7 @@ description: Build the OpenTranslator Windows Tauri client from the current work
 
 Rebuild the Tauri desktop client from the current source, swap it into the installed location, and start it for a manual test. This verifies uncommitted local changes, so do not require a clean tree. Record the revision being tested for the report (`git log -1 --oneline`).
 
-macOS/Linux: this skill is Windows-only (the dev machine is Windows). For macOS use `desktop/install-macos.sh`, for Linux build/package per `packaging/linux`.
+macOS/Linux: this skill is Windows-only (the dev machine is Windows). For macOS use `desktop/install-macos.sh`; for Linux use the `local-verify-linux` skill.
 
 ## Key paths
 
