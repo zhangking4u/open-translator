@@ -222,10 +222,49 @@
         <div class="page-head">
           <span class="page-title">最近翻译</span>
           <span class="spacer"></span>
-          <button id="history-clear">清空</button>
-          <button id="history-back">返回翻译</button>
+          <button id="history-back">完成</button>
         </div>
-        <div id="history-list" class="history-list"></div>
+        <div class="group">
+          <div id="history-list" class="history-list"></div>
+          <div id="history-empty" class="history-empty" hidden>
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </svg>
+            <p>暂无翻译记录</p>
+            <p class="sub">选中文字按 Ctrl+Alt+T 开始</p>
+          </div>
+          <button id="history-clear" class="setting-row danger-row" type="button" hidden>
+            清空历史
+          </button>
+        </div>
+      </div>
+
+      <div id="confirm-dialog" class="confirm-backdrop" hidden>
+        <div
+          class="confirm-card"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="confirm-title"
+          aria-describedby="confirm-body"
+        >
+          <p id="confirm-title" class="confirm-title">清空历史？</p>
+          <p id="confirm-body" class="confirm-body">此操作无法撤销。</p>
+          <div class="confirm-actions">
+            <button id="confirm-cancel" type="button">取消</button>
+            <button id="confirm-accept" class="destructive" type="button">清空</button>
+          </div>
+        </div>
       </div>
     </main>
     <script src="main.js"></script>

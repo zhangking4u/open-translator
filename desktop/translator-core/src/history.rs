@@ -12,6 +12,8 @@ pub struct HistoryEntry {
     pub target: String,
     pub text: String,
     pub translation: String,
+    #[serde(default)]
+    pub at: Option<u64>,
 }
 
 /// Insert a translation, newest first, replacing an entry with the same text
@@ -60,6 +62,7 @@ mod tests {
             target: target.to_string(),
             text: text.to_string(),
             translation: translation.to_string(),
+            at: None,
         }
     }
 

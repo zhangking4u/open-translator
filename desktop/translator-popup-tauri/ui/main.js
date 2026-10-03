@@ -268,6 +268,11 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (!confirmDialog.hidden) {
+    closeConfirm();
+    return;
+  }
+
   if (view !== "translator") {
     showView("translator");
   } else {
@@ -621,21 +626,36 @@ async function openHistory() {
 async function renderHistory() {
   const history = await invoke("get_history");
   const list = document.getElementById("history-list");
-  list.innerHTML = "";
+  const empty = document.getElementById("history-empty");
+  const clear = document.getElementById("history-clear");
 
-  if (history.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "sub";
-    empty.textContent = "暂无历史";
-    list.appendChild(empty);
-    return;
-  }
+  list.replaceChildren();
+  empty.hidden = history.length > 0;
+  clear.hidden = history.length === 0;
 
   history.forEach((entry, index) => {
     const button = document.createElement("button");
     button.className = "history-entry";
-    button.textContent =
-      entry.target + " · " + preview(entry.text, 16) + " → " + preview(entry.translation, 22);
+    button.type = "button";
+
+    const text = document.createElement("span");
+    text.className = "history-text";
+    text.textContent = entry.text;
+
+    const time = document.createElement("span");
+    time.className = "history-time";
+    const relative = relativeTime(entry.at);
+    time.textContent = relative ? entry.target + " · " + relative : entry.target;
+
+    const translation = document.createElement("span");
+    translation.className = "history-translation";
+    translation.textContent = entry.translation;
+
+    const chevron = document.createElement("span");
+    chevron.className = "history-chevron";
+    chevron.textContent = "›";
+
+    button.append(text, time, translation, chevron);
     button.addEventListener("click", async () => {
       await invoke("load_history_entry", { index });
       showView("translator");
@@ -644,14 +664,63 @@ async function renderHistory() {
   });
 }
 
-function preview(value, max) {
-  return value.length > max ? value.slice(0, max) + "…" : value;
+function relativeTime(at) {
+  if (!at) return "";
+
+  const seconds = Math.max(0, Math.floor((Date.now() - at) / 1000));
+  if (seconds < 60) return "刚刚";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + " 分钟前";
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + " 小时前";
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "昨天";
+  if (days < 30) return days + " 天前";
+
+  const date = new Date(at);
+  return date.getMonth() + 1 + "月" + date.getDate() + "日";
 }
 
-document.getElementById("history-clear").addEventListener("click", async () => {
-  await invoke("clear_history");
-  await renderHistory();
-  resize();
+document.getElementById("history-clear").addEventListener("click", () => {
+  openConfirm(async () => {
+    await invoke("clear_history");
+    await renderHistory();
+    resize();
+  });
+});
+
+const confirmDialog = document.getElementById("confirm-dialog");
+let confirmAction = null;
+
+function closeConfirm() {
+  confirmAction = null;
+  confirmDialog.hidden = true;
+
+  const clear = document.getElementById("history-clear");
+  if (clear && !clear.hidden) clear.focus();
+}
+
+function openConfirm(action) {
+  confirmAction = action;
+  confirmDialog.hidden = false;
+  document.getElementById("confirm-cancel").focus();
+}
+
+document.getElementById("confirm-cancel").addEventListener("click", closeConfirm);
+
+document.getElementById("confirm-accept").addEventListener("click", async () => {
+  const action = confirmAction;
+  confirmAction = null;
+  confirmDialog.hidden = true;
+
+  if (action) await action();
+});
+
+confirmDialog.addEventListener("click", (event) => {
+  if (event.target === confirmDialog) closeConfirm();
 });
 
 listen("source", (event) => {

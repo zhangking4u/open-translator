@@ -6,6 +6,7 @@ mod server;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
@@ -643,6 +644,12 @@ fn translate_text(app: &AppHandle, text: String) {
                             target: request.target.clone(),
                             text,
                             translation: result.translated_text.clone(),
+                            at: Some(
+                                SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .map(|elapsed| elapsed.as_millis() as u64)
+                                    .unwrap_or(0),
+                            ),
                         },
                     );
                     translator_core::history::save(&history);
