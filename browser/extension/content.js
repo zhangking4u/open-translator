@@ -386,11 +386,13 @@ function ensureBubble() {
   style.textContent = [
     "@keyframes ot-shimmer { to { background-position: -200% 0; } }",
     "@keyframes ot-blink { 50% { opacity: 0; } }",
+    "@keyframes ot-menu-in { from { opacity: 0; transform: translateY(4px) scale(.98); } }",
     ".card { position: relative; font: 13px/1.5 system-ui, sans-serif; color: #1f2937;",
-    "  background: #fff; border: 1px solid #d1d5db; border-radius: 8px;",
-    "  box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: 460px; min-width: 220px;",
+    "  background: #fff; border: 1px solid #d1d5db; border-radius: 10px;",
+    "  box-shadow: 0 10px 30px rgba(0,0,0,.16); max-width: 460px; min-width: 220px;",
     "  padding: 10px 12px; }",
-    ".status { white-space: pre-wrap; word-break: break-word; min-height: 1.5em; }",
+    ".status { font-size: 14px; line-height: 1.55; white-space: pre-wrap;",
+    "  word-break: break-word; min-height: 1.5em; }",
     ".status.waiting { background-image: linear-gradient(90deg, #9ca3af 0%, #374151 50%, #9ca3af 100%);",
     "  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text;",
     "  color: transparent; animation: ot-shimmer 1.4s linear infinite; }",
@@ -399,34 +401,49 @@ function ensureBubble() {
     ".status.error { color: #b91c1c; }",
     ".row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }",
     ".spacer { flex: 1; }",
-    "select { font: inherit; padding: 2px 6px; border-radius: 6px; border: 1px solid #d1d5db;",
-    "  background: #fff; }",
-    "button { font: inherit; padding: 3px 8px; border: 0; border-radius: 6px; background: none;",
-    "  color: #4b5563; cursor: pointer; display: inline-flex; align-items: center;",
-    "  justify-content: center; gap: 6px; }",
+    ".select-wrap { position: relative; display: inline-flex; align-items: center; }",
+    ".select-wrap::after { content: \"\"; position: absolute; right: 7px; top: 50%; width: 5px;",
+    "  height: 5px; pointer-events: none; border-right: 1.6px solid #9096a0;",
+    "  border-bottom: 1.6px solid #9096a0; transform: translateY(-70%) rotate(45deg); }",
+    "select { appearance: none; -webkit-appearance: none; font: inherit; font-size: 12.5px;",
+    "  color: #4b5563; background-color: rgba(0,0,0,.05); border: 0; border-radius: 6px;",
+    "  padding: 3px 20px 3px 7px; cursor: pointer; }",
+    "select:hover { background-color: rgba(0,0,0,.08); }",
+    "button { font: inherit; padding: 3px 8px; min-height: 24px; border: 0; border-radius: 6px;",
+    "  background: none; color: #4b5563; cursor: pointer; display: inline-flex;",
+    "  align-items: center; justify-content: center; gap: 6px; }",
     "button:hover { background: rgba(0,0,0,.06); }",
     "button:disabled { color: #c3c8cf; }",
     "button[hidden] { display: none; }",
+    "button:focus-visible, select:focus-visible { outline: 2px solid #4f7cff; outline-offset: 1px; }",
     ".close-button { opacity: 0; pointer-events: none; transition: opacity .15s; }",
     ".card:hover .close-button, .close-button:focus-visible { opacity: 1; pointer-events: auto; }",
     "@media (hover: none) { .close-button { opacity: 1; pointer-events: auto; } }",
     ".menu { position: absolute; right: 8px; bottom: 38px; z-index: 3; min-width: 150px;",
     "  display: flex; flex-direction: column; padding: 4px; background: #fff;",
-    "  border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.16); }",
+    "  border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 10px 26px rgba(0,0,0,.16);",
+    "  animation: ot-menu-in .12s ease-out; }",
     ".menu[hidden] { display: none; }",
     ".menu-item { justify-content: flex-start; text-align: left; white-space: nowrap; }",
     "svg { flex: none; }",
     "details.original { margin-top: 8px; }",
-    "details.original summary { cursor: pointer; color: #6b7280; font-size: 12px; }",
+    "details.original summary { cursor: pointer; color: #6b7280; font-size: 12px;",
+    "  list-style: none; display: inline-flex; align-items: center; gap: 4px; }",
+    "details.original summary::-webkit-details-marker { display: none; }",
+    "details.original summary::after { content: \"\"; width: 4px; height: 4px;",
+    "  border-right: 1.4px solid currentColor; border-bottom: 1.4px solid currentColor;",
+    "  transform: rotate(-45deg); transition: transform .15s; }",
+    "details.original[open] summary::after { transform: rotate(45deg); }",
     ".original-text { margin-top: 4px; color: #6b7280; white-space: pre-wrap;",
     "  word-break: break-word; max-height: 96px; overflow: auto; }",
     "@media (prefers-color-scheme: dark) {",
-    "  .card { color: #e5e7eb; background: #1f2937; border-color: #374151; }",
-    "  select { color: #e5e7eb; background: #111827; border-color: #374151; }",
+    "  .card { color: #e5e7eb; background: #2b2d31; border-color: #3a3d42; }",
+    "  select { color: #e5e7eb; background-color: rgba(255,255,255,.1); }",
+    "  select:hover { background-color: rgba(255,255,255,.14); }",
     "  button { color: #d1d5db; }",
     "  button:hover { background: rgba(255,255,255,.08); }",
     "  button:disabled { color: #6b7280; }",
-    "  .menu { background: #111827; border-color: #374151; }",
+    "  .menu { background: #232529; border-color: #3a3d42; }",
     "  .status.waiting { background-image: linear-gradient(90deg, #6b7280 0%, #e5e7eb 50%, #6b7280 100%); }",
     "  .status.error { color: #fca5a5; }",
     "  details.original summary, .original-text { color: #9ca3af; }",
@@ -435,6 +452,8 @@ function ensureBubble() {
     "  .status.waiting { animation: none; background-image: none; color: #6b7280; }",
     "  .status.streaming::after { animation: none; }",
     "  .close-button { transition: none; }",
+    "  .menu { animation: none; }",
+    "  details.original summary::after { transition: none; }",
     "}",
   ].join("\n");
 
@@ -553,7 +572,11 @@ function ensureBubble() {
     menuAction(item);
   });
 
-  row.append(targetSelect, spacer, retryButton, cancelButton, copyButton, moreButton, closeButton);
+  const selectWrap = document.createElement("span");
+  selectWrap.className = "select-wrap";
+  selectWrap.append(targetSelect);
+
+  row.append(selectWrap, spacer, retryButton, cancelButton, copyButton, moreButton, closeButton);
   card.append(statusEl, originalDetails, row, menuEl);
   shadow.append(style, card);
   document.documentElement.append(host);
