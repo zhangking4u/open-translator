@@ -187,7 +187,10 @@ try {
            moreIcon: Boolean(more && more.querySelector("svg")),
            closeIcon: Boolean(close && close.querySelector("svg")),
            copyText: copy ? copy.textContent.trim() : null,
-           closeHidden: close ? getComputedStyle(close).opacity === "0" : null,
+           closeHidden: close
+             ? getComputedStyle(close).opacity ===
+               (window.matchMedia("(hover: hover)").matches ? "0" : "1")
+             : null,
          };
        })()`,
       { contextId: isolated.id }
