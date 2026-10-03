@@ -203,6 +203,26 @@ try {
       JSON.stringify(iconState)
     );
 
+    let statusClass = null;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      statusClass = await evaluate(
+        pageSession,
+        `(() => {
+           const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+           const status = host && host.shadowRoot.querySelector(".status");
+           return status ? status.className : null;
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (statusClass === "status") break;
+      await sleep(200);
+    }
+    check(
+      "streaming indicator cleared after done",
+      statusClass === "status",
+      statusClass ?? "<none>"
+    );
+
     const selected = await evaluate(
       pageSession,
       `(() => {

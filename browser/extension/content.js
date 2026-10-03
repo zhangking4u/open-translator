@@ -53,7 +53,6 @@ const MENU_ITEMS = [
 
 let host = null;
 let statusEl = null;
-let spinnerEl = null;
 let originalEl = null;
 let copyButton = null;
 let moreButton = null;
@@ -159,6 +158,8 @@ function onPortMessage(message) {
   if (message.type === "delta") {
     if (loadingPlaceholder) {
       loadingPlaceholder = false;
+      statusEl.classList.remove("waiting");
+      statusEl.classList.add("streaming");
       statusEl.textContent = "";
     }
     currentTranslation += message.delta || "";
@@ -383,16 +384,19 @@ function ensureBubble() {
 
   const style = document.createElement("style");
   style.textContent = [
-    "@keyframes ot-spin { to { transform: rotate(360deg); } }",
+    "@keyframes ot-shimmer { to { background-position: -200% 0; } }",
+    "@keyframes ot-blink { 50% { opacity: 0; } }",
     ".card { position: relative; font: 13px/1.5 system-ui, sans-serif; color: #1f2937;",
     "  background: #fff; border: 1px solid #d1d5db; border-radius: 8px;",
     "  box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: 460px; min-width: 220px;",
     "  padding: 10px 26px 10px 12px; }",
     ".status { white-space: pre-wrap; word-break: break-word; min-height: 1.5em; }",
+    ".status.waiting { background-image: linear-gradient(90deg, #9ca3af 0%, #374151 50%, #9ca3af 100%);",
+    "  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text;",
+    "  color: transparent; animation: ot-shimmer 1.4s linear infinite; }",
+    ".status.streaming::after { content: \"▍\"; margin-left: 1px;",
+    "  animation: ot-blink 1s steps(1) infinite; }",
     ".status.error { color: #b91c1c; }",
-    ".status-row { display: flex; align-items: flex-start; gap: 6px; }",
-    ".spinner { flex: none; width: 11px; height: 11px; margin-top: 4px; border: 2px solid #d1d5db;",
-    "  border-top-color: #6b7280; border-radius: 50%; animation: ot-spin .8s linear infinite; }",
     ".row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }",
     ".spacer { flex: 1; }",
     "select { font: inherit; padding: 2px 6px; border-radius: 6px; border: 1px solid #d1d5db;",
@@ -422,10 +426,14 @@ function ensureBubble() {
     "  button:hover { background: rgba(255,255,255,.08); }",
     "  button:disabled { color: #6b7280; }",
     "  .menu { background: #111827; border-color: #374151; }",
+    "  .status.waiting { background-image: linear-gradient(90deg, #6b7280 0%, #e5e7eb 50%, #6b7280 100%); }",
     "  .status.error { color: #fca5a5; }",
     "  details.original summary, .original-text { color: #9ca3af; }",
     "}",
-    "@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }",
+    "@media (prefers-reduced-motion: reduce) {",
+    "  .status.waiting { animation: none; background-image: none; color: #6b7280; }",
+    "  .status.streaming::after { animation: none; }",
+    "}",
   ].join("\n");
 
   const card = document.createElement("div");
@@ -440,19 +448,10 @@ function ensureBubble() {
   closeButton.setAttribute("aria-label", "关闭");
   closeButton.addEventListener("click", hide);
 
-  const statusRow = document.createElement("div");
-  statusRow.className = "status-row";
-
-  spinnerEl = document.createElement("span");
-  spinnerEl.className = "spinner";
-  spinnerEl.hidden = true;
-
   statusEl = document.createElement("div");
   statusEl.className = "status";
   statusEl.setAttribute("role", "status");
   statusEl.setAttribute("aria-live", "polite");
-
-  statusRow.append(spinnerEl, statusEl);
 
   const originalDetails = document.createElement("details");
   originalDetails.className = "original";
@@ -495,10 +494,11 @@ function ensureBubble() {
   cancelButton.addEventListener("click", () => {
     cancelActive();
     loadingPlaceholder = false;
-    spinnerEl.hidden = true;
     cancelButton.hidden = true;
     retryButton.hidden = !currentText;
     statusEl.classList.remove("error");
+    statusEl.classList.remove("waiting");
+    statusEl.classList.remove("streaming");
     statusEl.textContent = "已取消。";
   });
 
@@ -552,7 +552,7 @@ function ensureBubble() {
   });
 
   row.append(targetSelect, spacer, retryButton, cancelButton, copyButton, moreButton);
-  card.append(closeButton, statusRow, originalDetails, row, menuEl);
+  card.append(closeButton, statusEl, originalDetails, row, menuEl);
   shadow.append(style, card);
   document.documentElement.append(host);
 
@@ -599,8 +599,9 @@ function hide() {
   moreButton.hidden = true;
   retryButton.hidden = true;
   cancelButton.hidden = true;
-  spinnerEl.hidden = true;
   statusEl.classList.remove("error");
+  statusEl.classList.remove("waiting");
+  statusEl.classList.remove("streaming");
   statusEl.textContent = "";
 }
 
@@ -612,8 +613,9 @@ function showLoading() {
   moreButton.hidden = true;
   retryButton.hidden = true;
   cancelButton.hidden = false;
-  spinnerEl.hidden = false;
   statusEl.classList.remove("error");
+  statusEl.classList.add("waiting");
+  statusEl.classList.remove("streaming");
   statusEl.textContent = "翻译中…";
   show();
 }
@@ -626,8 +628,9 @@ function showResult(translation) {
   moreButton.hidden = false;
   retryButton.hidden = true;
   cancelButton.hidden = true;
-  spinnerEl.hidden = true;
   statusEl.classList.remove("error");
+  statusEl.classList.remove("waiting");
+  statusEl.classList.remove("streaming");
   statusEl.textContent = currentTranslation;
   show();
 }
@@ -639,7 +642,8 @@ function showError(message) {
   moreButton.hidden = false;
   retryButton.hidden = !currentText;
   cancelButton.hidden = true;
-  spinnerEl.hidden = true;
+  statusEl.classList.remove("waiting");
+  statusEl.classList.remove("streaming");
   statusEl.classList.add("error");
   statusEl.textContent = message;
   show();
