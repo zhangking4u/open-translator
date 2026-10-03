@@ -91,7 +91,8 @@ function render(html) {
 
 async function resize() {
   const margin = document.body.classList.contains("os-windows") ? 0 : 20;
-  const height = document.querySelector(".card").getBoundingClientRect().height + margin;
+  const height =
+    Math.ceil(document.querySelector(".card").getBoundingClientRect().height) + margin;
   await invoke("resize_window", { height });
 }
 
@@ -305,28 +306,26 @@ function renderUpdate() {
   const { phase, version, canInstall } = updateState;
   const hasVersion = version.length > 0;
   const failed = phase === "install-error" || phase === "check-error";
+  const canAct =
+    hasVersion &&
+    (phase === "available" || phase === "install-error" || phase === "check-error");
 
   updateNotes.hidden = !hasVersion || phase === "downloading";
-  updateNotes.textContent = canInstall ? "更新说明" : "前往下载";
-  updateCheck.hidden = phase === "downloading";
+  updateNotes.textContent = "更新说明";
+  updateCheck.hidden = phase === "downloading" || hasVersion;
   updateCheck.disabled = phase === "checking";
   updateCheck.textContent = phase === "checking" ? "检查中…" : "检查更新";
-  updateAction.hidden = !(
-    canInstall &&
-    (phase === "available" || phase === "install-error" || phase === "check-error")
-  );
-  updateAction.textContent = phase === "install-error" ? "重试" : "更新";
+  updateAction.hidden = !canAct;
+  updateAction.textContent =
+    phase === "install-error" ? "重试" : canInstall ? "更新到 v" + version : "前往下载";
   updateProgress.hidden = phase !== "downloading";
-  updateStatus.hidden = phase === "idle";
+  updateStatus.hidden = phase === "idle" || phase === "available";
   updateStatus.classList.toggle("error", failed);
 
   if (phase === "checking") {
     updateStatus.textContent = "正在检查更新…";
   } else if (phase === "latest") {
     updateStatus.textContent = "已是最新版本";
-  } else if (phase === "available") {
-    updateStatus.textContent =
-      "发现新版本 v" + version + (canInstall ? "" : "，请前往发布页下载");
   } else if (phase === "install-error") {
     updateStatus.textContent = "更新失败：" + updateState.message;
   } else if (phase === "check-error") {
@@ -343,6 +342,11 @@ updateCheck.addEventListener("click", () => {
 });
 
 updateAction.addEventListener("click", () => {
+  if (!updateState.canInstall) {
+    invoke("open_release_page");
+    return;
+  }
+
   updateState = { ...updateState, phase: "downloading", message: "" };
   updateStatus.textContent = "正在准备更新…";
   updateProgress.max = 100;
@@ -362,17 +366,30 @@ document.getElementById("open-config").addEventListener("click", () => {
   invoke("open_config_dir");
 });
 
-document.getElementById("model-save").addEventListener("click", async () => {
-  const value = document.getElementById("model-input").value;
-  await invoke("save_model_path", { value });
+const modelInput = document.getElementById("model-input");
+let savedModelPath = "";
+
+async function saveModelPath() {
+  const value = modelInput.value;
+  if (value === savedModelPath) return;
 
   const saved = document.getElementById("model-saved");
+  await invoke("save_model_path", { value });
+  savedModelPath = value;
   saved.hidden = false;
   window.setTimeout(() => (saved.hidden = true), 1500);
+  resize();
+}
+
+modelInput.addEventListener("blur", saveModelPath);
+modelInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    saveModelPath();
+  }
 });
 
 const hotkeyRecorder = document.getElementById("hotkey-recorder");
-const hotkeyApply = document.getElementById("hotkey-apply");
 const hotkeyReset = document.getElementById("hotkey-reset");
 const hotkeyError = document.getElementById("hotkey-error");
 const hotkeySaved = document.getElementById("hotkey-saved");
@@ -391,7 +408,6 @@ const KEY_LABELS = {
 
 const hotkeyState = {
   recording: false,
-  confirmed: false,
   candidate: "",
   current: "",
 };
@@ -432,7 +448,7 @@ function renderHotkey() {
     if (!parts.length) state = "未设置";
   } else if (hotkeyState.candidate) {
     parts = hotkeyParts(hotkeyState.candidate);
-    state = hotkeyState.confirmed ? "已确认" : "再按一次";
+    state = "再按一次";
   } else {
     state = "按下新组合键…";
   }
@@ -450,14 +466,13 @@ function renderHotkey() {
     nodes.push(span);
   }
   hotkeyRecorder.replaceChildren(...nodes);
+  hotkeyReset.hidden = !hotkeyState.recording;
 
-  hotkeyApply.disabled = !(hotkeyState.recording && hotkeyState.confirmed);
   resize();
 }
 
 function startHotkeyRecording() {
   hotkeyState.recording = true;
-  hotkeyState.confirmed = false;
   hotkeyState.candidate = "";
   hotkeyError.hidden = true;
   hotkeySaved.hidden = true;
@@ -467,7 +482,6 @@ function startHotkeyRecording() {
 
 function stopHotkeyRecording() {
   hotkeyState.recording = false;
-  hotkeyState.confirmed = false;
   hotkeyState.candidate = "";
   renderHotkey();
 }
@@ -480,7 +494,6 @@ async function applyHotkey(spec) {
     await invoke("save_hotkey", { spec });
     hotkeyState.current = spec;
     hotkeyState.recording = false;
-    hotkeyState.confirmed = false;
     hotkeyState.candidate = "";
     hotkeySaved.hidden = false;
     window.setTimeout(() => (hotkeySaved.hidden = true), 1500);
@@ -496,8 +509,9 @@ hotkeyRecorder.addEventListener("click", () => {
   startHotkeyRecording();
 });
 
-hotkeyRecorder.addEventListener("blur", () => {
-  if (hotkeyState.recording && !hotkeyState.confirmed) {
+hotkeyRecorder.addEventListener("blur", (event) => {
+  if (event.relatedTarget === hotkeyReset) return;
+  if (hotkeyState.recording) {
     stopHotkeyRecording();
   }
 });
@@ -514,14 +528,8 @@ hotkeyRecorder.addEventListener("keydown", (event) => {
     return;
   }
 
-  if (event.key === "Enter" && hotkeyState.confirmed) {
-    applyHotkey(hotkeyState.candidate);
-    return;
-  }
-
   if (event.key === "Backspace" || event.key === "Delete") {
     hotkeyState.candidate = "";
-    hotkeyState.confirmed = false;
     renderHotkey();
     return;
   }
@@ -540,15 +548,14 @@ hotkeyRecorder.addEventListener("keydown", (event) => {
   hotkeyError.hidden = true;
 
   const next = modifiers.concat(key).join("+");
-  hotkeyState.confirmed = hotkeyState.candidate === next;
+
+  if (hotkeyState.candidate === next) {
+    applyHotkey(next);
+    return;
+  }
+
   hotkeyState.candidate = next;
   renderHotkey();
-});
-
-hotkeyApply.addEventListener("click", () => {
-  if (hotkeyState.candidate) {
-    applyHotkey(hotkeyState.candidate);
-  }
 });
 
 hotkeyReset.addEventListener("click", () => {
@@ -577,12 +584,12 @@ async function openSettings() {
 
   hotkeyState.current = settings.hotkey;
   hotkeyState.recording = false;
-  hotkeyState.confirmed = false;
   hotkeyState.candidate = "";
   hotkeyError.hidden = true;
   hotkeySaved.hidden = true;
   renderHotkey();
-  document.getElementById("model-input").value = settings.model_path;
+  modelInput.value = settings.model_path;
+  savedModelPath = settings.model_path;
   setSwitch("switch-auto", settings.auto_download);
   setSwitch("switch-updates", settings.check_updates);
   setSwitch("switch-extension", settings.serve_extension);

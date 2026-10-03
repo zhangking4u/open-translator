@@ -87,7 +87,7 @@
         <div class="page-head">
           <span class="page-title">设置</span>
           <span class="spacer"></span>
-          <button id="settings-back">返回翻译</button>
+          <button id="settings-back">完成</button>
         </div>
 
         <p class="group-title">常规</p>
@@ -98,8 +98,8 @@
               <span
                 class="info"
                 role="img"
-                title="点击后按下新快捷键，再按一次相同组合确认；Esc 取消。需包含 Ctrl/Alt/Super，可加 Shift；被占用时会保留原快捷键。"
-                aria-label="点击后按下新快捷键，再按一次相同组合确认；Esc 取消。需包含 Ctrl/Alt/Super，可加 Shift；被占用时会保留原快捷键。"
+                title="点击后按下新组合键并再次确认即可应用，Esc 取消；需要 Ctrl/Alt/Super；被占用时保留原快捷键。"
+                aria-label="点击后按下新组合键并再次确认即可应用，Esc 取消；需要 Ctrl/Alt/Super；被占用时保留原快捷键。"
                 >i</span
               >
             </span>
@@ -110,8 +110,13 @@
                 type="button"
                 aria-label="录制快捷键"
               ></button>
-              <button id="hotkey-apply" disabled>应用</button>
-              <button id="hotkey-reset" title="恢复默认快捷键 Ctrl+Alt+T">恢复默认</button>
+              <button
+                id="hotkey-reset"
+                hidden
+                title="恢复默认快捷键 Ctrl+Alt+T"
+              >
+                恢复默认
+              </button>
               <span id="hotkey-saved" class="ok-text" hidden>已应用</span>
               <span id="hotkey-error" class="error-text" hidden></span>
             </div>
@@ -126,8 +131,8 @@
               <span
                 class="info"
                 role="img"
-                title="模型文件（.gguf）的完整路径；修改后下次启动生效；文件不存在且开启自动下载时会下载默认模型。"
-                aria-label="模型文件（.gguf）的完整路径；修改后下次启动生效；文件不存在且开启自动下载时会下载默认模型。"
+                title="目标文件不存在且开启自动下载时，会下载默认模型到该路径。"
+                aria-label="目标文件不存在且开启自动下载时，会下载默认模型到该路径。"
                 >i</span
               >
             </span>
@@ -138,7 +143,6 @@
                 placeholder="留空使用默认位置"
                 spellcheck="false"
               />
-              <button id="model-save">保存</button>
               <span id="model-saved" class="ok-text" hidden>已保存</span>
             </div>
           </div>
@@ -153,6 +157,7 @@
             />
           </label>
         </div>
+        <p class="group-note">模型文件（.gguf）的完整路径；留空使用默认位置，修改后下次启动生效。</p>
 
         <p class="group-title">服务</p>
         <div class="group">
@@ -166,13 +171,26 @@
               aria-checked="false"
             />
           </label>
-          <div class="setting-row">
+          <button id="open-config" class="setting-row nav-row" type="button">
             <span class="setting-name">配置目录</span>
-            <div class="setting-control">
+            <span class="nav-value">
               <span id="config-path" class="dim-text path-text"></span>
-              <button id="open-config">打开</button>
-            </div>
-          </div>
+              <svg
+                class="nav-chevron"
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </span>
+          </button>
         </div>
 
         <p class="group-title">更新</p>

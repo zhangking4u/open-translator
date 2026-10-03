@@ -864,6 +864,8 @@ fn resize_window(window: WebviewWindow, height: f64) {
         return;
     };
 
+    let scale = window.scale_factor().unwrap_or(1.0);
+
     let monitor = window
         .current_monitor()
         .ok()
@@ -880,7 +882,7 @@ fn resize_window(window: WebviewWindow, height: f64) {
         None => (2000, 12),
     };
 
-    let height = (height as u32).clamp(120, max_height);
+    let height = ((height * scale).ceil() as u32).clamp(120, max_height);
     let _ = window.set_size(tauri::PhysicalSize::new(size.width, height));
 
     // Keep the growing card inside the work area: when it would run past the
