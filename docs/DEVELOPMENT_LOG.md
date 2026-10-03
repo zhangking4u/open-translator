@@ -1680,6 +1680,18 @@ Verified on the same Ubuntu 26.04/GNOME Wayland machine with a local release bui
 ---
 
 
+## Linux TTS Fixes (2026-10-03, after the gap closure)
+
+
+- `speak_text` now runs `spd-say --wait`: without it spd-say exited right after queueing, so `speech-ended` and the 停止朗读 state fired immediately and a second click restarted the utterance instead of stopping it
+- `stop_speaking` uses `spd-say --stop` (plus `--cancel` for anything queued) — the previous per-connection `--cancel` could not interrupt the message owned by another spd-say process
+- the target language is passed to speech-dispatcher (`zh` → `cmn`, region suffix stripped) and the new `tts_voice_available` command hides 朗读 when `spd-say -L` has no voice for it
+- verified on the dev machine: a `--wait --pipe-mode` child stays alive during playback and `spd-say -S` terminates it; unit tests cover the language mapping, the command args and the voice-listing parser
+
+
+---
+
+
 # Git History
 
 Commit:

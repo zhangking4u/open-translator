@@ -294,6 +294,7 @@ fn main() {
             center_window,
             copy_text,
             tts_backend,
+            tts_voice_available,
             speak_text,
             stop_speaking,
             retranslate,
@@ -1065,8 +1066,100 @@ fn spawn_reaped(command: &mut std::process::Command) {
     }
 }
 
+/// Map a UI language tag to the speech-dispatcher language code (`zh` speaks
+/// through the Mandarin `cmn` voice); `auto`/empty means "use the default".
+#[cfg(target_os = "linux")]
+fn spd_language(tag: &str) -> Option<String> {
+    let tag = tag.trim().to_ascii_lowercase();
+
+    if tag.is_empty() || tag == "auto" {
+        return None;
+    }
+
+    if tag.starts_with("zh") {
+        return Some("cmn".to_string());
+    }
+
+    if tag.starts_with("yue") {
+        return Some("yue".to_string());
+    }
+
+    Some(tag.split(['-', '_']).next().unwrap_or(&tag).to_string())
+}
+
+/// `spd-say -L` prints a fixed-width table whose long names overflow into the
+/// language column; language codes are the lowercase 2-3 letter tokens.
+#[cfg(target_os = "linux")]
+fn parse_voice_languages(output: &str) -> std::collections::HashSet<String> {
+    let mut languages = std::collections::HashSet::new();
+
+    for line in output.lines().skip(1) {
+        for token in line.split_whitespace() {
+            let base = token.split('-').next().unwrap_or(token);
+
+            if (2..=3).contains(&base.len())
+                && base.bytes().all(|byte| byte.is_ascii_lowercase())
+            {
+                languages.insert(base.to_string());
+            }
+        }
+    }
+
+    languages
+}
+
+#[cfg(target_os = "linux")]
+fn spd_voice_languages() -> &'static std::collections::HashSet<String> {
+    static LANGUAGES: std::sync::OnceLock<std::collections::HashSet<String>> =
+        std::sync::OnceLock::new();
+
+    LANGUAGES.get_or_init(|| {
+        std::process::Command::new("spd-say")
+            .arg("-L")
+            .output()
+            .map(|output| parse_voice_languages(&String::from_utf8_lossy(&output.stdout)))
+            .unwrap_or_default()
+    })
+}
+
+/// The utterance command: `--wait` keeps the child alive until the message is
+/// spoken or stopped (without it `spd-say` exits right after queueing, so the
+/// UI could never show or cancel a running utterance); `--pipe-mode` keeps the
+/// text out of argv so a translation starting with `-` is not parsed as an
+/// option; `important` interrupts the previous message.
+#[cfg(target_os = "linux")]
+fn spd_speak_command(lang: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("spd-say");
+    command.args(["--priority", "important", "--wait", "--pipe-mode"]);
+
+    if let Some(code) = spd_language(lang) {
+        command.arg("-l").arg(code);
+    }
+
+    command
+}
+
 #[tauri::command]
-fn speak_text(app: AppHandle, text: String, generation: u64) -> Result<(), String> {
+fn tts_voice_available(lang: String) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let Some(code) = spd_language(&lang) else {
+            return true;
+        };
+        let languages = spd_voice_languages();
+
+        // An empty set means `spd-say -L` failed; do not block speech then.
+        languages.is_empty() || languages.contains(&code)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = lang;
+        true
+    }
+}
+
+#[tauri::command]
+fn speak_text(app: AppHandle, text: String, lang: String, generation: u64) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         if text.trim().is_empty() {
@@ -1074,11 +1167,7 @@ fn speak_text(app: AppHandle, text: String, generation: u64) -> Result<(), Strin
             return Ok(());
         }
 
-        // `--pipe-mode` keeps the text out of argv, so a translation starting
-        // with `-` cannot be parsed as an option; `important` interrupts the
-        // previous message.
-        let mut child = std::process::Command::new("spd-say")
-            .args(["--priority", "important", "--pipe-mode"])
+        let mut child = spd_speak_command(&lang)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -1099,7 +1188,7 @@ fn speak_text(app: AppHandle, text: String, generation: u64) -> Result<(), Strin
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (app, text, generation);
+        let _ = (app, text, lang, generation);
         Ok(())
     }
 }
@@ -1108,6 +1197,9 @@ fn speak_text(app: AppHandle, text: String, generation: u64) -> Result<(), Strin
 fn stop_speaking() {
     #[cfg(target_os = "linux")]
     {
+        // `--stop` stops the currently spoken message, `--cancel` clears
+        // anything still queued for the connection.
+        spawn_reaped(std::process::Command::new("spd-say").arg("--stop"));
         spawn_reaped(std::process::Command::new("spd-say").arg("--cancel"));
     }
 }
@@ -2000,6 +2092,48 @@ fn make_icon_rgba() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::{WorkArea, card_position};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn maps_speech_languages() {
+        assert_eq!(super::spd_language("zh"), Some("cmn".to_string()));
+        assert_eq!(super::spd_language("zh-TW"), Some("cmn".to_string()));
+        assert_eq!(super::spd_language("en-US"), Some("en".to_string()));
+        assert_eq!(super::spd_language("ja"), Some("ja".to_string()));
+        assert_eq!(super::spd_language("auto"), None);
+        assert_eq!(super::spd_language(""), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn speech_command_waits_and_selects_the_language() {
+        let args: Vec<String> = super::spd_speak_command("zh")
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(args.contains(&"--wait".to_string()));
+        assert!(args.contains(&"--pipe-mode".to_string()));
+        let language = args.iter().position(|arg| arg == "-l");
+        assert_eq!(language.map(|index| args[index + 1].as_str()), Some("cmn"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parses_voice_languages_from_listing() {
+        let sample = "                     NAME                 LANGUAGE                  VARIANT\n\
+                      Afrikaans af none\n\
+                      English (Caribbean)+Alicia en-029 Alicia\n\
+                      Chinese (Mandarin, latin as English) cmn none\n\
+                      German de none\n\
+                      German+Half-LifeAnnouncementSystem deHalf-LifeAnnouncementSystem\n";
+        let languages = super::parse_voice_languages(sample);
+
+        assert!(languages.contains("af"));
+        assert!(languages.contains("en"));
+        assert!(languages.contains("cmn"));
+        assert!(languages.contains("de"));
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

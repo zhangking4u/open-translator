@@ -35,8 +35,21 @@ const SPEECH_LANGS = {
 };
 let speakBackend = "webview";
 let speakSupported = "speechSynthesis" in window;
+let speakVoiceAvailable = true;
 let speechGeneration = 0;
 let hotkeyLabel = "Ctrl+Alt+T";
+
+async function checkSpeakVoice(lang) {
+  try {
+    speakVoiceAvailable = await invoke("tts_voice_available", { lang });
+
+    if (!speakVoiceAvailable) {
+      speak.hidden = true;
+    }
+  } catch (error) {
+    speakVoiceAvailable = true;
+  }
+}
 
 let current = "";
 let lastSource = "";
@@ -142,7 +155,7 @@ function pickVoice(lang) {
 }
 
 function toggleSpeech() {
-  if (!speakSupported || !current) return;
+  if (!speakSupported || !speakVoiceAvailable || !current) return;
 
   if (speakBackend === "spd-say") {
     if (speak.classList.contains("active")) {
@@ -153,7 +166,11 @@ function toggleSpeech() {
     speak.classList.add("active");
     speak.title = "停止朗读";
     const generation = ++speechGeneration;
-    invoke("speak_text", { text: current, generation }).catch((message) => {
+    invoke("speak_text", {
+      text: current,
+      lang: languageState.target,
+      generation,
+    }).catch((message) => {
       stopSpeaking();
       setStatus(String(message));
       window.setTimeout(() => setStatus(""), 3000);
@@ -346,6 +363,11 @@ function finish(translationText) {
   paragraph.textContent = current;
   setCopyEnabled(current.length > 0);
   speak.hidden = !speakSupported;
+
+  if (speakSupported && speakBackend === "spd-say") {
+    checkSpeakVoice(languageState.target);
+  }
+
   setDot("ready");
   resize();
 }
