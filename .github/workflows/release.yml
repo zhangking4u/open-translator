@@ -116,3 +116,27 @@ jobs:
         run: |
           gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || gh release create "${GITHUB_REF_NAME}" --generate-notes || true
           gh release upload "${GITHUB_REF_NAME}" OpenTranslator-macos-*.dmg --clobber
+
+  browser-extension:
+    name: Browser extension package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build zips
+        run: bash browser/build.sh all --zip
+      - name: Rename assets
+        run: |
+          mkdir -p browser-assets
+          cp "$(ls browser/dist/open-translator-chrome-*.zip)" browser-assets/OpenTranslator-browser-chrome.zip
+          cp "$(ls browser/dist/open-translator-firefox-*.zip)" browser-assets/OpenTranslator-browser-firefox.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTranslator-browser
+          path: browser-assets/*.zip
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || gh release create "${GITHUB_REF_NAME}" --generate-notes || true
+          gh release upload "${GITHUB_REF_NAME}" browser-assets/OpenTranslator-browser-chrome.zip browser-assets/OpenTranslator-browser-firefox.zip --clobber

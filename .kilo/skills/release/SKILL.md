@@ -21,8 +21,8 @@ git push origin v0.1.0
 
 Pushing a `v*` tag triggers `.github/workflows/release.yml`, which:
 
-1. builds the Tauri client (`desktop/translator-popup-tauri`) on `windows-latest`, `macos-latest` and `ubuntu-latest` (the Linux job then runs the deb packaging; no core-service or GTK-popup build);
-2. packages `OpenTranslator-windows-x64.zip` (`translator-popup-tauri.exe` + `packaging/windows/install.ps1` + README), `OpenTranslator-macos-<arch>.dmg` (`packaging/macos/make-dmg.sh` + `Info.plist`) and `OpenTranslator-linux-x64.deb` (`packaging/linux/make-deb.sh`; the Linux build needs `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config`, and the deb ships `/usr/lib/open-translator/translator-popup` + the `/usr/bin/translator-popup` symlink, `open-translator-setup`, desktop entry, icon, and a glibc ≥ 2.39 dependency);
+1. builds the Tauri client (`desktop/translator-popup-tauri`) on `windows-latest`, `macos-latest` and `ubuntu-latest` (the Linux job then runs the deb packaging; a `browser-extension` job runs `browser/build.sh all --zip`; no core-service or GTK-popup build);
+2. packages `OpenTranslator-windows-x64.zip` (`translator-popup-tauri.exe` + `packaging/windows/install.ps1` + README), `OpenTranslator-macos-<arch>.dmg` (`packaging/macos/make-dmg.sh` + `Info.plist`) and `OpenTranslator-linux-x64.deb` (`packaging/linux/make-deb.sh`; the Linux build needs `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config`, and the deb ships `/usr/lib/open-translator/translator-popup` + the `/usr/bin/translator-popup` symlink, `open-translator-setup`, desktop entry, icon, and a glibc ≥ 2.39 dependency), plus the browser extension zips `OpenTranslator-browser-chrome.zip` / `OpenTranslator-browser-firefox.zip` (top-level folder + `packaging/browser/README.txt` install guide; the Firefox zip is unsigned and only supports temporary loading);
 3. creates the GitHub release (`gh release create --generate-notes`) and uploads all three assets; the build steps inject `OPEN_TRANSLATOR_VERSION` from the tag for the startup update check.
 
 The workflow also supports manual `workflow_dispatch`: it then only uploads workflow artifacts and does not touch releases — useful for testing packaging before tagging.
@@ -35,7 +35,7 @@ gh run watch <run-id>
 gh release view v0.1.0
 ```
 
-Expected assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`.
+Expected assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`, `OpenTranslator-browser-chrome.zip`, `OpenTranslator-browser-firefox.zip`.
 Artifacts can be downloaded with `gh run download <run-id> -n <name>` (can be slow).
 
 ## Polish / troubleshoot

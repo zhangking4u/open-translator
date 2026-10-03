@@ -8,6 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/extension"
 DIST="$SCRIPT_DIR/dist"
+PACKAGING="$SCRIPT_DIR/../packaging/browser"
 
 SHARED_FILES=(background.js content.js languages.js options.html options.js popup.html popup.js result.html result.js)
 
@@ -29,21 +30,38 @@ build_target() {
     done
     cp "$SRC/$manifest" "$out/manifest.json"
 
+    if [ -f "$PACKAGING/README.txt" ]; then
+        cp "$PACKAGING/README.txt" "$out/README.txt"
+    fi
+
     echo "built: $out"
 }
 
 zip_target() {
     local name="$1"
     local version
-    version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$DIST/$name/manifest.json")"
+    version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$DIST/$name/manifest.json")"
     local archive="$DIST/open-translator-$name-$version.zip"
 
     rm -f "$archive"
 
     if command -v zip >/dev/null 2>&1; then
-        (cd "$DIST/$name" && zip -q -r "$archive" .)
+        (cd "$DIST" && zip -q -r "$archive" "$name")
     else
-        (cd "$DIST/$name" && python3 -m zipfile -c "$archive" "${SHARED_FILES[@]}" manifest.json)
+        (cd "$DIST" && python3 - "$archive" "$name" <<'PY'
+import os
+import sys
+import zipfile
+
+archive, folder = sys.argv[1], sys.argv[2]
+
+with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+    for root, _dirs, files in os.walk(folder):
+        for name in files:
+            path = os.path.join(root, name)
+            bundle.write(path, path)
+PY
+        )
     fi
 
     echo "packaged: $archive"

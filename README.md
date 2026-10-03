@@ -19,6 +19,7 @@
 - **Windows**：解压 `OpenTranslator-windows-x64.zip` → 右键 `install.ps1` →「使用 PowerShell 运行」。程序装入 `%LOCALAPPDATA%\Programs\OpenTranslator` 并加入开机启动。
 - **macOS**：打开 `OpenTranslator-macos-*.dmg`，把 `OpenTranslator.app` 拖入「应用程序」。首次打开如被 Gatekeeper 拦截，右键 →「打开」或在「系统设置 → 隐私与安全性」中允许（当前未签名）；使用取词功能还需在「辅助功能」中授权。
 - **Linux（GNOME）**：`sudo apt install ./OpenTranslator-linux-x64.deb`，安装后运行一次 `open-translator-setup` 绑定全局快捷键（默认 `Ctrl+Alt+T`，同时写入开机自启；安装时会提示）。deb 基于 Ubuntu 24.04 构建，需要 glibc ≥ 2.39（Ubuntu 24.04+ / Debian 13+）；运行时依赖（libwebkit2gtk-4.1-0、libgtk-3-0、libayatana-appindicator3-1、wl-clipboard、libnotify-bin、libgomp1）由 apt 自动安装。
+- **浏览器扩展**：`OpenTranslator-browser-chrome.zip`（Edge/Chrome）或 `OpenTranslator-browser-firefox.zip`（Firefox），解压后按扩展页面的「加载已解压缩的扩展程序 / 临时载入附加组件」安装，详见「浏览器扩展」一节。
 
 首次运行会在后台从 ModelScope 下载模型（约 1.1GB，带进度与断点续传），托盘/菜单栏提示下载进度；程序开机启动后保持静默、不弹窗，按 `Ctrl+Alt+T` 或在托盘选「显示窗口」才会显示。之后任意应用选中文字按 `Ctrl+Alt+T` 即可翻译；托盘/菜单栏图标提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。
 
@@ -100,14 +101,14 @@ target = zh
 
 弹窗内可用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语；⇄ 互换语言对，`Ctrl+1/2/3` 切换最近使用的目标语言。译文流式显示并同步显示已接收字数。卡片提供 复制译文 / 替换原文（Windows）/ 重新翻译 / 固定，`Ctrl+Enter` 重译、`Ctrl+Shift+C` 复制；托盘菜单提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。
 
-### 3. 浏览器扩展（Firefox / Chrome）
+### 3. 浏览器扩展（Edge / Chrome / Firefox）
 
-```bash
-./browser/build.sh            # 生成 browser/dist/{firefox,chrome}
-```
+从 [Releases](https://github.com/zhangking4u/open-translator/releases/latest) 下载对应压缩包（内含安装说明）：
 
-- **Firefox**：`about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选 `browser/dist/firefox/manifest.json`
-- **Chrome/Edge**：`chrome://extensions` → 打开「开发者模式」→「加载已解压的扩展程序」→ 选 `browser/dist/chrome`
+- **Edge / Chrome**：`OpenTranslator-browser-chrome.zip` → 解压 → `edge://extensions` 或 `chrome://extensions` → 打开「开发人员模式」→「加载已解压的扩展程序」→ 选解压出的文件夹
+- **Firefox**：`OpenTranslator-browser-firefox.zip` → 解压 → `about:debugging#/runtime/this-firefox` →「临时载入附加组件」→ 选文件夹内的 `manifest.json`（未签名包重启浏览器后失效；永久安装见文末签名说明）
+
+源码调试：`./browser/build.sh [firefox|chrome|all] [--zip]` 生成 `browser/dist/{firefox,chrome}`，加载方式同上。
 
 刷新已打开的网页，选中文字 → 右键「翻译选中文本（OpenTranslator）」或 `Alt+Shift+T`；气泡流式显示译文，默认只保留目标语言、复制和「⋯」菜单（复制双语/原文、朗读、替换原文、重新翻译、互换语言、语言设置），翻译中只显示「停止」、出错只显示「重试」。`Alt+Shift+Y` 翻译剪贴板；PDF 等无法注入脚本的页面会弹出独立结果窗口。点击工具栏图标查看服务状态与最近翻译、快速修改目标语言/自动翻译开关与当前网站开关；设置页可改服务地址、源语言、自动翻译延迟/最短字符数，并管理已关闭自动翻译的站点。
 
