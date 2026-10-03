@@ -1712,6 +1712,53 @@ Released:
 ---
 
 
+## Milestone: Browser Extension Inline Translation (2026-10-03, after v0.4.0)
+
+
+Next feature after the selection flow: borrow 微信输入法's 边写边译 (type, see the translation live, commit with a key). The client is not an IME, so the MVP lives in the browser extension content script, where the field text and caret are directly readable.
+
+- `content.js` gained a self-contained typing module: a 500 ms debounce after `input` (skipped while composing), sentence extraction around the caret (delimiters `。！？!?；;` + newline, trailing delimiter included), an element session for `<input>`/`<textarea>` and a block/Range session for contenteditable (block text + TreeWalker offsets)
+- A separate non-interactive shadow-DOM bubble (`data-opentranslator="type"`, `pointer-events: none`) anchors at the caret (hidden-mirror measurement for fields, range rects for rich text, viewport clamping) and streams through a second `translate` port; a new request cancels the in-flight one and identical sentences are deduped
+- `Tab` (capture phase) commits: `setRangeText` + synthetic `input` for fields, restore range + `execCommand("insertText")` for contenteditable; `Esc`/blur/outside mousedown hides; `typeApplying` suppresses the echo input event after a commit
+- `background.js` threads a `record` flag through `translate`/`streamTranslation`/`sendOneShot` so typing previews skip history, and a `record-history` message records only committed pairs
+- Settings: toolbar popup checkbox; options page 边写边译 section (`typeTranslate`, `typeTranslateMinLength`, `typeTranslateDelay`); the feature defaults off and respects `disabledSites`; password/readonly fields never trigger
+- Manifests bumped to 0.3.0 (AMO rejects reused versions and 0.2.0 was already released)
+
+
+Follow-up (same day, "change the language while typing"):
+
+- The bubble became interactive: a target-language chip with a menu (picking a language retranslates the current sentence with the new target and updates the chip), and a 设置… gear that opens the options page; `mousedown` on the card is default-prevented so using the controls never blurs the edited field, and typing/Esc closes the menu instead of the bubble
+- New `cycle-target` command (`Alt+Shift+L` suggested, rebindable at the browser shortcuts page): the background forwards it to the active tab and the visible bubble cycles through the current target plus up to three `recentTargets` (maintained on every target change in the top frame, falling back to zh/en/ja/ko when empty)
+- E2E now covers the chip menu (ja→fr switch, chip label, settings button presence, retranslation) and the cycle path through the real `tabs.sendMessage` wiring (fr→ja); 32 checks pass
+- Review feedback: the language menu was absolutely positioned above the chip and covered the translation being read; it now flows below the chip inside the card (the bubble repositions when it opens/closes so it stays in the viewport), with an e2e rect assertion (`menuTop >= statusBottom`)
+
+
+Follow-up (same day, Apple-style UI pass):
+
+- Shared design tokens (`UI_TOKENS_CSS`) now feed both bubble shadow roots: system font stack, neutral label/systemFill palette, translucent material with a solid fallback, concentric 12/8px radii, hairline + layered shadow, `color-scheme: light dark`
+- Typing bubble rebuilt on the tokens: chip with SVG chevron and a real gear (the old icon was sliders), `Tab`/`Esc` keycaps, opacity-pulse waiting instead of the gradient shimmer, 2px rounded streaming caret, fade mask when the translation is clipped, and the language list as a section list (hairline separator, hover fill, accent checkmark, 6px scrollbar)
+- Selection bubble unified on the same tokens; popup and options pages re-skinned (filled rounded controls, accent-colored checkboxes, thin scrollbars)
+- Verified: `node --check` + `web-ext lint` clean, the 33-check Chrome e2e passes, and light/dark screenshots of the typing bubble (with/without menu), selection bubble, popup and options were reviewed
+
+
+Follow-up (same day, unify the language dropdowns):
+
+- The selection bubble, popup and options page used styled native `<select>`s whose OS-rendered popup could not match the typing bubble chip; new `dropdown.js` exposes `OTSelect` (chip button + checkmarked popup menu with hover/focused/selected states and arrow-key navigation)
+- The native `<select>` stays hidden in the DOM as the value holder, so the existing `value`/`change` wiring is unchanged; content scripts share the isolated-world global and embed `OTSelect.cssText` in their shadow styles, while popup/options call `OTSelect.inject()`
+- The typing bubble now uses the same component with `menuContainer: card` (in-flow section-list variant, preserving the "below the translation" behavior and `onToggle` repositioning); e2e selectors updated to `.ot-select-*`
+- Screenshot review caught a missing wrapper insertion for page contexts (`select.parentNode.insertBefore`), fixed and re-verified: 33 checks pass on a fresh profile
+- Bug report (real mouse): picking a language closed the menu without switching. Shadow DOM retargets `event.target` to the host, so `OTSelect`'s outside-mousedown check (`wrap.contains(event.target)`) fired for the menu's own items and closed it before click; it now uses `event.composedPath()`. The e2e language switches were changed from `element.click()` to trusted `Input.dispatchMouseEvent` so the mousedown/click path is actually exercised (both selection bubble and typing bubble), 33 checks pass
+
+Verification:
+
+- `node --check` on every extension script and `python -m json.tool` on both manifests; `browser/build.sh chrome` builds the dist
+- Chrome e2e (`browser/test-chrome.mjs`, headless Edge 154 + the running llama-cpp service) gained a typing scenario: textarea and contenteditable bubbles, Tab hint, Tab commit and dismissal; all 26 checks pass
+- Harness hardening found while testing: attach to the service worker by its `/background.js` URL (an options-page target could win otherwise) and cache-bust the test page query (a reused profile served the stale page)
+
+
+---
+
+
 # Git History
 
 Commit:

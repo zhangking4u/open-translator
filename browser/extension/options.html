@@ -4,19 +4,51 @@
   <meta charset="utf-8">
   <title>OpenTranslator 设置</title>
   <style>
-    body { font: 14px/1.6 system-ui, sans-serif; margin: 24px; max-width: 460px; }
-    label { display: block; margin-bottom: 12px; }
+    :root {
+      color-scheme: light dark;
+      --ot-label: rgba(0,0,0,.85);
+      --ot-label-2: rgba(0,0,0,.5);
+      --ot-label-3: rgba(0,0,0,.26);
+      --ot-fill: rgba(120,120,128,.12);
+      --ot-fill-hover: rgba(120,120,128,.2);
+      --ot-accent: #007aff;
+      --ot-separator: rgba(60,60,67,.14);
+      --ot-bg: #ffffff;
+      --ot-control-height: 28px;
+      --ot-control-font: 13px;
+      --ot-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ot-label: rgba(255,255,255,.85);
+        --ot-label-2: rgba(255,255,255,.55);
+        --ot-label-3: rgba(255,255,255,.3);
+        --ot-fill: rgba(120,120,128,.24);
+        --ot-fill-hover: rgba(120,120,128,.36);
+        --ot-accent: #0a84ff;
+        --ot-separator: rgba(255,255,255,.12);
+        --ot-bg: #1c1c1e;
+      }
+    }
+    body { font-family: var(--ot-font); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; margin: 24px; max-width: 460px; color: var(--ot-label); background: var(--ot-bg); }
+    h1 { font-size: 17px; font-weight: 600; margin: 0 0 16px; }
+    h2 { font-size: 12px; font-weight: 600; color: var(--ot-label-2); margin: 20px 0 6px; }
+    label { display: block; margin-bottom: 12px; color: var(--ot-label); }
     label.checkbox { display: flex; align-items: center; gap: 6px; }
-    input[type="url"] { width: 100%; padding: 4px 6px; font: inherit; }
-    select { width: 100%; padding: 4px 6px; font: inherit; }
-    label.checkbox input { width: auto; }
-    button { font: inherit; padding: 4px 12px; margin-right: 8px; cursor: pointer; }
-    #status { color: #374151; min-height: 1.6em; }
-    h2 { font-size: 15px; margin-bottom: 4px; }
+    input[type="url"], input[type="number"] { width: 100%; box-sizing: border-box; padding: 5px 10px; min-height: 28px; font: inherit; font-size: 13px; color: var(--ot-label); background: var(--ot-fill); border: 0; border-radius: 8px; }
+    select { appearance: none; -webkit-appearance: none; width: 100%; padding: 5px 10px; min-height: 28px; font: inherit; font-size: 13px; color: var(--ot-label); background-color: var(--ot-fill); border: 0; border-radius: 8px; }
+    select option { color: var(--ot-label); background: var(--ot-bg); }
+    input:hover, select:hover { background: var(--ot-fill-hover); }
+    input:focus-visible, select:focus-visible { outline: 2px solid var(--ot-accent); outline-offset: 1px; }
+    label.checkbox input { width: 15px; height: 15px; accent-color: var(--ot-accent); }
+    button { font: inherit; font-size: 13px; padding: 5px 14px; min-height: 28px; margin-right: 8px; cursor: pointer; color: var(--ot-label); background: var(--ot-fill); border: 0; border-radius: 8px; transition: background-color .15s ease; }
+    button:hover { background: var(--ot-fill-hover); }
+    button:focus-visible { outline: 2px solid var(--ot-accent); outline-offset: 1px; }
+    #status { color: var(--ot-label-2); min-height: 1.6em; }
     #sites { list-style: none; padding: 0; margin: 0; }
     #sites li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }
-    #sites button { padding: 2px 8px; margin: 0; }
-    .hint { color: #6b7280; font-size: 12px; }
+    #sites button { padding: 2px 10px; min-height: 24px; margin: 0; }
+    .hint { color: var(--ot-label-2); font-size: 12px; }
   </style>
 </head>
 <body>
@@ -45,6 +77,21 @@
         <option value="800">800 毫秒</option>
       </select>
     </label>
+    <h2>边写边译</h2>
+    <label class="checkbox">
+      <input id="typeTranslate" type="checkbox"> 输入时实时显示译文（按 Tab 采用，Esc 忽略）
+    </label>
+    <label>最短字符数
+      <input id="typeTranslateMinLength" type="number" min="1" max="50">
+    </label>
+    <label>翻译延迟（停止输入后）
+      <select id="typeTranslateDelay">
+        <option value="300">300 毫秒</option>
+        <option value="500">500 毫秒</option>
+        <option value="700">700 毫秒</option>
+        <option value="1000">1000 毫秒</option>
+      </select>
+    </label>
     <button type="submit">保存</button>
     <button type="button" id="test">测试连接</button>
   </form>
@@ -53,6 +100,7 @@
   <ul id="sites"></ul>
   <p class="hint">译文仅在本机生成（127.0.0.1），不会上传云端。快捷键可在浏览器的扩展快捷键页面修改（chrome://extensions/shortcuts 或 edge://extensions/shortcuts）。</p>
   <script src="languages.js"></script>
+  <script src="dropdown.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

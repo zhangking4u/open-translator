@@ -6,12 +6,14 @@ const LANGUAGES = globalThis.OT_LANGUAGES || [];
 const DEFAULTS = {
   target: "zh",
   autoTranslate: false,
+  typeTranslate: false,
   disabledSites: [],
 };
 
 const statusEl = document.getElementById("status");
 const targetSelect = document.getElementById("target");
 const autoInput = document.getElementById("autoTranslate");
+const typeInput = document.getElementById("typeTranslate");
 const siteRow = document.getElementById("siteRow");
 const siteInput = document.getElementById("siteDisabled");
 const historyEl = document.getElementById("history");
@@ -26,6 +28,11 @@ for (const [code, name] of LANGUAGES) {
   option.value = code;
   option.textContent = name;
   targetSelect.append(option);
+}
+
+if (globalThis.OTSelect) {
+  OTSelect.inject();
+  OTSelect.enhance(targetSelect, { title: "目标语言" });
 }
 
 async function renderHistory() {
@@ -83,7 +90,9 @@ async function loadSite() {
 
 api.storage.local.get(DEFAULTS).then((settings) => {
   targetSelect.value = settings.target || DEFAULTS.target;
+  if (globalThis.OTSelect) OTSelect.sync(targetSelect);
   autoInput.checked = Boolean(settings.autoTranslate);
+  typeInput.checked = Boolean(settings.typeTranslate);
   disabledSites = Array.isArray(settings.disabledSites) ? settings.disabledSites : [];
   loadSite();
   renderHistory();
@@ -112,6 +121,10 @@ targetSelect.addEventListener("change", () => {
 
 autoInput.addEventListener("change", () => {
   api.storage.local.set({ autoTranslate: autoInput.checked });
+});
+
+typeInput.addEventListener("change", () => {
+  api.storage.local.set({ typeTranslate: typeInput.checked });
 });
 
 siteInput.addEventListener("change", () => {

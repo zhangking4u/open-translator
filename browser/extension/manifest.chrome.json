@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenTranslator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Translate the selected text with the local OpenTranslator service.",
   "permissions": [
     "contextMenus",
@@ -27,6 +27,7 @@
       "all_frames": true,
       "js": [
         "languages.js",
+        "dropdown.js",
         "content.js"
       ]
     }
@@ -43,6 +44,12 @@
         "default": "Alt+Shift+Y"
       },
       "description": "翻译剪贴板文本（OpenTranslator）"
+    },
+    "cycle-target": {
+      "suggested_key": {
+        "default": "Alt+Shift+L"
+      },
+      "description": "边写边译：切换目标语言（OpenTranslator）"
     }
   },
   "options_ui": {

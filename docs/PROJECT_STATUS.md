@@ -647,6 +647,27 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - 朗读 speaks through `spd-say --wait` (accurate `speech-ended`/active state, stopped with `--stop`/`--cancel`, target-language voice via `-l`, button hidden when no voice matches); Linux one-click update verifies the GitHub asset SHA-256, stages the deb in a private 0700 directory and installs it with `pkexec apt-get`, then restarts the client (release-page fallback without pkexec/apt or a digest); the empty state shows the configured hotkey
 - Packaging Recommends `speech-dispatcher` + `pkexec`; postinst reminds manual upgraders to restart the client
 - Verified with the local release build on the same machine (arboard bridge, X11 fallback capture, replace target detection, installable update button, `cargo test`); the physical Xorg-session input pass (pointer and XTEST key injection) is still outstanding because Mutter drops synthetic input under Wayland
+
+
+## Browser Extension Inline Translation (2026-10-03, after v0.4.0)
+
+
+- 边写边译 in the content script (`typeTranslate`, default off): after a typing pause (`typeTranslateDelay`, default 500 ms) the sentence at the caret is translated and streamed into a non-interactive bubble anchored at the caret; `Tab` replaces the sentence (input/textarea via `setRangeText` + `input`, contenteditable via `execCommand("insertText")`), `Esc`/blur/mousedown dismisses; IME composition is skipped until `compositionend`, password/readonly fields never trigger, and `disabledSites` applies
+- Typing previews use a second translate port with `record: false`, so they do not fill history; a successful Tab commit records the pair through the new `record-history` message
+- Settings: toolbar popup 边写边译 checkbox; options page 边写边译 section (enable, minimum characters, pause delay)
+- Follow-up (same day, "change language while typing"): the bubble is interactive — a target-language chip with a menu (picking one retranslates the current sentence immediately) and a 设置… gear that opens the options page; `mousedown` on the card is default-prevented so the edited field never loses focus; the language menu flows below the chip (it used to open upward over the translation), and a rebindable `cycle-target` command (`Alt+Shift+L`) cycles the target language while the bubble is visible, backed by up to three `recentTargets`
+- Manifests bumped to 0.3.0 (a re-sign must not reuse the released 0.2.0)
+
+
+## Extension UI Pass (2026-10-03, after the inline translation follow-up)
+
+
+- Shared Apple-style design tokens (`UI_TOKENS_CSS`, injected into both bubble shadow roots): system font stack, neutral label/systemFill palette, translucent material (`backdrop-filter: blur(20px) saturate(180%)`, solid fallback), 12px card / 8px control radii, hairline plus layered shadows, `color-scheme: light dark`
+- Typing bubble: target chip with an SVG chevron and a proper gear icon, `Tab`/`Esc` keycaps, opacity-pulse waiting state, 2px rounded streaming caret, bottom fade for clipped translations, language list as a section list (separator, hover fill, accent checkmark, 6px scrollbar)
+- Selection bubble unified on the same tokens (material card, system fills, accent focus rings, Apple red errors); popup and options pages re-skinned (filled rounded controls, blue accent checkboxes, thin scrollbars)
+- Language dropdowns unified through a shared `dropdown.js` (`OTSelect`, loaded as a content script and by the pages): the native `<select>` stays in the DOM as the hidden value holder while a chip button + checkmarked menu renders in the selection bubble, toolbar popup and options page; the typing bubble uses the same component with an in-flow menu variant; the menu's outside-click check uses `event.composedPath()` (Shadow DOM retargeting closed it on its own items)
+- Verified with the 33-check Chrome e2e plus light/dark screenshots of the typing bubble, selection bubble, popup and options
+- Chrome e2e extended with textarea and contenteditable typing flows (bubble, Tab hint, commit, dismissal); local Edge + llama-cpp run passes all 26 checks
 - Tray hit-box report (2026-10-03) disproved: with the menu open, every row spans the full menu width (206 px) and the blank area right of the label delivers DBusMenu `clicked` events; the real cause of the perceived dead menu was the raise pulse being skipped for a hidden card, so a tray 历史…/设置… click mapped the card below a fullscreen window; `show_main_with` now pulses on every show (pinned windows excluded), the pulse is generation-guarded so overlapping shows do not cut a newer pulse short, and the hidden-card + fullscreen repro passes with the local 0.4.1 build
 
 

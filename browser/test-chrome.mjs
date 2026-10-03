@@ -67,7 +67,9 @@ async function evaluate(sessionId, expression, extra = {}) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const BUBBLE_READER = `(() => {
-  const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+  const host = [...document.documentElement.children].find(
+    (el) => el.shadowRoot && el.shadowRoot.querySelector(".status")
+  );
   const status = host && host.shadowRoot.querySelector(".status");
   return status ? status.textContent : null;
 })()`;
@@ -89,8 +91,10 @@ try {
   let workerTarget = null;
   for (let attempt = 0; attempt < 50 && !workerTarget; attempt++) {
     const targets = (await send("Target.getTargets")).result.targetInfos;
-    workerTarget = targets.find((target) =>
-      target.url.startsWith(`chrome-extension://${extensionId}/`)
+    workerTarget = targets.find(
+      (target) =>
+        target.url.startsWith(`chrome-extension://${extensionId}/`) &&
+        target.url.endsWith("/background.js")
     );
     if (!workerTarget) await sleep(200);
   }
@@ -123,7 +127,13 @@ try {
     if (message.method === "Runtime.executionContextCreated") contextEvents.push(message);
   });
 
-  const created = await send("Target.createTarget", { url: args.page });
+  const created = await send("Target.createTarget", {
+    url: (() => {
+      const url = new URL(args.page);
+      url.searchParams.set("ot-e2e", Date.now().toString());
+      return url.toString();
+    })(),
+  });
   const pageTargetId = created.result.targetId;
   const pageSession = (
     await send("Target.attachToTarget", { targetId: pageTargetId, flatten: true })
@@ -146,6 +156,36 @@ try {
   if (isolated) {
     const hasStart = await evaluate(pageSession, "typeof start", { contextId: isolated.id });
     check("content script loaded", hasStart === "function");
+
+    // Trusted mouse clicks (not element.click()) so the real mousedown/click
+    // path through the shadow DOM dropdown is exercised.
+    const clickAt = async (x, y) => {
+      await send(
+        "Input.dispatchMouseEvent",
+        { type: "mousePressed", x, y, button: "left", clickCount: 1 },
+        pageSession
+      );
+      await send(
+        "Input.dispatchMouseEvent",
+        { type: "mouseReleased", x, y, button: "left", clickCount: 1 },
+        pageSession
+      );
+    };
+    const pointIn = (hostExpression, innerSelector) =>
+      evaluate(
+        pageSession,
+        `(() => {
+           const host = ${hostExpression};
+           const element = host && host.shadowRoot.querySelector(${JSON.stringify(innerSelector)});
+           if (!element) return null;
+           const rect = element.getBoundingClientRect();
+           return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+         })()`,
+        { contextId: isolated.id }
+      );
+    const selectionHost = `[...document.documentElement.children].find(
+      (el) => el.shadowRoot && el.shadowRoot.querySelector(".status"))`;
+    const typingHost = `document.querySelector('[data-opentranslator="type"]')`;
 
     await evaluate(
       pageSession,
@@ -258,15 +298,19 @@ try {
       statusClass ?? "<none>"
     );
 
+    const chipPoint = await pointIn(selectionHost, ".ot-select-button");
+    if (chipPoint) await clickAt(chipPoint.x, chipPoint.y);
+    await sleep(200);
+
+    const jaPoint = await pointIn(selectionHost, '.ot-select-item[data-value="ja"]');
+    if (jaPoint) await clickAt(jaPoint.x, jaPoint.y);
+
     const selected = await evaluate(
       pageSession,
       `(() => {
-         const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+         const host = ${selectionHost};
          const select = host && host.shadowRoot.querySelector(".target-select");
-         if (!select) return null;
-         select.value = "ja";
-         select.dispatchEvent(new Event("change", { bubbles: true }));
-         return select.value;
+         return select ? select.value : null;
        })()`,
       { contextId: isolated.id }
     );
@@ -395,6 +439,401 @@ try {
       }
     }
 
+    // 边写边译: enable it, type into the textarea, wait for the inline bubble
+    // and commit with Tab.
+    await evaluate(
+      pageSession,
+      `(async () => {
+         const api = globalThis.browser ?? globalThis.chrome;
+         await api.storage.local.set({ typeTranslate: true });
+         return true;
+       })()`,
+      { contextId: isolated.id }
+    );
+    await sleep(200);
+
+    await evaluate(
+      pageSession,
+      `(() => {
+         const textarea = document.getElementById("ta");
+         textarea.focus();
+         textarea.value = "Hello world";
+         textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+         textarea.dispatchEvent(new Event("input", { bubbles: true }));
+         return true;
+       })()`
+    );
+
+    let typeBubble = null;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      typeBubble = await evaluate(
+        pageSession,
+        `(() => {
+           const host = document.querySelector('[data-opentranslator="type"]');
+           const status = host && host.shadowRoot.querySelector(".type-status");
+           if (!host || !status || host.style.display === "none") return null;
+           const hint = host.shadowRoot.querySelector(".type-hint");
+           return {
+             text: status.textContent,
+             hint: hint ? hint.textContent : "",
+             streaming: status.className.includes("streaming"),
+           };
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (
+        typeBubble &&
+        typeBubble.text &&
+        typeBubble.text !== "翻译中…" &&
+        !typeBubble.streaming
+      ) {
+        break;
+      }
+      await sleep(200);
+    }
+    check(
+      "type bubble shows translation",
+      Boolean(typeBubble) &&
+        typeBubble.text.length > 0 &&
+        !typeBubble.text.includes("翻译失败"),
+      typeBubble ? typeBubble.text : "<none>"
+    );
+    check(
+      "type bubble shows Tab hint",
+      Boolean(typeBubble) && typeBubble.hint.includes("Tab"),
+      typeBubble ? typeBubble.hint : "<none>"
+    );
+
+    const typeControls = await evaluate(
+      pageSession,
+      `(() => {
+         const host = document.querySelector('[data-opentranslator="type"]');
+         const root = host && host.shadowRoot;
+         if (!root) return null;
+         const target = root.querySelector(".ot-select-button");
+         const settings = root.querySelector(".type-settings");
+         const menu = root.querySelector(".ot-select-menu");
+         return {
+           target: target ? target.textContent.trim() : null,
+           settings: Boolean(settings && settings.querySelector("svg")),
+           menuHidden: menu ? menu.hidden : null,
+         };
+       })()`,
+      { contextId: isolated.id }
+    );
+    check(
+      "type bubble language chip",
+      Boolean(typeControls && typeControls.target && typeControls.menuHidden === true),
+      JSON.stringify(typeControls)
+    );
+    check(
+      "type bubble settings button",
+      Boolean(typeControls && typeControls.settings),
+      JSON.stringify(typeControls)
+    );
+
+    const menuState = await evaluate(
+      pageSession,
+      `(() => {
+         const host = document.querySelector('[data-opentranslator="type"]');
+         host.shadowRoot.querySelector(".ot-select-button").click();
+         const root = host.shadowRoot;
+         const menu = root.querySelector(".ot-select-menu");
+         const status = root.querySelector(".type-status");
+         if (!menu || menu.hidden) return null;
+         return {
+           menuTop: menu.getBoundingClientRect().top,
+           statusBottom: status.getBoundingClientRect().bottom,
+         };
+       })()`,
+      { contextId: isolated.id }
+    );
+    check(
+      "type menu opens below the translation",
+      Boolean(menuState && menuState.menuTop >= menuState.statusBottom),
+      JSON.stringify(menuState)
+    );
+
+    const frPoint = await pointIn(typingHost, '.ot-select-menu [data-value="fr"]');
+    if (frPoint) await clickAt(frPoint.x, frPoint.y);
+
+    let switchedTarget = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      switchedTarget = await evaluate(
+        pageSession,
+        `(async () => {
+           const api = globalThis.browser ?? globalThis.chrome;
+           return (await api.storage.local.get({ target: "zh" })).target;
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (switchedTarget === "fr") break;
+      await sleep(100);
+    }
+    check(
+      "type bubble target switch persisted",
+      switchedTarget === "fr",
+      String(switchedTarget)
+    );
+
+    let switchedBubble = null;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      switchedBubble = await evaluate(
+        pageSession,
+        `(() => {
+           const host = document.querySelector('[data-opentranslator="type"]');
+           const status = host && host.shadowRoot.querySelector(".type-status");
+           if (!host || !status || host.style.display === "none") return null;
+           const target = host.shadowRoot.querySelector(".ot-select-button");
+           return {
+             text: status.textContent,
+             label: target ? target.textContent.trim() : "",
+             streaming: status.className.includes("streaming"),
+           };
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (
+        switchedBubble &&
+        switchedBubble.text &&
+        switchedBubble.text !== "翻译中…" &&
+        !switchedBubble.streaming
+      ) {
+        break;
+      }
+      await sleep(200);
+    }
+    check(
+      "type bubble retranslates after switch",
+      Boolean(switchedBubble) &&
+        switchedBubble.text.length > 0 &&
+        !switchedBubble.text.includes("翻译失败"),
+      switchedBubble ? switchedBubble.text : "<none>"
+    );
+    check(
+      "type bubble chip shows new language",
+      Boolean(switchedBubble && switchedBubble.label.includes("法语")),
+      switchedBubble ? switchedBubble.label : "<none>"
+    );
+
+    const committedValue = await evaluate(
+      pageSession,
+      `(() => {
+         const textarea = document.getElementById("ta");
+         textarea.dispatchEvent(
+           new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })
+         );
+         return textarea.value;
+       })()`
+    );
+    check(
+      "Tab commits inline translation",
+      typeof committedValue === "string" &&
+        committedValue.length > 0 &&
+        committedValue !== "Hello world",
+      committedValue
+    );
+
+    const typeHidden = await evaluate(
+      pageSession,
+      `(() => {
+         const host = document.querySelector('[data-opentranslator="type"]');
+         return !host || host.style.display === "none";
+       })()`,
+      { contextId: isolated.id }
+    );
+    check("type bubble hidden after commit", typeHidden);
+
+    // Same flow inside a contenteditable block (web mail/doc editors).
+    await evaluate(
+      pageSession,
+      `(() => {
+         const editor = document.getElementById("ce");
+         editor.textContent = "Hello world";
+         editor.focus();
+         const range = document.createRange();
+         range.selectNodeContents(editor);
+         range.collapse(false);
+         const selection = getSelection();
+         selection.removeAllRanges();
+         selection.addRange(range);
+         editor.dispatchEvent(new Event("input", { bubbles: true }));
+         return true;
+       })()`
+    );
+
+    let richBubble = null;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      richBubble = await evaluate(
+        pageSession,
+        `(() => {
+           const host = document.querySelector('[data-opentranslator="type"]');
+           const status = host && host.shadowRoot.querySelector(".type-status");
+           if (!host || !status || host.style.display === "none") return null;
+           return {
+             text: status.textContent,
+             streaming: status.className.includes("streaming"),
+           };
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (
+        richBubble &&
+        richBubble.text &&
+        richBubble.text !== "翻译中…" &&
+        !richBubble.streaming
+      ) {
+        break;
+      }
+      await sleep(200);
+    }
+    check(
+      "contenteditable type bubble",
+      Boolean(richBubble) &&
+        richBubble.text.length > 0 &&
+        !richBubble.text.includes("翻译失败"),
+      richBubble ? richBubble.text : "<none>"
+    );
+
+    const richCommitted = await evaluate(
+      pageSession,
+      `(() => {
+         const editor = document.getElementById("ce");
+         editor.dispatchEvent(
+           new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })
+         );
+         return editor.textContent;
+       })()`
+    );
+    check(
+      "Tab commits in contenteditable",
+      typeof richCommitted === "string" &&
+        richCommitted.length > 0 &&
+        richCommitted !== "Hello world",
+      richCommitted
+    );
+
+    // cycle-target (the Alt+Shift+L path) switches the target through the
+    // background's tab message while the bubble is visible.
+    await evaluate(
+      pageSession,
+      `(() => {
+         const textarea = document.getElementById("ta");
+         textarea.focus();
+         textarea.value = "Hello world";
+         textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+         textarea.dispatchEvent(new Event("input", { bubbles: true }));
+         return true;
+       })()`
+    );
+
+    let cycleBubble = null;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      cycleBubble = await evaluate(
+        pageSession,
+        `(() => {
+           const host = document.querySelector('[data-opentranslator="type"]');
+           const status = host && host.shadowRoot.querySelector(".type-status");
+           if (!host || !status || host.style.display === "none") return null;
+           return {
+             text: status.textContent,
+             streaming: status.className.includes("streaming"),
+           };
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (
+        cycleBubble &&
+        cycleBubble.text &&
+        cycleBubble.text !== "翻译中…" &&
+        !cycleBubble.streaming
+      ) {
+        break;
+      }
+      await sleep(200);
+    }
+
+    const tabId = await evaluate(
+      workerSession,
+      `(async () => {
+         const tabs = await api.tabs.query({});
+         const tab = tabs.find((entry) => (entry.url || "").includes("test-page.html"));
+         return tab ? tab.id : null;
+       })()`
+    );
+
+    if (tabId !== null && tabId !== undefined) {
+      await evaluate(
+        workerSession,
+        `(async () => {
+           await api.tabs.sendMessage(${tabId}, { type: "cycle-target" });
+           return true;
+         })()`
+      );
+    }
+
+    let cycledTarget = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      cycledTarget = await evaluate(
+        pageSession,
+        `(async () => {
+           const api = globalThis.browser ?? globalThis.chrome;
+           return (await api.storage.local.get({ target: "zh" })).target;
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (cycledTarget === "ja") break;
+      await sleep(100);
+    }
+    check(
+      "cycle-target switches language",
+      tabId !== null && tabId !== undefined && cycledTarget === "ja",
+      String(cycledTarget)
+    );
+
+    let cycledBubble = null;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      cycledBubble = await evaluate(
+        pageSession,
+        `(() => {
+           const host = document.querySelector('[data-opentranslator="type"]');
+           const status = host && host.shadowRoot.querySelector(".type-status");
+           if (!host || !status || host.style.display === "none") return null;
+           return {
+             text: status.textContent,
+             streaming: status.className.includes("streaming"),
+           };
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (
+        cycledBubble &&
+        cycledBubble.text &&
+        cycledBubble.text !== "翻译中…" &&
+        !cycledBubble.streaming
+      ) {
+        break;
+      }
+      await sleep(200);
+    }
+    check(
+      "bubble retranslates after cycle",
+      Boolean(cycledBubble) &&
+        cycledBubble.text.length > 0 &&
+        !cycledBubble.text.includes("翻译失败"),
+      cycledBubble ? cycledBubble.text : "<none>"
+    );
+
+    await evaluate(
+      pageSession,
+      `(async () => {
+         const api = globalThis.browser ?? globalThis.chrome;
+         await api.storage.local.set({ typeTranslate: false });
+         return true;
+       })()`,
+      { contextId: isolated.id }
+    );
+
     // Auto-translate: enable the setting, hide the bubble, select text and
     // dispatch a mouseup; the content script should translate after ~400ms.
     await evaluate(
@@ -435,7 +874,9 @@ try {
       auto = await evaluate(
         pageSession,
         `(() => {
-           const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+           const host = [...document.documentElement.children].find(
+             (el) => el.shadowRoot && el.shadowRoot.querySelector(".status")
+           );
            const status = host && host.shadowRoot.querySelector(".status");
            return host && status
              ? { text: status.textContent, visible: host.style.display !== "none" }

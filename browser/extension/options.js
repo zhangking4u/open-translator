@@ -14,6 +14,9 @@ const DEFAULTS = {
   autoTranslate: false,
   autoTranslateDelay: 400,
   autoTranslateMinLength: 2,
+  typeTranslate: false,
+  typeTranslateDelay: 500,
+  typeTranslateMinLength: 2,
   disabledSites: [],
 };
 
@@ -24,6 +27,9 @@ const targetInput = document.getElementById("target");
 const autoTranslateInput = document.getElementById("autoTranslate");
 const autoMinLengthInput = document.getElementById("autoMinLength");
 const autoDelayInput = document.getElementById("autoDelay");
+const typeTranslateInput = document.getElementById("typeTranslate");
+const typeMinLengthInput = document.getElementById("typeTranslateMinLength");
+const typeDelayInput = document.getElementById("typeTranslateDelay");
 const statusEl = document.getElementById("status");
 const sitesEl = document.getElementById("sites");
 
@@ -70,13 +76,26 @@ function renderSites() {
 fillSelect(sourceInput, SOURCE_LANGUAGES);
 fillSelect(targetInput, LANGUAGES);
 
+if (globalThis.OTSelect) {
+  OTSelect.inject();
+  OTSelect.enhance(sourceInput, { title: "源语言" });
+  OTSelect.enhance(targetInput, { title: "目标语言" });
+}
+
 api.storage.local.get(DEFAULTS).then((settings) => {
   serviceUrlInput.value = settings.serviceUrl;
   sourceInput.value = settings.source;
   targetInput.value = settings.target;
+  if (globalThis.OTSelect) {
+    OTSelect.sync(sourceInput);
+    OTSelect.sync(targetInput);
+  }
   autoTranslateInput.checked = Boolean(settings.autoTranslate);
   autoMinLengthInput.value = String(settings.autoTranslateMinLength);
   autoDelayInput.value = String(settings.autoTranslateDelay);
+  typeTranslateInput.checked = Boolean(settings.typeTranslate);
+  typeMinLengthInput.value = String(settings.typeTranslateMinLength);
+  typeDelayInput.value = String(settings.typeTranslateDelay);
   disabledSites = Array.isArray(settings.disabledSites) ? settings.disabledSites : [];
   renderSites();
 });
@@ -88,6 +107,10 @@ form.addEventListener("submit", (event) => {
     50,
     Math.max(1, Number(autoMinLengthInput.value) || DEFAULTS.autoTranslateMinLength)
   );
+  const typeMinLength = Math.min(
+    50,
+    Math.max(1, Number(typeMinLengthInput.value) || DEFAULTS.typeTranslateMinLength)
+  );
 
   api.storage.local
     .set({
@@ -97,9 +120,14 @@ form.addEventListener("submit", (event) => {
       autoTranslate: autoTranslateInput.checked,
       autoTranslateMinLength: minLength,
       autoTranslateDelay: Number(autoDelayInput.value) || DEFAULTS.autoTranslateDelay,
+      typeTranslate: typeTranslateInput.checked,
+      typeTranslateMinLength: typeMinLength,
+      typeTranslateDelay:
+        Number(typeDelayInput.value) || DEFAULTS.typeTranslateDelay,
     })
     .then(() => {
       autoMinLengthInput.value = String(minLength);
+      typeMinLengthInput.value = String(typeMinLength);
       statusEl.textContent = "已保存。";
     });
 });

@@ -4,30 +4,61 @@
   <meta charset="utf-8">
   <title>OpenTranslator</title>
   <style>
-    body { font: 13px/1.6 system-ui, sans-serif; margin: 12px; width: 300px; color: #1f2937; }
-    h1 { font-size: 14px; margin: 0 0 8px; }
-    h2 { font-size: 13px; margin: 12px 0 4px; }
-    #status { margin: 0 0 10px; color: #6b7280; }
-    #status.ok { color: #15803d; }
-    #status.bad { color: #b91c1c; }
-    label { display: block; margin-bottom: 8px; }
-    select { width: 100%; padding: 3px 6px; font: inherit; }
-    label.checkbox { display: flex; align-items: center; gap: 6px; }
-    label.checkbox input { margin: 0; }
-    .row { display: flex; gap: 8px; margin-top: 10px; }
-    button { font: inherit; padding: 4px 10px; cursor: pointer; }
-    .row button { flex: 1; }
-    #history { list-style: none; margin: 0; padding: 0; max-height: 168px; overflow: auto; }
-    #history li { margin-bottom: 4px; }
-    #history .entry { display: block; width: 100%; text-align: left; padding: 4px 8px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .hint { color: #6b7280; font-size: 11px; margin: 10px 0 0; }
-    @media (prefers-color-scheme: dark) {
-      body { color: #e5e7eb; background: #1f2937; }
-      #status { color: #9ca3af; }
-      .hint { color: #9ca3af; }
-      select, button { color: #e5e7eb; background: #111827; border: 1px solid #374151; }
+    :root {
+      color-scheme: light dark;
+      --ot-label: rgba(0,0,0,.85);
+      --ot-label-2: rgba(0,0,0,.5);
+      --ot-label-3: rgba(0,0,0,.26);
+      --ot-fill: rgba(120,120,128,.12);
+      --ot-fill-hover: rgba(120,120,128,.2);
+      --ot-accent: #007aff;
+      --ot-separator: rgba(60,60,67,.14);
+      --ot-bg: #ffffff;
+      --ot-control-height: 26px;
+      --ot-control-font: 12.5px;
+      --ot-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
     }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ot-label: rgba(255,255,255,.85);
+        --ot-label-2: rgba(255,255,255,.55);
+        --ot-label-3: rgba(255,255,255,.3);
+        --ot-fill: rgba(120,120,128,.24);
+        --ot-fill-hover: rgba(120,120,128,.36);
+        --ot-accent: #0a84ff;
+        --ot-separator: rgba(255,255,255,.12);
+        --ot-bg: #1c1c1e;
+      }
+    }
+    body { font-family: var(--ot-font); font-size: 13px; line-height: 1.5; -webkit-font-smoothing: antialiased; margin: 12px; width: 300px; color: var(--ot-label); background: var(--ot-bg); }
+    h1 { font-size: 13px; font-weight: 600; margin: 0 0 10px; }
+    h2 { font-size: 12px; font-weight: 600; color: var(--ot-label-2); margin: 14px 0 6px; }
+    #status { margin: 0 0 10px; color: var(--ot-label-2); }
+    #status.ok { color: #248a3d; }
+    #status.bad { color: #d70015; }
+    @media (prefers-color-scheme: dark) {
+      #status.ok { color: #30d158; }
+      #status.bad { color: #ff453a; }
+    }
+    label { display: block; margin-bottom: 8px; }
+    select { appearance: none; -webkit-appearance: none; width: 100%; padding: 4px 10px; min-height: 26px; font: inherit; font-size: 12.5px; color: var(--ot-label); background-color: var(--ot-fill); border: 0; border-radius: 8px; }
+    select:hover { background-color: var(--ot-fill-hover); }
+    select:focus-visible { outline: 2px solid var(--ot-accent); outline-offset: 1px; }
+    select option { color: var(--ot-label); background: var(--ot-bg); }
+    label.checkbox { display: flex; align-items: center; gap: 6px; }
+    label.checkbox input { margin: 0; width: 14px; height: 14px; accent-color: var(--ot-accent); }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button { font: inherit; font-size: 12.5px; padding: 4px 10px; min-height: 26px; cursor: pointer; color: var(--ot-label); background: var(--ot-fill); border: 0; border-radius: 8px; transition: background-color .15s ease; }
+    button:hover { background: var(--ot-fill-hover); }
+    button:focus-visible { outline: 2px solid var(--ot-accent); outline-offset: 1px; }
+    .row button { flex: 1; }
+    #history { list-style: none; margin: 0; padding: 0; max-height: 168px; overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(120,120,128,.4) transparent; }
+    #history::-webkit-scrollbar { width: 6px; }
+    #history::-webkit-scrollbar-thumb { background: rgba(120,120,128,.4); border-radius: 3px; }
+    #history li { margin-bottom: 2px; }
+    #history .entry { display: block; width: 100%; text-align: left; padding: 5px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; }
+    #history .entry:hover { background: var(--ot-fill); }
+    .hint { color: var(--ot-label-2); font-size: 11px; margin: 10px 0 0; }
   </style>
 </head>
 <body>
@@ -38,6 +69,9 @@
   </label>
   <label class="checkbox">
     <input id="autoTranslate" type="checkbox"> 划词自动翻译
+  </label>
+  <label class="checkbox">
+    <input id="typeTranslate" type="checkbox"> 边写边译（输入时提示译文，Tab 上屏）
   </label>
   <label class="checkbox" id="siteRow" hidden>
     <input id="siteDisabled" type="checkbox"> 本网站不自动翻译
@@ -50,6 +84,7 @@
   </div>
   <p class="hint">译文仅在本机生成（127.0.0.1），不会上传云端。</p>
   <script src="languages.js"></script>
+  <script src="dropdown.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

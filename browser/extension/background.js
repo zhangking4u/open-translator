@@ -103,7 +103,7 @@ async function recordHistory(text, translation, settings) {
   await api.storage.local.set({ history: next });
 }
 
-async function translate(text) {
+async function translate(text, record = true) {
   const settings = await getSettings();
   const url = baseUrl(settings.serviceUrl) + "/translate";
 
@@ -136,11 +136,11 @@ async function translate(text) {
     };
   }
 
-  recordHistory(text, payload.translation || "", settings);
+  if (record) recordHistory(text, payload.translation || "", settings);
   return { ok: true, translation: payload.translation };
 }
 
-async function streamTranslation(port, requestId, text, signal) {
+async function streamTranslation(port, requestId, text, signal, record = true) {
   const settings = await getSettings();
   const url = baseUrl(settings.serviceUrl) + "/translate/stream";
 
@@ -184,7 +184,7 @@ async function streamTranslation(port, requestId, text, signal) {
   }
 
   if (response.status === 404 || response.status === 405) {
-    await sendOneShot(port, requestId, text);
+    await sendOneShot(port, requestId, text, record);
     return;
   }
 
@@ -204,7 +204,7 @@ async function streamTranslation(port, requestId, text, signal) {
   }
 
   if (!response.body || typeof response.body.getReader !== "function") {
-    await sendOneShot(port, requestId, text);
+    await sendOneShot(port, requestId, text, record);
     return;
   }
 
@@ -236,7 +236,7 @@ async function streamTranslation(port, requestId, text, signal) {
         translation: event.translation || "",
         elapsed_ms: event.elapsed_ms,
       });
-      recordHistory(text, event.translation || "", settings);
+      if (record) recordHistory(text, event.translation || "", settings);
     } else if (event.type === "error") {
       terminal = true;
       send(port, { type: "error", requestId, message: friendlyError(event, 200) });
@@ -282,12 +282,12 @@ async function streamTranslation(port, requestId, text, signal) {
   }
 
   if (!terminal) {
-    await sendOneShot(port, requestId, text);
+    await sendOneShot(port, requestId, text, record);
   }
 }
 
-async function sendOneShot(port, requestId, text) {
-  const result = await translate(text);
+async function sendOneShot(port, requestId, text, record = true) {
+  const result = await translate(text, record);
   if (result.ok) {
     send(port, { type: "done", requestId, translation: result.translation });
   } else {
@@ -359,7 +359,13 @@ api.runtime.onConnect.addListener((port) => {
     if (message.type === "translate") {
       if (controller) controller.abort();
       controller = new AbortController();
-      streamTranslation(port, message.requestId, message.text, controller.signal);
+      streamTranslation(
+        port,
+        message.requestId,
+        message.text,
+        controller.signal,
+        message.record !== false
+      );
     } else if (message.type === "cancel") {
       if (controller) {
         controller.abort();
@@ -417,9 +423,17 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 api.commands.onCommand.addListener((command) => {
-  if (command !== "translate-selection" && command !== "translate-clipboard") return;
+  let type = null;
 
-  const type = command === "translate-selection" ? "start-translate" : "translate-clipboard";
+  if (command === "translate-selection") {
+    type = "start-translate";
+  } else if (command === "translate-clipboard") {
+    type = "translate-clipboard";
+  } else if (command === "cycle-target") {
+    type = "cycle-target";
+  } else {
+    return;
+  }
 
   api.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
     const tab = tabs[0];
@@ -440,6 +454,13 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "translate") {
     translate(message.text).then((result) => sendResponse(result));
     return true;
+  }
+
+  if (message.type === "record-history") {
+    getSettings().then((settings) => {
+      recordHistory(message.text, message.translation, settings);
+    });
+    return;
   }
 
   if (message.type === "open-options") {
