@@ -12,6 +12,8 @@ const DEFAULTS = {
   source: "auto",
   target: "zh",
   autoTranslate: false,
+  autoTranslateDelay: 400,
+  autoTranslateMinLength: 2,
   disabledSites: [],
 };
 
@@ -20,6 +22,8 @@ const serviceUrlInput = document.getElementById("serviceUrl");
 const sourceInput = document.getElementById("source");
 const targetInput = document.getElementById("target");
 const autoTranslateInput = document.getElementById("autoTranslate");
+const autoMinLengthInput = document.getElementById("autoMinLength");
+const autoDelayInput = document.getElementById("autoDelay");
 const statusEl = document.getElementById("status");
 const sitesEl = document.getElementById("sites");
 
@@ -71,6 +75,8 @@ api.storage.local.get(DEFAULTS).then((settings) => {
   sourceInput.value = settings.source;
   targetInput.value = settings.target;
   autoTranslateInput.checked = Boolean(settings.autoTranslate);
+  autoMinLengthInput.value = String(settings.autoTranslateMinLength);
+  autoDelayInput.value = String(settings.autoTranslateDelay);
   disabledSites = Array.isArray(settings.disabledSites) ? settings.disabledSites : [];
   renderSites();
 });
@@ -78,14 +84,22 @@ api.storage.local.get(DEFAULTS).then((settings) => {
 form.addEventListener("submit", (event) => {
   event.preventDefault();
 
+  const minLength = Math.min(
+    50,
+    Math.max(1, Number(autoMinLengthInput.value) || DEFAULTS.autoTranslateMinLength)
+  );
+
   api.storage.local
     .set({
       serviceUrl: serviceUrlInput.value.trim() || DEFAULTS.serviceUrl,
       source: sourceInput.value,
       target: targetInput.value,
       autoTranslate: autoTranslateInput.checked,
+      autoTranslateMinLength: minLength,
+      autoTranslateDelay: Number(autoDelayInput.value) || DEFAULTS.autoTranslateDelay,
     })
     .then(() => {
+      autoMinLengthInput.value = String(minLength);
       statusEl.textContent = "已保存。";
     });
 });

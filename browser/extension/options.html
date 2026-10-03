@@ -34,13 +34,24 @@
     <label class="checkbox">
       <input id="autoTranslate" type="checkbox"> 划词自动翻译（选中文字后自动弹出译文）
     </label>
+    <label>自动翻译最短字符数
+      <input id="autoMinLength" type="number" min="1" max="50">
+    </label>
+    <label>自动翻译延迟
+      <select id="autoDelay">
+        <option value="200">200 毫秒</option>
+        <option value="400">400 毫秒</option>
+        <option value="600">600 毫秒</option>
+        <option value="800">800 毫秒</option>
+      </select>
+    </label>
     <button type="submit">保存</button>
     <button type="button" id="test">测试连接</button>
   </form>
   <p id="status"></p>
   <h2>已关闭自动翻译的网站</h2>
   <ul id="sites"></ul>
-  <p class="hint">快捷键可在浏览器的扩展快捷键页面修改（chrome://extensions/shortcuts 或 edge://extensions/shortcuts）。</p>
+  <p class="hint">译文仅在本机生成（127.0.0.1），不会上传云端。快捷键可在浏览器的扩展快捷键页面修改（chrome://extensions/shortcuts 或 edge://extensions/shortcuts）。</p>
   <script src="languages.js"></script>
   <script src="options.js"></script>
 </body>

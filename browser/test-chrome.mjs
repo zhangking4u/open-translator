@@ -215,6 +215,88 @@ try {
       `bubble translation ${switched === bubble ? "unchanged (mock engine?)" : "updated after switch"}`
     );
 
+    const historyCount = await evaluate(
+      pageSession,
+      `(async () => {
+         const api = globalThis.browser ?? globalThis.chrome;
+         const stored = await api.storage.local.get({ history: [] });
+         return Array.isArray(stored.history) ? stored.history.length : 0;
+       })()`,
+      { contextId: isolated.id }
+    );
+    check("history recorded", historyCount > 0, String(historyCount));
+
+    await evaluate(
+      pageSession,
+      `(() => {
+         const textarea = document.getElementById("ta");
+         textarea.focus();
+         textarea.setSelectionRange(0, textarea.value.length);
+         return true;
+       })()`
+    );
+    await evaluate(pageSession, "start()", { contextId: isolated.id });
+
+    let moreReady = false;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      moreReady = await evaluate(
+        pageSession,
+        `(() => {
+           const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+           const button = host && host.shadowRoot.querySelector(".more-button");
+           return Boolean(button && !button.hidden && !button.disabled);
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (moreReady) break;
+      await sleep(200);
+    }
+    check("more menu offered after translation", moreReady);
+
+    if (moreReady) {
+      await evaluate(
+        pageSession,
+        `(() => {
+           const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+           host.shadowRoot.querySelector(".more-button").click();
+           return true;
+         })()`,
+        { contextId: isolated.id }
+      );
+
+      const replaceReady = await evaluate(
+        pageSession,
+        `(() => {
+           const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+           const item = host && host.shadowRoot.querySelector('[data-action="replace"]');
+           return Boolean(item && !item.hidden && !item.disabled);
+         })()`,
+        { contextId: isolated.id }
+      );
+      check("replace action offered for input selection", replaceReady);
+
+      if (replaceReady) {
+        await evaluate(
+          pageSession,
+          `(() => {
+             const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+             host.shadowRoot.querySelector('[data-action="replace"]').click();
+             return true;
+           })()`,
+          { contextId: isolated.id }
+        );
+        await sleep(300);
+        const replacedText = await evaluate(pageSession, "document.getElementById('ta').value");
+        check(
+          "replace original in textarea",
+          typeof replacedText === "string" &&
+            replacedText.length > 0 &&
+            replacedText !== "Hello world",
+          replacedText
+        );
+      }
+    }
+
     // Auto-translate: enable the setting, hide the bubble, select text and
     // dispatch a mouseup; the content script should translate after ~400ms.
     await evaluate(

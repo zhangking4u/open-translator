@@ -12,6 +12,9 @@ const DEFAULTS = {
 };
 
 const HEALTH_ALARM = "open-translator-health";
+const HISTORY_LIMIT = 20;
+const STREAM_RETRIES = 3;
+const RETRY_DELAY_MS = 1500;
 
 function baseUrl(serviceUrl) {
   return (serviceUrl || DEFAULTS.serviceUrl).replace(/\/+$/, "");
@@ -49,6 +52,57 @@ function friendlyError(error, status) {
   return "翻译失败（HTTP " + status + "）。";
 }
 
+function isAbort(error) {
+  return Boolean(error) && error.name === "AbortError";
+}
+
+function delay(ms, signal) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true }
+      );
+    }
+  });
+}
+
+function send(port, message) {
+  try {
+    port.postMessage(message);
+  } catch (error) {
+    void error;
+  }
+}
+
+async function recordHistory(text, translation, settings) {
+  if (!text || !translation) return;
+
+  const stored = await api.storage.local.get({ history: [] });
+  const history = Array.isArray(stored.history) ? stored.history : [];
+  const entry = {
+    text,
+    translation,
+    source: settings.source,
+    target: settings.target,
+    at: Date.now(),
+  };
+
+  const next = [
+    entry,
+    ...history.filter(
+      (item) => !(item.text === text && item.target === entry.target)
+    ),
+  ].slice(0, HISTORY_LIMIT);
+
+  await api.storage.local.set({ history: next });
+}
+
 async function translate(text) {
   const settings = await getSettings();
   const url = baseUrl(settings.serviceUrl) + "/translate";
@@ -76,45 +130,57 @@ async function translate(text) {
   }
 
   if (!response.ok) {
-    return { ok: false, error: friendlyError(payload && payload.error, response.status) };
+    return {
+      ok: false,
+      error: friendlyError(payload && payload.error, response.status),
+    };
   }
 
+  recordHistory(text, payload.translation || "", settings);
   return { ok: true, translation: payload.translation };
-}
-
-function isAbort(error) {
-  return Boolean(error) && error.name === "AbortError";
-}
-
-function send(port, message) {
-  try {
-    port.postMessage(message);
-  } catch (error) {
-    void error;
-  }
 }
 
 async function streamTranslation(port, requestId, text, signal) {
   const settings = await getSettings();
   const url = baseUrl(settings.serviceUrl) + "/translate/stream";
 
-  let response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        source: settings.source,
-        target: settings.target,
-      }),
-      signal,
-    });
-  } catch (error) {
-    if (isAbort(error)) return;
-    send(port, { type: "error", requestId, message: connectionError(settings.serviceUrl) });
-    refreshHealth();
-    return;
+  let response = null;
+  for (let attempt = 1; attempt <= STREAM_RETRIES; attempt += 1) {
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          source: settings.source,
+          target: settings.target,
+        }),
+        signal,
+      });
+      break;
+    } catch (error) {
+      if (isAbort(error)) return;
+
+      if (attempt >= STREAM_RETRIES) {
+        send(port, {
+          type: "error",
+          requestId,
+          message: connectionError(settings.serviceUrl),
+        });
+        refreshHealth();
+        return;
+      }
+
+      send(port, {
+        type: "retry",
+        requestId,
+        attempt: attempt + 1,
+        total: STREAM_RETRIES,
+      });
+
+      await delay(RETRY_DELAY_MS, signal);
+      if (signal.aborted) return;
+    }
   }
 
   if (response.status === 404 || response.status === 405) {
@@ -170,6 +236,7 @@ async function streamTranslation(port, requestId, text, signal) {
         translation: event.translation || "",
         elapsed_ms: event.elapsed_ms,
       });
+      recordHistory(text, event.translation || "", settings);
     } else if (event.type === "error") {
       terminal = true;
       send(port, { type: "error", requestId, message: friendlyError(event, 200) });
@@ -264,6 +331,16 @@ async function refreshHealth() {
   return health;
 }
 
+async function openResultPage(text) {
+  await api.storage.local.set({ pendingResult: { text, at: Date.now() } });
+  api.windows.create({
+    url: api.runtime.getURL("result.html"),
+    type: "popup",
+    width: 460,
+    height: 380,
+  });
+}
+
 api.runtime.onConnect.addListener((port) => {
   if (port.name !== "translate") return;
 
@@ -322,26 +399,50 @@ if (api.alarms && api.alarms.onAlarm) {
   });
 }
 
-api.contextMenus.onClicked.addListener((info, tab) => {
+api.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "translate-selection") return;
-  if (!tab || tab.id === undefined) return;
-  api.tabs.sendMessage(tab.id, { type: "start-translate" }).catch(() => {});
+
+  if (tab && tab.id !== undefined) {
+    const options = info.frameId === undefined ? undefined : { frameId: info.frameId };
+    try {
+      await api.tabs.sendMessage(tab.id, { type: "start-translate" }, options);
+      return;
+    } catch (error) {
+      void error;
+    }
+  }
+
+  const selection = (info.selectionText || "").trim();
+  if (selection) openResultPage(selection);
 });
 
 api.commands.onCommand.addListener((command) => {
-  if (command !== "translate-selection") return;
+  if (command !== "translate-selection" && command !== "translate-clipboard") return;
+
+  const type = command === "translate-selection" ? "start-translate" : "translate-clipboard";
 
   api.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
     const tab = tabs[0];
     if (tab && tab.id !== undefined) {
-      api.tabs.sendMessage(tab.id, { type: "start-translate" }).catch(() => {});
+      api.tabs.sendMessage(tab.id, { type }).catch(() => {});
     }
   });
 });
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!message || message.type !== "health") return;
+  if (!message) return;
 
-  refreshHealth().then((health) => sendResponse(health));
-  return true;
+  if (message.type === "health") {
+    refreshHealth().then((health) => sendResponse(health));
+    return true;
+  }
+
+  if (message.type === "translate") {
+    translate(message.text).then((result) => sendResponse(result));
+    return true;
+  }
+
+  if (message.type === "open-options") {
+    if (api.runtime.openOptionsPage) api.runtime.openOptionsPage();
+  }
 });

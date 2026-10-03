@@ -3,34 +3,49 @@
 const api = globalThis.browser ?? globalThis.chrome;
 
 const LANGUAGES = globalThis.OT_LANGUAGES || [];
-const SOURCE_LANGUAGES = globalThis.OT_SOURCE_LANGUAGES || [
-  ["auto", "自动检测"],
-  ...LANGUAGES,
-];
 
 const DEFAULTS = {
   source: "auto",
   target: "zh",
   autoTranslate: false,
   disabledSites: [],
+  autoTranslateDelay: 400,
+  autoTranslateMinLength: 2,
 };
+
+const SPEECH_LANGS = {
+  zh: "zh-CN",
+  en: "en-US",
+  ja: "ja-JP",
+  ko: "ko-KR",
+  fr: "fr-FR",
+  de: "de-DE",
+  es: "es-ES",
+  ru: "ru-RU",
+  th: "th-TH",
+};
+
+const FALLBACK_RECT = { left: 40, top: 40, bottom: 60 };
 
 let host = null;
 let statusEl = null;
 let spinnerEl = null;
+let originalEl = null;
 let copyButton = null;
-let sourceSelect = null;
-let targetSelect = null;
-let swapButton = null;
+let moreButton = null;
+let menuEl = null;
 let retryButton = null;
 let cancelButton = null;
-let siteButton = null;
+let targetSelect = null;
 
 let currentTranslation = "";
 let currentText = "";
+let currentEditable = null;
 let targetLanguage = DEFAULTS.target;
 let sourceLanguage = DEFAULTS.source;
 let autoTranslate = false;
+let autoDelay = DEFAULTS.autoTranslateDelay;
+let autoMinLength = DEFAULTS.autoTranslateMinLength;
 let disabledSites = [];
 let autoTimer = null;
 let copyTimer = null;
@@ -49,10 +64,7 @@ function autoTranslateActive() {
 }
 
 function syncControls() {
-  if (sourceSelect) sourceSelect.value = sourceLanguage;
   if (targetSelect) targetSelect.value = targetLanguage;
-  if (swapButton) swapButton.disabled = sourceLanguage === "auto";
-  updateSiteButton();
 }
 
 async function loadSettings() {
@@ -60,6 +72,9 @@ async function loadSettings() {
   targetLanguage = settings.target || DEFAULTS.target;
   sourceLanguage = settings.source || DEFAULTS.source;
   autoTranslate = Boolean(settings.autoTranslate);
+  autoDelay = Number(settings.autoTranslateDelay) || DEFAULTS.autoTranslateDelay;
+  autoMinLength =
+    Number(settings.autoTranslateMinLength) || DEFAULTS.autoTranslateMinLength;
   disabledSites = Array.isArray(settings.disabledSites) ? settings.disabledSites : [];
   syncControls();
 }
@@ -75,6 +90,13 @@ api.storage.onChanged.addListener((changes, area) => {
   }
   if (changes.autoTranslate) {
     autoTranslate = Boolean(changes.autoTranslate.newValue);
+  }
+  if (changes.autoTranslateDelay) {
+    autoDelay = Number(changes.autoTranslateDelay.newValue) || DEFAULTS.autoTranslateDelay;
+  }
+  if (changes.autoTranslateMinLength) {
+    autoMinLength =
+      Number(changes.autoTranslateMinLength.newValue) || DEFAULTS.autoTranslateMinLength;
   }
   if (changes.disabledSites && Array.isArray(changes.disabledSites.newValue)) {
     disabledSites = changes.disabledSites.newValue;
@@ -117,6 +139,9 @@ function onPortMessage(message) {
     }
     currentTranslation += message.delta || "";
     statusEl.textContent = currentTranslation;
+  } else if (message.type === "retry") {
+    statusEl.textContent =
+      "正在等待本地服务启动…（第 " + message.attempt + "/" + message.total + " 次尝试）";
   } else if (message.type === "done") {
     activeRequest = 0;
     showResult(message.translation || currentTranslation);
@@ -131,6 +156,8 @@ function beginTranslate(text) {
   currentTranslation = "";
   requestSeq += 1;
   activeRequest = requestSeq;
+  originalEl.textContent = text;
+  closeMenu();
   showLoading();
   post({ type: "translate", requestId: activeRequest, text });
 }
@@ -150,6 +177,138 @@ function buildOptions(select, options) {
   }
 }
 
+function writeClipboard(text, button, restoreLabel) {
+  if (!text) return;
+
+  const previous = restoreLabel || button.textContent;
+
+  const done = () => {
+    button.textContent = "已复制";
+    clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => {
+      if (button) button.textContent = previous;
+    }, 1200);
+  };
+
+  navigator.clipboard.writeText(text).then(done, () => {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    document.documentElement.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+    done();
+  });
+}
+
+function toggleSpeech() {
+  if (!("speechSynthesis" in window) || !currentTranslation) return;
+
+  const synth = window.speechSynthesis;
+  if (synth.speaking) {
+    synth.cancel();
+    return;
+  }
+
+  const utterance = new SpeechSynthesisUtterance(currentTranslation);
+  utterance.lang = SPEECH_LANGS[targetLanguage] || targetLanguage;
+  utterance.onend = updateMenuState;
+  utterance.onerror = updateMenuState;
+  synth.speak(utterance);
+}
+
+function replaceOriginal() {
+  if (!currentEditable || !currentTranslation) return;
+
+  try {
+    if (currentEditable.type === "input") {
+      const element = currentEditable.element;
+      element.focus();
+      element.setRangeText(
+        currentTranslation,
+        currentEditable.start,
+        currentEditable.end,
+        "end"
+      );
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    } else {
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(currentEditable.range);
+      document.execCommand("insertText", false, currentTranslation);
+    }
+  } catch (error) {
+    showError("无法替换原文。");
+  }
+}
+
+async function swapLanguages() {
+  if (sourceLanguage === "auto") return;
+
+  const previousSource = sourceLanguage;
+  sourceLanguage = targetLanguage;
+  targetLanguage = previousSource;
+  await api.storage.local.set({ source: sourceLanguage, target: targetLanguage });
+  syncControls();
+  if (currentText) beginTranslate(currentText);
+}
+
+function openMenu() {
+  updateMenuState();
+  menuEl.hidden = false;
+}
+
+function closeMenu() {
+  if (menuEl) menuEl.hidden = true;
+}
+
+function updateMenuState() {
+  if (!menuEl) return;
+
+  const bilingual = menuEl.querySelector('[data-action="bilingual"]');
+  const original = menuEl.querySelector('[data-action="original"]');
+  const speak = menuEl.querySelector('[data-action="speak"]');
+  const replace = menuEl.querySelector('[data-action="replace"]');
+  const retranslate = menuEl.querySelector('[data-action="retranslate"]');
+  const swap = menuEl.querySelector('[data-action="swap"]');
+
+  bilingual.disabled = !currentTranslation;
+  original.disabled = !currentText;
+  speak.hidden = !("speechSynthesis" in window);
+  speak.disabled = !currentTranslation;
+  speak.textContent =
+    window.speechSynthesis && window.speechSynthesis.speaking ? "停止朗读" : "朗读";
+  replace.hidden = !currentEditable || !currentTranslation;
+  replace.disabled = !currentTranslation;
+  retranslate.disabled = !currentText;
+  swap.disabled = sourceLanguage === "auto";
+}
+
+function menuAction(item) {
+  const action = item.dataset.action;
+
+  if (action === "bilingual") {
+    writeClipboard(currentText + "\n\n" + currentTranslation, item, "复制双语");
+  } else if (action === "original") {
+    writeClipboard(currentText, item, "复制原文");
+  } else if (action === "speak") {
+    toggleSpeech();
+    updateMenuState();
+  } else if (action === "replace") {
+    closeMenu();
+    replaceOriginal();
+  } else if (action === "retranslate") {
+    closeMenu();
+    if (currentText) beginTranslate(currentText);
+  } else if (action === "swap") {
+    closeMenu();
+    swapLanguages();
+  } else if (action === "settings") {
+    closeMenu();
+    api.runtime.sendMessage({ type: "open-options" }).catch(() => {});
+  }
+}
+
 function ensureBubble() {
   if (host) return;
 
@@ -165,31 +324,58 @@ function ensureBubble() {
   const style = document.createElement("style");
   style.textContent = [
     "@keyframes ot-spin { to { transform: rotate(360deg); } }",
-    ".card { font: 13px/1.5 system-ui, sans-serif; color: #1f2937; background: #fff;",
-    "  border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.18);",
-    "  max-width: 460px; min-width: 240px; padding: 10px 12px; }",
+    ".card { position: relative; font: 13px/1.5 system-ui, sans-serif; color: #1f2937;",
+    "  background: #fff; border: 1px solid #d1d5db; border-radius: 8px;",
+    "  box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: 460px; min-width: 220px;",
+    "  padding: 10px 26px 10px 12px; }",
     ".status { white-space: pre-wrap; word-break: break-word; min-height: 1.5em; }",
     ".status.error { color: #b91c1c; }",
     ".status-row { display: flex; align-items: flex-start; gap: 6px; }",
     ".spinner { flex: none; width: 11px; height: 11px; margin-top: 4px; border: 2px solid #d1d5db;",
     "  border-top-color: #6b7280; border-radius: 50%; animation: ot-spin .8s linear infinite; }",
-    ".row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }",
+    ".row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }",
     ".spacer { flex: 1; }",
     "select { font: inherit; padding: 2px 6px; border-radius: 6px; border: 1px solid #d1d5db;",
     "  background: #fff; }",
-    "button { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid #d1d5db;",
-    "  background: #f9fafb; cursor: pointer; }",
-    "button:hover { background: #f3f4f6; }",
-    "button:disabled { color: #9ca3af; cursor: default; }",
+    "button { font: inherit; padding: 3px 8px; border: 0; border-radius: 6px; background: none;",
+    "  color: #4b5563; cursor: pointer; }",
+    "button:hover { background: rgba(0,0,0,.06); }",
+    "button:disabled { color: #c3c8cf; }",
     "button[hidden] { display: none; }",
-    ".site-toggle { margin-top: 6px; padding: 0; border: 0; background: none; color: #6b7280;",
-    "  font-size: 12px; text-decoration: underline; cursor: pointer; }",
+    ".close-button { position: absolute; top: 4px; right: 4px; padding: 2px 6px; color: #9ca3af;",
+    "  font-size: 14px; line-height: 1; }",
+    ".menu { position: absolute; right: 8px; bottom: 38px; z-index: 3; min-width: 150px;",
+    "  display: flex; flex-direction: column; padding: 4px; background: #fff;",
+    "  border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.16); }",
+    ".menu[hidden] { display: none; }",
+    ".menu-item { text-align: left; white-space: nowrap; }",
+    "details.original { margin-top: 8px; }",
+    "details.original summary { cursor: pointer; color: #6b7280; font-size: 12px; }",
+    ".original-text { margin-top: 4px; color: #6b7280; white-space: pre-wrap;",
+    "  word-break: break-word; max-height: 96px; overflow: auto; }",
+    "@media (prefers-color-scheme: dark) {",
+    "  .card { color: #e5e7eb; background: #1f2937; border-color: #374151; }",
+    "  select { color: #e5e7eb; background: #111827; border-color: #374151; }",
+    "  button { color: #d1d5db; }",
+    "  button:hover { background: rgba(255,255,255,.08); }",
+    "  button:disabled { color: #6b7280; }",
+    "  .menu { background: #111827; border-color: #374151; }",
+    "  .status.error { color: #fca5a5; }",
+    "  details.original summary, .original-text { color: #9ca3af; }",
+    "}",
+    "@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }",
   ].join("\n");
 
   const card = document.createElement("div");
   card.className = "card";
   card.setAttribute("role", "region");
   card.setAttribute("aria-label", "OpenTranslator 译文");
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "close-button";
+  closeButton.textContent = "✕";
+  closeButton.title = "关闭";
+  closeButton.addEventListener("click", hide);
 
   const statusRow = document.createElement("div");
   statusRow.className = "status-row";
@@ -205,35 +391,16 @@ function ensureBubble() {
 
   statusRow.append(spinnerEl, statusEl);
 
+  const originalDetails = document.createElement("details");
+  originalDetails.className = "original";
+  const originalSummary = document.createElement("summary");
+  originalSummary.textContent = "原文";
+  originalEl = document.createElement("div");
+  originalEl.className = "original-text";
+  originalDetails.append(originalSummary, originalEl);
+
   const row = document.createElement("div");
   row.className = "row";
-
-  sourceSelect = document.createElement("select");
-  sourceSelect.className = "source-select";
-  sourceSelect.title = "源语言";
-  buildOptions(sourceSelect, SOURCE_LANGUAGES);
-  if (!SOURCE_LANGUAGES.some(([code]) => code === sourceLanguage)) {
-    buildOptions(sourceSelect, [[sourceLanguage, sourceLanguage]]);
-  }
-  sourceSelect.value = sourceLanguage;
-  sourceSelect.addEventListener("change", async () => {
-    sourceLanguage = sourceSelect.value;
-    await api.storage.local.set({ source: sourceLanguage });
-    if (currentText) beginTranslate(currentText);
-  });
-
-  swapButton = document.createElement("button");
-  swapButton.textContent = "⇄";
-  swapButton.title = "互换源语言和目标语言";
-  swapButton.addEventListener("click", async () => {
-    if (sourceLanguage === "auto") return;
-    const previousSource = sourceLanguage;
-    sourceLanguage = targetLanguage;
-    targetLanguage = previousSource;
-    await api.storage.local.set({ source: sourceLanguage, target: targetLanguage });
-    syncControls();
-    if (currentText) beginTranslate(currentText);
-  });
 
   targetSelect = document.createElement("select");
   targetSelect.className = "target-select";
@@ -274,74 +441,57 @@ function ensureBubble() {
 
   copyButton = document.createElement("button");
   copyButton.textContent = "复制";
-  copyButton.disabled = true;
+  copyButton.hidden = true;
   copyButton.addEventListener("click", () => {
-    if (!currentTranslation) return;
-
-    const done = () => {
-      copyButton.textContent = "已复制";
-      clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => {
-        if (copyButton) copyButton.textContent = "复制";
-      }, 2000);
-    };
-
-    navigator.clipboard.writeText(currentTranslation).then(done, () => {
-      const textarea = document.createElement("textarea");
-      textarea.value = currentTranslation;
-      document.documentElement.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
-      done();
-    });
+    writeClipboard(currentTranslation, copyButton, "复制");
   });
 
-  const closeButton = document.createElement("button");
-  closeButton.textContent = "关闭";
-  closeButton.addEventListener("click", hide);
-
-  row.append(
-    sourceSelect,
-    swapButton,
-    targetSelect,
-    spacer,
-    retryButton,
-    cancelButton,
-    copyButton,
-    closeButton
-  );
-
-  siteButton = document.createElement("button");
-  siteButton.className = "site-toggle";
-  siteButton.hidden = true;
-  siteButton.addEventListener("click", async () => {
-    const hostname = location.hostname;
-    const next = disabledSites.includes(hostname)
-      ? disabledSites.filter((item) => item !== hostname)
-      : disabledSites.concat(hostname);
-    disabledSites = next;
-    await api.storage.local.set({ disabledSites: next });
-    updateSiteButton();
+  moreButton = document.createElement("button");
+  moreButton.className = "more-button";
+  moreButton.textContent = "⋯";
+  moreButton.title = "更多操作";
+  moreButton.hidden = true;
+  moreButton.addEventListener("click", () => {
+    if (menuEl.hidden) {
+      openMenu();
+    } else {
+      closeMenu();
+    }
   });
 
-  card.append(statusRow, row, siteButton);
+  menuEl = document.createElement("div");
+  menuEl.className = "menu";
+  menuEl.hidden = true;
+
+  for (const [action, label] of [
+    ["bilingual", "复制双语"],
+    ["original", "复制原文"],
+    ["speak", "朗读"],
+    ["replace", "替换原文"],
+    ["retranslate", "重新翻译"],
+    ["swap", "互换源/目标语言"],
+    ["settings", "语言设置…"],
+  ]) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "menu-item";
+    item.dataset.action = action;
+    item.textContent = label;
+    menuEl.append(item);
+  }
+
+  menuEl.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-action]");
+    if (!item || item.disabled || item.hidden) return;
+    menuAction(item);
+  });
+
+  row.append(targetSelect, spacer, retryButton, cancelButton, copyButton, moreButton);
+  card.append(closeButton, statusRow, originalDetails, row, menuEl);
   shadow.append(style, card);
   document.documentElement.append(host);
 
   syncControls();
-}
-
-function updateSiteButton() {
-  if (!siteButton) return;
-
-  const showIt = autoTranslate || siteDisabled();
-  siteButton.hidden = !showIt;
-  if (!showIt) return;
-
-  siteButton.textContent = siteDisabled()
-    ? "本站已关闭自动翻译（点击恢复）"
-    : "本站不再自动翻译";
 }
 
 function positionBubble(rect) {
@@ -372,12 +522,16 @@ function hide() {
   if (!host) return;
 
   cancelActive();
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  closeMenu();
   host.style.display = "none";
   currentTranslation = "";
   currentText = "";
+  currentEditable = null;
   loadingPlaceholder = false;
   copyButton.textContent = "复制";
-  copyButton.disabled = true;
+  copyButton.hidden = true;
+  moreButton.hidden = true;
   retryButton.hidden = true;
   cancelButton.hidden = true;
   spinnerEl.hidden = true;
@@ -389,7 +543,8 @@ function showLoading() {
   loadingPlaceholder = true;
   currentTranslation = "";
   copyButton.textContent = "复制";
-  copyButton.disabled = true;
+  copyButton.hidden = true;
+  moreButton.hidden = true;
   retryButton.hidden = true;
   cancelButton.hidden = false;
   spinnerEl.hidden = false;
@@ -401,7 +556,9 @@ function showLoading() {
 function showResult(translation) {
   currentTranslation = translation || "";
   loadingPlaceholder = false;
+  copyButton.hidden = false;
   copyButton.disabled = !currentTranslation;
+  moreButton.hidden = false;
   retryButton.hidden = true;
   cancelButton.hidden = true;
   spinnerEl.hidden = true;
@@ -413,7 +570,8 @@ function showResult(translation) {
 function showError(message) {
   currentTranslation = "";
   loadingPlaceholder = false;
-  copyButton.disabled = true;
+  copyButton.hidden = true;
+  moreButton.hidden = false;
   retryButton.hidden = !currentText;
   cancelButton.hidden = true;
   spinnerEl.hidden = true;
@@ -422,22 +580,46 @@ function showError(message) {
   show();
 }
 
-function selectionInfo() {
+function selectionInfo(preferTarget) {
   const active = document.activeElement;
-  if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+  const focusInInput =
+    active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+  if (focusInInput && (!preferTarget || preferTarget === active)) {
     const start = active.selectionStart;
     const end = active.selectionEnd;
     const rect = active.getBoundingClientRect();
     if (typeof start === "number" && typeof end === "number" && end > start) {
-      return { text: active.value.slice(start, end).trim(), rect };
+      const raw = active.value.slice(start, end);
+      const leading = raw.length - raw.trimStart().length;
+      const trailing = raw.length - raw.trimEnd().length;
+      return {
+        text: raw.trim(),
+        rect,
+        editable: {
+          type: "input",
+          element: active,
+          start: start + leading,
+          end: end - trailing,
+        },
+      };
     }
-    return { text: "", rect };
+    return { text: "", rect, editable: null };
   }
 
   const selection = window.getSelection();
   const text = selection ? selection.toString().trim() : "";
   const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
-  return { text, rect: range ? range.getBoundingClientRect() : null };
+
+  let editable = null;
+  if (range && !selection.isCollapsed) {
+    const container = range.startContainer;
+    const element = container.nodeType === 1 ? container : container.parentElement;
+    if (element && element.isContentEditable) {
+      editable = { type: "contenteditable", range: range.cloneRange() };
+    }
+  }
+
+  return { text, rect: range ? range.getBoundingClientRect() : null, editable };
 }
 
 function queueReposition() {
@@ -463,12 +645,60 @@ function start() {
 
   if (!info.text) {
     currentText = "";
-    showError("未选中文本。");
+    currentEditable = null;
+    if (window.top === window) showError("未选中文本。");
     return;
   }
 
+  currentEditable = info.editable;
   beginTranslate(info.text);
-  positionBubble(info.rect || { left: 40, top: 40, bottom: 60 });
+  positionBubble(info.rect || FALLBACK_RECT);
+}
+
+async function translateClipboard() {
+  if (!document.hasFocus()) return;
+
+  ensureBubble();
+
+  let text = "";
+  try {
+    text = (await navigator.clipboard.readText()).trim();
+  } catch (error) {
+    text = readClipboardFallback();
+  }
+
+  if (!text) {
+    currentText = "";
+    currentEditable = null;
+    showError("剪贴板为空或无法读取。");
+    return;
+  }
+
+  currentEditable = null;
+  beginTranslate(text);
+  positionBubble({
+    left: Math.max(8, window.innerWidth / 2 - 160),
+    top: 60,
+    bottom: 80,
+  });
+}
+
+function readClipboardFallback() {
+  const textarea = document.createElement("textarea");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.documentElement.appendChild(textarea);
+  textarea.focus();
+
+  let text = "";
+  try {
+    if (document.execCommand("paste")) text = textarea.value;
+  } catch (error) {
+    text = "";
+  }
+
+  textarea.remove();
+  return text.trim();
 }
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -476,13 +706,20 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ hostname: location.hostname });
   } else if (message && message.type === "start-translate") {
     start();
+  } else if (message && message.type === "translate-clipboard") {
+    translateClipboard();
   }
 });
 
 document.addEventListener(
   "keydown",
   (event) => {
-    if (event.key === "Escape") hide();
+    if (event.key !== "Escape") return;
+    if (menuEl && !menuEl.hidden) {
+      closeMenu();
+      return;
+    }
+    hide();
   },
   true
 );
@@ -492,31 +729,40 @@ document.addEventListener(
   (event) => {
     if (!host || host.style.display === "none") return;
     if (event.composedPath().includes(host)) return;
+    if (menuEl && !menuEl.hidden) {
+      closeMenu();
+      return;
+    }
     hide();
   },
   true
 );
 
-document.addEventListener(
-  "mouseup",
-  (event) => {
-    if (!autoTranslateActive()) return;
-    if (host && event.composedPath().includes(host)) return;
+document.addEventListener("mouseup", (event) => {
+  if (!autoTranslateActive()) return;
+  if (host && event.composedPath().includes(host)) return;
 
-    const info = selectionInfo();
-    if (!info.text) return;
-
-    clearTimeout(autoTimer);
-    autoTimer = setTimeout(() => {
-      const fresh = selectionInfo();
-      if (!fresh.text || fresh.text !== info.text) return;
-
-      ensureBubble();
-      beginTranslate(fresh.text);
-      positionBubble(fresh.rect || { left: 40, top: 40, bottom: 60 });
-    }, 400);
+  const target = event.target;
+  if (target && typeof target.closest === "function" && target.closest("pre, code")) {
+    return;
   }
-);
+
+  const info = selectionInfo(event.target);
+  if (!info.text) return;
+  if ([...info.text].length < Math.max(1, autoMinLength)) return;
+
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => {
+    const fresh = selectionInfo(event.target);
+    if (!fresh.text || fresh.text !== info.text) return;
+    if ([...fresh.text].length < Math.max(1, autoMinLength)) return;
+
+    currentEditable = fresh.editable;
+    ensureBubble();
+    beginTranslate(fresh.text);
+    positionBubble(fresh.rect || FALLBACK_RECT);
+  }, autoDelay);
+});
 
 document.addEventListener("scroll", queueReposition, true);
 window.addEventListener("resize", queueReposition);

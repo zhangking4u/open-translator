@@ -18,6 +18,7 @@
     "contextMenus",
     "storage",
     "alarms",
+    "clipboardRead",
     "http://127.0.0.1/*"
   ],
   "browser_action": {
@@ -35,6 +36,7 @@
       "matches": [
         "<all_urls>"
       ],
+      "all_frames": true,
       "js": [
         "languages.js",
         "content.js"
@@ -47,6 +49,12 @@
         "default": "Alt+Shift+T"
       },
       "description": "翻译选中文本（OpenTranslator）"
+    },
+    "translate-clipboard": {
+      "suggested_key": {
+        "default": "Alt+Shift+Y"
+      },
+      "description": "翻译剪贴板文本（OpenTranslator）"
     }
   },
   "options_ui": {

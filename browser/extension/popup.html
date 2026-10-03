@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <title>OpenTranslator</title>
   <style>
-    body { font: 13px/1.6 system-ui, sans-serif; margin: 12px; width: 280px; color: #1f2937; }
+    body { font: 13px/1.6 system-ui, sans-serif; margin: 12px; width: 300px; color: #1f2937; }
     h1 { font-size: 14px; margin: 0 0 8px; }
+    h2 { font-size: 13px; margin: 12px 0 4px; }
     #status { margin: 0 0 10px; color: #6b7280; }
     #status.ok { color: #15803d; }
     #status.bad { color: #b91c1c; }
@@ -14,7 +15,19 @@
     label.checkbox { display: flex; align-items: center; gap: 6px; }
     label.checkbox input { margin: 0; }
     .row { display: flex; gap: 8px; margin-top: 10px; }
-    button { font: inherit; padding: 4px 10px; flex: 1; cursor: pointer; }
+    button { font: inherit; padding: 4px 10px; cursor: pointer; }
+    .row button { flex: 1; }
+    #history { list-style: none; margin: 0; padding: 0; max-height: 168px; overflow: auto; }
+    #history li { margin-bottom: 4px; }
+    #history .entry { display: block; width: 100%; text-align: left; padding: 4px 8px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hint { color: #6b7280; font-size: 11px; margin: 10px 0 0; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e5e7eb; background: #1f2937; }
+      #status { color: #9ca3af; }
+      .hint { color: #9ca3af; }
+      select, button { color: #e5e7eb; background: #111827; border: 1px solid #374151; }
+    }
   </style>
 </head>
 <body>
@@ -29,9 +42,13 @@
   <label class="checkbox" id="siteRow" hidden>
     <input id="siteDisabled" type="checkbox"> 本网站不自动翻译
   </label>
+  <h2>最近翻译</h2>
+  <ul id="history"></ul>
   <div class="row">
+    <button type="button" id="clearHistory">清空历史</button>
     <button type="button" id="openSettings">设置…</button>
   </div>
+  <p class="hint">译文仅在本机生成（127.0.0.1），不会上传云端。</p>
   <script src="languages.js"></script>
   <script src="popup.js"></script>
 </body>

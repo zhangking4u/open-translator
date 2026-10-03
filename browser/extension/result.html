@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>OpenTranslator</title>
+  <style>
+    body { font: 14px/1.6 system-ui, sans-serif; margin: 16px; color: #1f2937; }
+    h1 { font-size: 15px; margin: 0 0 8px; }
+    #original { color: #6b7280; white-space: pre-wrap; word-break: break-word;
+      max-height: 96px; overflow: auto; margin: 0 0 10px; }
+    #status { white-space: pre-wrap; word-break: break-word; min-height: 1.5em; }
+    #status.error { color: #b91c1c; }
+    .row { display: flex; gap: 8px; margin-top: 12px; }
+    button { font: inherit; padding: 4px 12px; cursor: pointer; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e5e7eb; background: #1f2937; }
+      #original { color: #9ca3af; }
+      #status.error { color: #fca5a5; }
+      button { color: #e5e7eb; background: #111827; border: 1px solid #374151; }
+    }
+  </style>
+</head>
+<body>
+  <h1>OpenTranslator</h1>
+  <p id="original"></p>
+  <div id="status">翻译中…</div>
+  <div class="row">
+    <button type="button" id="copy" disabled>复制译文</button>
+    <button type="button" id="close">关闭</button>
+  </div>
+  <script src="result.js"></script>
+</body>
+</html>

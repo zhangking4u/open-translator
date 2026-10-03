@@ -14,6 +14,8 @@ const targetSelect = document.getElementById("target");
 const autoInput = document.getElementById("autoTranslate");
 const siteRow = document.getElementById("siteRow");
 const siteInput = document.getElementById("siteDisabled");
+const historyEl = document.getElementById("history");
+const clearHistoryButton = document.getElementById("clearHistory");
 const settingsButton = document.getElementById("openSettings");
 
 let hostname = null;
@@ -24,6 +26,41 @@ for (const [code, name] of LANGUAGES) {
   option.value = code;
   option.textContent = name;
   targetSelect.append(option);
+}
+
+async function renderHistory() {
+  const stored = await api.storage.local.get({ history: [] });
+  const history = Array.isArray(stored.history) ? stored.history : [];
+
+  historyEl.textContent = "";
+
+  if (!history.length) {
+    const item = document.createElement("li");
+    item.textContent = "（无）";
+    historyEl.append(item);
+    return;
+  }
+
+  for (const entry of history.slice(0, 10)) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "entry";
+    button.title = (entry.text || "") + "\n" + (entry.translation || "");
+    button.textContent = entry.translation || "";
+
+    button.addEventListener("click", () => {
+      navigator.clipboard.writeText(entry.translation || "").then(() => {
+        button.textContent = "已复制";
+        setTimeout(() => {
+          button.textContent = entry.translation || "";
+        }, 1200);
+      });
+    });
+
+    item.append(button);
+    historyEl.append(item);
+  }
 }
 
 async function loadSite() {
@@ -49,6 +86,7 @@ api.storage.local.get(DEFAULTS).then((settings) => {
   autoInput.checked = Boolean(settings.autoTranslate);
   disabledSites = Array.isArray(settings.disabledSites) ? settings.disabledSites : [];
   loadSite();
+  renderHistory();
 });
 
 api.runtime
@@ -85,6 +123,11 @@ siteInput.addEventListener("change", () => {
 
   disabledSites = next;
   api.storage.local.set({ disabledSites: next });
+});
+
+clearHistoryButton.addEventListener("click", async () => {
+  await api.storage.local.set({ history: [] });
+  renderHistory();
 });
 
 settingsButton.addEventListener("click", () => api.runtime.openOptionsPage());
