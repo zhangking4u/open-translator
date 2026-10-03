@@ -3,43 +3,18 @@
 <head>
   <meta charset="utf-8">
   <title>OpenTranslator</title>
+  <link rel="stylesheet" href="tokens.css">
   <style>
     :root {
-      color-scheme: light dark;
-      --ot-label: rgba(0,0,0,.85);
-      --ot-label-2: rgba(0,0,0,.5);
-      --ot-label-3: rgba(0,0,0,.26);
-      --ot-fill: rgba(120,120,128,.12);
-      --ot-fill-hover: rgba(120,120,128,.2);
-      --ot-accent: #007aff;
-      --ot-separator: rgba(60,60,67,.14);
-      --ot-bg: #ffffff;
       --ot-control-height: 26px;
       --ot-control-font: 12.5px;
-      --ot-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --ot-label: rgba(255,255,255,.85);
-        --ot-label-2: rgba(255,255,255,.55);
-        --ot-label-3: rgba(255,255,255,.3);
-        --ot-fill: rgba(120,120,128,.24);
-        --ot-fill-hover: rgba(120,120,128,.36);
-        --ot-accent: #0a84ff;
-        --ot-separator: rgba(255,255,255,.12);
-        --ot-bg: #1c1c1e;
-      }
     }
     body { font-family: var(--ot-font); font-size: 13px; line-height: 1.5; -webkit-font-smoothing: antialiased; margin: 12px; width: 300px; color: var(--ot-label); background: var(--ot-bg); }
     h1 { font-size: 13px; font-weight: 600; margin: 0 0 10px; }
     h2 { font-size: 12px; font-weight: 600; color: var(--ot-label-2); margin: 14px 0 6px; }
     #status { margin: 0 0 10px; color: var(--ot-label-2); }
-    #status.ok { color: #248a3d; }
-    #status.bad { color: #d70015; }
-    @media (prefers-color-scheme: dark) {
-      #status.ok { color: #30d158; }
-      #status.bad { color: #ff453a; }
-    }
+    #status.ok { color: var(--ot-green); }
+    #status.bad { color: var(--ot-red); }
     label { display: block; margin-bottom: 8px; }
     select { appearance: none; -webkit-appearance: none; width: 100%; padding: 4px 10px; min-height: 26px; font: inherit; font-size: 12.5px; color: var(--ot-label); background-color: var(--ot-fill); border: 0; border-radius: 8px; }
     select:hover { background-color: var(--ot-fill-hover); }

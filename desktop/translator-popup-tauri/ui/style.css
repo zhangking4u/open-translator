@@ -1,49 +1,6 @@
 :root {
-  color-scheme: light dark;
-  --ot-accent: #007aff;
-  --ot-bg: #ffffff;
-  --ot-bg-solid: #ffffff;
-  --ot-label: rgba(0, 0, 0, 0.85);
-  --ot-label-2: rgba(0, 0, 0, 0.5);
-  --ot-label-3: rgba(0, 0, 0, 0.26);
-  --ot-fill: rgba(120, 120, 128, 0.12);
-  --ot-fill-hover: rgba(120, 120, 128, 0.2);
-  --ot-separator: rgba(60, 60, 67, 0.14);
-  --ot-hairline: rgba(0, 0, 0, 0.08);
-  --ot-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.12);
-  --ot-radius: 12px;
-  --ot-radius-sm: 8px;
   --ot-control-height: 28px;
   --ot-control-font: 12.5px;
-  --ot-green: #248a3d;
-  --ot-orange: #c93400;
-  --ot-red: #d70015;
-  --ot-red-fill: rgba(215, 0, 21, 0.1);
-  --ot-switch-off: rgba(120, 120, 128, 0.32);
-  --ot-font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
-    "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei",
-    system-ui, sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ot-accent: #0a84ff;
-    --ot-bg: #1c1c1e;
-    --ot-bg-solid: #1c1c1e;
-    --ot-label: rgba(255, 255, 255, 0.85);
-    --ot-label-2: rgba(255, 255, 255, 0.55);
-    --ot-label-3: rgba(255, 255, 255, 0.3);
-    --ot-fill: rgba(120, 120, 128, 0.24);
-    --ot-fill-hover: rgba(120, 120, 128, 0.36);
-    --ot-separator: rgba(255, 255, 255, 0.12);
-    --ot-hairline: rgba(255, 255, 255, 0.12);
-    --ot-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5);
-    --ot-green: #30d158;
-    --ot-orange: #ff9f0a;
-    --ot-red: #ff453a;
-    --ot-red-fill: rgba(255, 69, 58, 0.16);
-    --ot-switch-off: rgba(120, 120, 128, 0.4);
-  }
 }
 
 * {

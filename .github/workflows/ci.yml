@@ -5,6 +5,13 @@ on:
   pull_request:
 
 jobs:
+  shared-ui:
+    name: Shared UI sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: bash shared/sync-ui.sh --check
+
   core:
     name: Core service tests
     runs-on: ubuntu-latest

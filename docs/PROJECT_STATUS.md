@@ -695,3 +695,13 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Long language lists were clipped when the control sat low on screen (the menu is an absolute layer, so the bubble placement cannot reserve room for it); `OTSelect.open()` now measures the free space above/below, flips the menu above the button when the space below is tighter, and always clamps `max-height` to the available space so the list scrolls instead of overflowing
 - The inline typing-bubble variant follows the card flow and clamps its height to the space below; both variants recompute on resize/scroll while open
 - Mirrored in the desktop copy (`ui/dropdown.js`); verified by a Chrome e2e bottom-anchored selection scenario asserting `ot-select-menu-up` and viewport bounds (35 checks), plus a desktop preview at a 230 px viewport showing a constrained menu
+
+
+## Shared UI Sources (2026-10-03, after the dropdown placement fix)
+
+
+- `shared/ui/tokens.css` and `shared/ui/dropdown.js` are now the single sources for the design tokens and the `OTSelect` component; `shared/sync-ui.sh` regenerates `browser/extension/tokens.{css,js}` (the JS variant rewrites `:root` to `:host` for shadow roots), `browser/extension/dropdown.js`, `desktop/.../ui/tokens.css` and `ui/dropdown.js`, with `--check` failing on drift (new `shared-ui` CI job)
+- Extension pages link `tokens.css`; content scripts load `tokens.js` before `dropdown.js`/`content.js` (manifests and `browser/build.sh` updated); the desktop links `ui/tokens.css`; `content.js` dropped its inline token copy and uses `--ot-bg-material` for bubble material
+- `OTSelect.place()` additionally clamps to the visible screen area (`screenY` / `screen.availHeight` / window chrome) so a webview or browser window extending past the screen bottom keeps menus reachable (best effort)
+- Verified: fresh-profile Chrome e2e exit 0 (35 checks), token presence on popup/options/result/desktop (`--ot-accent` `#007aff`, radius 12), `shared/sync-ui.sh --check`, `web-ext lint` clean
+- Accepted boundaries (recorded, not stylable): OS-native surfaces (tray menu, notifications, file dialogs, installers); the desktop card stays opaque because transparent-webview blur is unreliable across WebView2/WebKitGTK

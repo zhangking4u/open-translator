@@ -27,6 +27,7 @@
       "all_frames": true,
       "js": [
         "languages.js",
+        "tokens.js",
         "dropdown.js",
         "content.js"
       ]

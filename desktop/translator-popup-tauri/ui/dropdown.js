@@ -1,18 +1,17 @@
 "use strict";
 
-// Shared Apple-style select for the desktop client: replaces a native <select>
-// with a filled chip button and a checkmarked menu. The native select stays
-// hidden in the DOM as the value holder, so existing `value` / `change` code
-// keeps working.
+// Shared Apple-style select: replaces a native <select> with a filled chip
+// button and a checkmarked menu. The native select stays hidden in the DOM as
+// the value holder, so existing `value` / `change` code keeps working.
 //
-// This is the desktop copy of browser/extension/dropdown.js; keep the two in
-// sync (the extension version additionally embeds its cssText into shadow
-// roots, the desktop injects it into the page).
+// This file is the single source. Run `shared/sync-ui.sh` after editing it;
+// the copies in browser/extension/ and desktop/translator-popup-tauri/ui/ are
+// generated (CI verifies they match).
 //
 // Usage:
-//   const controller = OTSelect.enhance(select, { title });
+//   const controller = OTSelect.enhance(select, { title, menuContainer });
 //   OTSelect.sync(select);            // after setting select.value in code
-//   OTSelect.inject();                // once, then enhance the selects
+//   OTSelect.inject();                // pages only (shadow roots embed cssText)
 (function () {
   const CHECK =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
@@ -68,6 +67,20 @@
   function icon(markup) {
     const doc = new DOMParser().parseFromString(markup, "image/svg+xml");
     return document.importNode(doc.documentElement, true);
+  }
+
+  // Best effort visible bottom of the webview: when the window extends past
+  // the bottom of the screen, the menu must stay inside the visible part.
+  function visibleViewportBottom() {
+    const inner = window.innerHeight;
+    const screenHeight =
+      window.screen && Number.isFinite(window.screen.availHeight)
+        ? window.screen.availHeight
+        : inner;
+    const screenTop = Number.isFinite(window.screenY) ? window.screenY : 0;
+    const chrome = Math.max(0, (window.outerHeight || inner) - inner);
+    const visible = screenHeight - (screenTop + chrome);
+    return Math.max(120, Math.min(inner, visible));
   }
 
   function enhance(select, options = {}) {
@@ -149,16 +162,17 @@
     function place() {
       const margin = 8;
       const preferred = 240;
+      const viewportBottom = visibleViewportBottom();
 
       if (options.menuContainer) {
         const rect = menu.getBoundingClientRect();
-        const spaceBelow = window.innerHeight - rect.top - margin;
+        const spaceBelow = viewportBottom - rect.top - margin;
         menu.style.maxHeight = Math.max(96, Math.min(preferred, spaceBelow)) + "px";
         return;
       }
 
       const rect = button.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom - margin - 6;
+      const spaceBelow = viewportBottom - rect.bottom - margin - 6;
       const spaceAbove = rect.top - margin - 6;
       const flipped = spaceBelow < Math.min(preferred, spaceAbove);
       menu.classList.toggle("ot-select-menu-up", flipped);

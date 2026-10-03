@@ -31,28 +31,6 @@ const SPEECH_LANGS = {
 
 const FALLBACK_RECT = { left: 40, top: 40, bottom: 60 };
 
-// Shared Apple-flavoured design tokens, injected into both shadow roots.
-const UI_TOKENS_CSS = [
-  ":host { color-scheme: light dark;",
-  "  --ot-label: rgba(0,0,0,.85); --ot-label-2: rgba(0,0,0,.5); --ot-label-3: rgba(0,0,0,.26);",
-  "  --ot-fill: rgba(120,120,128,.12); --ot-fill-hover: rgba(120,120,128,.2);",
-  "  --ot-accent: #007aff; --ot-separator: rgba(60,60,67,.14);",
-  "  --ot-bg: rgba(255,255,255,.78); --ot-bg-solid: #ffffff;",
-  "  --ot-hairline: rgba(0,0,0,.08);",
-  "  --ot-shadow: 0 1px 2px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.12);",
-  "  --ot-radius: 12px; --ot-radius-sm: 8px;",
-  "  --ot-font: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif;",
-  "}",
-  "@media (prefers-color-scheme: dark) { :host {",
-  "  --ot-label: rgba(255,255,255,.85); --ot-label-2: rgba(255,255,255,.55); --ot-label-3: rgba(255,255,255,.3);",
-  "  --ot-fill: rgba(120,120,128,.24); --ot-fill-hover: rgba(120,120,128,.36);",
-  "  --ot-accent: #0a84ff; --ot-separator: rgba(255,255,255,.12);",
-  "  --ot-bg: rgba(30,30,32,.72); --ot-bg-solid: #2c2c2e;",
-  "  --ot-hairline: rgba(255,255,255,.12);",
-  "  --ot-shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.5);",
-  "} }",
-].join("\n");
-
 const ICONS = {
   copy: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h1"/></svg>',
   check: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5"/></svg>',
@@ -470,7 +448,7 @@ function ensureBubble() {
 
   const style = document.createElement("style");
   style.textContent = [
-    UI_TOKENS_CSS,
+    (globalThis.OT_TOKENS_CSS || ""),
     (globalThis.OTSelect && OTSelect.cssText) || "",
     "@keyframes ot-pulse { 0%, 100% { opacity: .45; } 50% { opacity: .95; } }",
     "@keyframes ot-caret { 0%, 100% { opacity: 1; } 50% { opacity: .15; } }",
@@ -481,7 +459,7 @@ function ensureBubble() {
     "  box-shadow: inset 0 0 0 .5px var(--ot-hairline), var(--ot-shadow);",
     "  max-width: 460px; min-width: 220px; padding: 10px 12px; }",
     "@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {",
-    "  .card { background: var(--ot-bg); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }",
+    "  .card { background: var(--ot-bg-material); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }",
     "}",
     ".status { font-size: 13.5px; line-height: 1.5; white-space: pre-wrap;",
     "  word-break: break-word; min-height: 1.5em; }",
@@ -510,7 +488,7 @@ function ensureBubble() {
     "  border-radius: 10px; box-shadow: inset 0 0 0 .5px var(--ot-hairline), var(--ot-shadow);",
     "  animation: ot-menu-in .16s cubic-bezier(.25,.1,.25,1); }",
     "@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {",
-    "  .menu { background: var(--ot-bg); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }",
+    "  .menu { background: var(--ot-bg-material); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }",
     "}",
     ".menu[hidden] { display: none; }",
     ".menu-item { justify-content: flex-start; text-align: left; white-space: nowrap; color: var(--ot-label); }",
@@ -1008,7 +986,7 @@ function ensureTypeBubble() {
 
   const style = document.createElement("style");
   style.textContent = [
-    UI_TOKENS_CSS,
+    (globalThis.OT_TOKENS_CSS || ""),
     (globalThis.OTSelect && OTSelect.cssText) || "",
     "@keyframes ot-type-pulse { 0%, 100% { opacity: .45; } 50% { opacity: .95; } }",
     "@keyframes ot-type-caret { 0%, 100% { opacity: 1; } 50% { opacity: .15; } }",
@@ -1020,7 +998,7 @@ function ensureTypeBubble() {
     "  box-shadow: inset 0 0 0 .5px var(--ot-hairline), var(--ot-shadow);",
     "  max-width: 440px; padding: 10px 12px; }",
     "@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {",
-    "  .type-card { background: var(--ot-bg); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }",
+    "  .type-card { background: var(--ot-bg-material); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }",
     "}",
     ".type-status { font-size: 13.5px; line-height: 1.5; white-space: pre-wrap;",
     "  word-break: break-word; max-height: 6.5em; overflow: hidden; }",

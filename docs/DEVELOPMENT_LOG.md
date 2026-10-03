@@ -1787,6 +1787,23 @@ Verification:
 
 ---
 
+## Milestone: Shared UI Sources (2026-10-03, after the dropdown placement fix)
+
+
+- `shared/ui/tokens.css` and `shared/ui/dropdown.js` became the single sources; `shared/sync-ui.sh` copies/regenerates the extension copies (`tokens.css`, `tokens.js` with `:root` → `:host`, `dropdown.js`) and the desktop copies (`ui/tokens.css`, `ui/dropdown.js`), with a `--check` mode wired into a new `shared-ui` CI job
+- Extension pages now `<link>` `tokens.css` instead of carrying their own `:root` blocks; content scripts load `tokens.js` first (manifests + `browser/build.sh` updated) and `content.js` dropped its inline `UI_TOKENS_CSS`, using `--ot-bg-material` for the translucent bubble background
+- `OTSelect.place()` was extended with a best-effort visible-area clamp (`screenY` / `screen.availHeight` / window chrome) so menus stay reachable when the window extends past the bottom of the screen
+- Accepted boundaries recorded in PROJECT_STATUS: OS-native surfaces (tray, notifications, dialogs, installers) stay native; the desktop card remains opaque (transparent-webview blur is unreliable)
+
+Verification:
+
+- `bash shared/sync-ui.sh --check`; `node --check` on all touched scripts; `browser/build.sh all`; `web-ext lint` clean
+- Fresh-profile Chrome e2e: exit 0, 35 checks
+- Token presence checked live on popup/options/result/desktop (`--ot-accent` `#007aff`, `--ot-radius` 12, expected chip counts)
+
+
+---
+
 
 # Git History
 
