@@ -1804,6 +1804,15 @@ Verification:
 
 ---
 
+## Milestone: View Switch on New Translations (2026-10-03, after the shared UI sources)
+
+
+- Hotkey/`--translate` translations started while the card sat on the history or settings page stayed on that page even though the history list updated; `listen("source")` now switches back to the translator view before rendering the new source (history-entry clicks already did this)
+- Verified with the desktop frontend stub in headless Edge: `source` from the history view and from the settings view both reveal `#translator-view` with the new text, no script errors; the local Windows instance was rebuilt and swapped for the manual check
+
+
+---
+
 
 # Git History
 

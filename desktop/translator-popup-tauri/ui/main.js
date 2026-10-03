@@ -1008,6 +1008,9 @@ confirmDialog.addEventListener("click", (event) => {
 });
 
 listen("source", (event) => {
+  // A new translation always belongs in the translator view, even when the
+  // card currently sits on the history or settings page.
+  if (view !== "translator") showView("translator");
   showSource(event.payload.text, event.payload.replaceable === true);
 });
 

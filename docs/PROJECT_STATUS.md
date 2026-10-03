@@ -687,6 +687,7 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Fixed a pre-existing mojibake in `ui/main.js` (the detected label rendered as `妫€娴嬶細` instead of `检测：`)
 - The design language is now a documented design principle: `docs/ARCHITECTURE.md` → UI Design Language (tokens, controls, the dropdown-copy sync rule, motion, enforcement), referenced from AGENTS and the Conventions
 - Verified by previewing the frontend with a stubbed `window.__TAURI__` in headless Edge (translator/settings/history, light/dark; a real-click language pick updates the native select and calls `set_source`); frontend-only change, no Rust rebuild required
+- Follow-up: a new translation (hotkey or `--translate`) now switches the card back to the translator view even when it sat on the history or settings page (`listen("source")` calls `showView("translator")` first)
 
 
 ## Dropdown Viewport Placement (2026-10-03, after the desktop UI pass)
