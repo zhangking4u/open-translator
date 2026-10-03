@@ -1699,6 +1699,16 @@ Verified on the same Ubuntu 26.04/GNOME Wayland machine with a local release bui
 - Review follow-up: the pulse is generation-guarded (`AppState::pulse_generation`) so two shows within 700 ms no longer let the older timer clear always-on-top while the newer pulse is still active; verified by firing two menu events 0.5 s apart and watching `_NET_WM_STATE_ABOVE` persist until the second pulse's deadline
 
 
+## Milestone: v0.4.1 Release (2026-10-03)
+
+
+Released:
+
+- Tag `v0.4.1` at `c138c1e` (CI run 37123631360 green first); release run 37123869327 passed the browser-extension (~9s), Linux (~7m49s), macOS (~9m22s) and Windows (~12m26s) jobs and published five assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`, `OpenTranslator-browser-chrome.zip` and `OpenTranslator-browser-firefox.zip`
+- Release notes summarize the Linux gap closure (X11 clipboard copy, X11/XWayland replace-in-place with PRIMARY fallback, speech-dispatcher read-aloud, verified one-click deb update), the simplified history rows, the version-prefix fix and the fullscreen tray fix, plus the usual install/upgrade steps
+- Windows/macOS desktop real-machine visual pass still pending; macOS remains CI-built only
+
+
 ---
 
 

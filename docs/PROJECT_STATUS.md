@@ -220,7 +220,7 @@ main
 
 Latest commit:
 
-v0.4.0 tagged at 17019b6 (docs: record the desktop and extension redesign); release run 37112505593 published five assets
+v0.4.1 tagged at c138c1e (fix: surface the card above fullscreen windows on every show); release run 37123869327 published five assets
 
 
 ---
@@ -240,7 +240,7 @@ Ordinary users on Windows/macOS can download, install and use it without technic
 
 Status:
 
-`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets.
+`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray.
 
 
 ---
@@ -252,7 +252,7 @@ Status:
 
 2. Code signing / notarization (budget decision); macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
 
-3. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases)
+3. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix)
 
 
 ---
@@ -648,3 +648,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Packaging Recommends `speech-dispatcher` + `pkexec`; postinst reminds manual upgraders to restart the client
 - Verified with the local release build on the same machine (arboard bridge, X11 fallback capture, replace target detection, installable update button, `cargo test`); the physical Xorg-session input pass (pointer and XTEST key injection) is still outstanding because Mutter drops synthetic input under Wayland
 - Tray hit-box report (2026-10-03) disproved: with the menu open, every row spans the full menu width (206 px) and the blank area right of the label delivers DBusMenu `clicked` events; the real cause of the perceived dead menu was the raise pulse being skipped for a hidden card, so a tray 历史…/设置… click mapped the card below a fullscreen window; `show_main_with` now pulses on every show (pinned windows excluded), the pulse is generation-guarded so overlapping shows do not cut a newer pulse short, and the hidden-card + fullscreen repro passes with the local 0.4.1 build
+
+
+## v0.4.1 Release (2026-10-03)
+
+
+- Tag `v0.4.1` at `c138c1e`; release run 37123869327 passed the Linux (~7m49s), macOS (~9m22s), Windows (~12m26s) and browser-extension (~9s) jobs, publishing the same five assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`, `OpenTranslator-browser-chrome.zip` and `OpenTranslator-browser-firefox.zip`
+- Release notes recap the Linux gap closure (X11 clipboard copy, X11/XWayland replace-in-place, PRIMARY fallback, one-click deb update), the speech-dispatcher read-aloud fixes, the simplified history rows and the fullscreen tray fix, plus the usual install/upgrade steps
+- Windows/macOS real-machine visual pass still pending; macOS remains an unsigned arm64 dmg
