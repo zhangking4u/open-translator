@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use translator_core::update::ReleaseInfo;
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
@@ -255,13 +255,13 @@ fn main() {
             if argv.iter().any(|arg| arg == "--translate") {
                 trigger_translation(app);
             } else if argv.iter().any(|arg| arg == "--settings") {
-                show_main(app);
+                show_main_in_place(app);
                 let _ = app.emit("open-settings", ());
             } else if argv.iter().any(|arg| arg == "--history") {
-                show_main(app);
+                show_main_in_place(app);
                 let _ = app.emit("open-history", ());
             } else {
-                show_main(app);
+                show_main_in_place(app);
             }
         }))
         .plugin(
@@ -277,6 +277,7 @@ fn main() {
             hide_window,
             quit_app,
             resize_window,
+            center_window,
             copy_text,
             retranslate,
             get_settings,
@@ -360,6 +361,8 @@ fn main() {
 
             if config.check_updates.as_deref() != Some("false") {
                 spawn_update_check(handle.clone(), false);
+            } else if let Some(item) = app.state::<UpdateSlot>().item.lock().unwrap().as_ref() {
+                let _ = item.set_text("更新检查已关闭");
             }
 
             if show_on_start {
@@ -689,10 +692,27 @@ fn translate_text(app: &AppHandle, text: String) {
 }
 
 fn show_main(app: &AppHandle) {
+    show_main_with(app, true);
+}
+
+/// Tray/CLI entry points center the window instead of following the cursor,
+/// which would otherwise leave it stuck against the taskbar where the tray
+/// menu is anchored.
+fn show_main_in_place(app: &AppHandle) {
+    show_main_with(app, false);
+}
+
+fn show_main_with(app: &AppHandle, follow_cursor: bool) {
     if let Some(window) = app.get_webview_window("main") {
         let was_visible = window.is_visible().unwrap_or(false);
         let _ = window.show();
-        place_near_cursor(app, &window);
+
+        if follow_cursor {
+            place_near_cursor(app, &window);
+        } else {
+            center_window_position(&window);
+        }
+
         let _ = window.set_focus();
 
         // GNOME denies focus and raise to a background app whose tray click
@@ -713,6 +733,31 @@ fn show_main(app: &AppHandle) {
             });
         }
     }
+}
+
+fn center_window_position(window: &WebviewWindow) {
+    let Ok(size) = window.outer_size().or_else(|_| window.inner_size()) else {
+        return;
+    };
+
+    let Some(monitor) = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+
+    let work = monitor.work_area();
+    let margin = (12.0 * monitor.scale_factor()) as i32;
+    let work_width = work.size.width as i32;
+    let work_height = work.size.height as i32;
+
+    let x = work.position.x + ((work_width - size.width as i32) / 2).max(margin);
+    let y = work.position.y + ((work_height - size.height as i32) / 2).max(margin);
+
+    let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
 fn window_hidden(app: &AppHandle) -> bool {
@@ -803,35 +848,37 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
-    let update_item = MenuItem::with_id(app, "update", "有新版本可用", false, None::<&str>)?;
+    let update_item = MenuItem::with_id(app, "update", "正在检查更新…", false, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
         &[
             &show_item,
+            &PredefinedMenuItem::separator(app)?,
             &history_item,
             &settings_item,
             &update_item,
+            &PredefinedMenuItem::separator(app)?,
             &quit_item,
         ],
     )?;
 
     *app.state::<UpdateSlot>().item.lock().unwrap() = Some(update_item);
 
-    TrayIconBuilder::with_id("main")
+    let tray = TrayIconBuilder::with_id("main")
         .icon(Image::new_owned(make_icon_rgba(), 32, 32))
         .tooltip(format!("OpenTranslator（{hotkey_spec}）"))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "show" => show_main(app),
+            "show" => show_main_in_place(app),
             "history" => {
-                show_main(app);
+                show_main_in_place(app);
                 let _ = app.emit("open-history", ());
             }
             "settings" => {
-                show_main(app);
+                show_main_in_place(app);
                 let _ = app.emit("open-settings", ());
             }
             "update" => {
@@ -847,9 +894,12 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             }
             "quit" => app.exit(0),
             _ => {}
-        })
-        .build(app)?;
+        });
 
+    #[cfg(target_os = "macos")]
+    let tray = tray.icon_as_template(true);
+
+    tray.build(app)?;
     Ok(())
 }
 
@@ -923,6 +973,11 @@ fn resize_window(window: WebviewWindow, height: f64) {
             let _ = window.set_position(PhysicalPosition::new(position.x, y));
         }
     }
+}
+
+#[tauri::command]
+fn center_window(window: WebviewWindow) {
+    center_window_position(&window);
 }
 
 #[tauri::command]
@@ -1322,6 +1377,10 @@ fn spawn_update_check(app: AppHandle, manual: bool) {
         let info = match run_update_check() {
             Ok(Some(info)) => info,
             Ok(None) => {
+                if let Some(item) = app.state::<UpdateSlot>().item.lock().unwrap().as_ref() {
+                    let _ = item.set_text("已是最新版本");
+                }
+
                 if manual {
                     let _ = app.emit("update-none", ());
                 }
@@ -1329,6 +1388,10 @@ fn spawn_update_check(app: AppHandle, manual: bool) {
                 return;
             }
             Err(message) => {
+                if let Some(item) = app.state::<UpdateSlot>().item.lock().unwrap().as_ref() {
+                    let _ = item.set_text("更新检查失败");
+                }
+
                 if manual {
                     let _ = app.emit("update-check-failed", ErrorPayload { message });
                 }
@@ -1351,7 +1414,7 @@ fn spawn_update_check(app: AppHandle, manual: bool) {
             });
 
             if let Some(item) = slot.item.lock().unwrap().as_ref() {
-                let _ = item.set_text(format!("有新版本 v{}", info.version));
+                let _ = item.set_text(format!("有新版本 v{}…", info.version));
                 let _ = item.set_enabled(true);
             }
         }
@@ -1572,17 +1635,35 @@ fn make_icon_rgba() -> Vec<u8> {
 
     let center = (SIZE as f32 - 1.0) / 2.0;
     let radius = 15.0;
+    // macOS menu bar icons are template images: draw the glyph in black with
+    // transparency and let the system tint it for light/dark menu bars.
+    let template = cfg!(target_os = "macos");
 
     for y in 0..SIZE {
         for x in 0..SIZE {
             let dx = x as f32 - center;
             let dy = y as f32 - center;
+            let distance = (dx * dx + dy * dy).sqrt();
 
-            if (dx * dx + dy * dy).sqrt() <= radius {
+            let inside = if template {
+                distance <= radius && distance >= radius - 2.0
+            } else {
+                distance <= radius
+            };
+
+            if inside {
                 let index = ((y * SIZE + x) * 4) as usize;
-                rgba[index] = 0x25;
-                rgba[index + 1] = 0x63;
-                rgba[index + 2] = 0xeb;
+
+                if template {
+                    rgba[index] = 0x00;
+                    rgba[index + 1] = 0x00;
+                    rgba[index + 2] = 0x00;
+                } else {
+                    rgba[index] = 0x25;
+                    rgba[index + 1] = 0x63;
+                    rgba[index + 2] = 0xeb;
+                }
+
                 rgba[index + 3] = 0xff;
             }
         }
@@ -1592,9 +1673,11 @@ fn make_icon_rgba() -> Vec<u8> {
         for y in top..(top + 2) {
             for x in 9..23 {
                 let index = ((y * SIZE + x) * 4) as usize;
-                rgba[index] = 0xff;
-                rgba[index + 1] = 0xff;
-                rgba[index + 2] = 0xff;
+                let value = if template { 0x00 } else { 0xff };
+
+                rgba[index] = value;
+                rgba[index + 1] = value;
+                rgba[index + 2] = value;
                 rgba[index + 3] = 0xff;
             }
         }
