@@ -97,6 +97,7 @@ struct SettingsPayload {
     auto_download: bool,
     check_updates: bool,
     serve_extension: bool,
+    pinned: bool,
     config_path: Option<String>,
     app_version: String,
 }
@@ -178,6 +179,17 @@ fn main() {
         None => true,
     };
 
+    let start_pinned = match config.pinned.as_deref() {
+        Some(value) => match parse_bool("pinned", value) {
+            Ok(value) => value,
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
+        None => false,
+    };
+
     if args.print {
         run_print(&args, &model_path, prompt_style);
         return;
@@ -233,7 +245,7 @@ fn main() {
             last_translation: Mutex::new(None),
             recents: Mutex::new(recent_targets),
             history: Mutex::new(translator_core::history::load()),
-            pinned: Mutex::new(false),
+            pinned: Mutex::new(start_pinned),
             replace_window: Mutex::new(None),
         })
         .manage(Mutex::new(translate_config))
@@ -293,6 +305,12 @@ fn main() {
             let handle = app.handle().clone();
 
             build_tray(&handle, &hotkey_spec)?;
+
+            if start_pinned {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_always_on_top(true);
+                }
+            }
 
             if autostart {
                 // The AppIndicator extension can drop our menu labels when the
@@ -943,6 +961,7 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
         auto_download: config.auto_download.as_deref() != Some("false"),
         check_updates: config.check_updates.as_deref() != Some("false"),
         serve_extension: config.serve_extension.as_deref() != Some("false"),
+        pinned: *app.state::<AppState>().pinned.lock().unwrap(),
         config_path: translator_core::paths::config_path()
             .map(|path| path.to_string_lossy().to_string()),
         app_version: translator_core::update::current_version().to_string(),
@@ -1094,6 +1113,7 @@ fn set_pinned(app: AppHandle, window: WebviewWindow, pinned: bool) {
     *app.state::<AppState>().pinned.lock().unwrap() = pinned;
     // 固定 means the card stays in front of every other window until unpinned.
     let _ = window.set_always_on_top(pinned);
+    translator_core::settings::persist_value("pinned", if pinned { "true" } else { "false" });
 }
 
 #[tauri::command]

@@ -17,8 +17,23 @@ const status = document.getElementById("status");
 const copy = document.getElementById("copy");
 const retranslate = document.getElementById("retranslate");
 const replace = document.getElementById("replace");
+const speak = document.getElementById("speak");
 const pin = document.getElementById("pin");
 const close = document.getElementById("close");
+const dot = document.getElementById("dot");
+
+const SPEECH_LANGS = {
+  zh: "zh-CN",
+  en: "en-US",
+  ja: "ja-JP",
+  ko: "ko-KR",
+  fr: "fr-FR",
+  de: "de-DE",
+  es: "es-ES",
+  ru: "ru-RU",
+  th: "th-TH",
+};
+const speakSupported = "speechSynthesis" in window;
 
 let current = "";
 let lastSource = "";
@@ -84,6 +99,66 @@ function setStatus(text) {
   status.textContent = text;
 }
 
+function setDot(state) {
+  dot.className = "dot";
+
+  if (state !== "ready") {
+    dot.classList.add(state);
+  }
+
+  dot.title =
+    state === "loading" ? "正在准备翻译引擎" : state === "error" ? "翻译引擎出错" : "就绪";
+}
+
+function stopSpeaking() {
+  if (!speakSupported) return;
+
+  window.speechSynthesis.cancel();
+  speak.classList.remove("active");
+  speak.title = "朗读译文";
+}
+
+function pickVoice(lang) {
+  const target = lang.toLowerCase();
+  const base = target.split("-")[0];
+  const voices = window.speechSynthesis.getVoices();
+
+  return (
+    voices.find((voice) => voice.lang.toLowerCase() === target) ||
+    voices.find((voice) => voice.lang.toLowerCase().startsWith(base)) ||
+    null
+  );
+}
+
+function toggleSpeech() {
+  if (!speakSupported || !current) return;
+
+  const synth = window.speechSynthesis;
+
+  if (synth.speaking) {
+    stopSpeaking();
+    return;
+  }
+
+  const lang = SPEECH_LANGS[languageState.target] || languageState.target;
+  const voice = pickVoice(lang);
+
+  if (!voice) {
+    setStatus("未找到" + labelOf(languageState.target) + "语音，请先安装系统语音包");
+    window.setTimeout(() => setStatus(""), 3000);
+    return;
+  }
+
+  const utterance = new SpeechSynthesisUtterance(current);
+  utterance.voice = voice;
+  utterance.lang = voice.lang;
+  utterance.onend = stopSpeaking;
+  utterance.onerror = stopSpeaking;
+  speak.classList.add("active");
+  speak.title = "停止朗读";
+  synth.speak(utterance);
+}
+
 function render(html) {
   translation.innerHTML = html;
   resize();
@@ -117,7 +192,9 @@ function showWaiting() {
   source.textContent = "";
   retranslate.hidden = true;
   replace.hidden = true;
+  speak.hidden = true;
   setCopyEnabled(false);
+  stopSpeaking();
   render(
     '<div class="empty-state">' +
       '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
@@ -137,7 +214,9 @@ function showEmpty() {
   source.textContent = "";
   retranslate.hidden = true;
   replace.hidden = true;
+  speak.hidden = true;
   setCopyEnabled(false);
+  stopSpeaking();
   render('<p class="hint">未选中文本</p><p class="sub">请在其它应用中选中要翻译的内容</p>');
 }
 
@@ -152,6 +231,9 @@ function showSource(text, canReplace) {
   source.textContent = text;
   retranslate.hidden = false;
   replace.hidden = !replaceable;
+  speak.hidden = true;
+  stopSpeaking();
+  setDot("loading");
   render('<p class="hint">正在翻译…</p>');
 }
 
@@ -159,6 +241,9 @@ function showProgress(downloaded, total) {
   current = "";
   streaming = false;
   setCopyEnabled(false);
+  speak.hidden = true;
+  stopSpeaking();
+  setDot("loading");
 
   const megabytes = (value) => (value / 1000000).toFixed(0);
   const percent = total ? Math.round((downloaded / total) * 100) : 0;
@@ -178,6 +263,9 @@ function showError(message, retryable) {
   current = "";
   streaming = false;
   setCopyEnabled(false);
+  speak.hidden = true;
+  stopSpeaking();
+  setDot("error");
   retranslate.hidden = !retryable;
 
   const card = document.createElement("div");
@@ -197,25 +285,38 @@ function showError(message, retryable) {
   resize();
 }
 
+function textParagraph() {
+  let paragraph = translation.querySelector("p.text");
+
+  if (!paragraph) {
+    paragraph = document.createElement("p");
+    paragraph.className = "text";
+    translation.replaceChildren(paragraph);
+  }
+
+  return paragraph;
+}
+
 function appendDelta(piece) {
   current += piece;
   streaming = true;
-  render('<p class="text">' + escapeHtml(current) + "</p>");
+  const paragraph = textParagraph();
+  paragraph.classList.add("streaming");
+  paragraph.textContent = current;
   setCopyEnabled(false);
+  resize();
 }
 
 function finish(translationText) {
   current = translationText;
   streaming = false;
-  render('<p class="text">' + escapeHtml(current) + "</p>");
+  const paragraph = textParagraph();
+  paragraph.classList.remove("streaming");
+  paragraph.textContent = current;
   setCopyEnabled(current.length > 0);
-}
-
-function escapeHtml(value) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  speak.hidden = !speakSupported;
+  setDot("ready");
+  resize();
 }
 
 new ResizeObserver(resize).observe(document.body);
@@ -228,13 +329,69 @@ document.getElementById("open-history").addEventListener("click", () => {
   openHistory();
 });
 
-pin.addEventListener("click", async () => {
+async function togglePin() {
   pinned = !pinned;
   await invoke("set_pinned", { pinned });
   pin.classList.toggle("active", pinned);
   pin.title = pinned ? "取消固定（取消置顶）" : "固定窗口（保持最前）";
   close.hidden = pinned;
+}
+
+pin.addEventListener("click", togglePin);
+
+document.querySelector(".titlebar").addEventListener("dblclick", (event) => {
+  if (event.target.closest("button")) return;
+  togglePin();
 });
+
+speak.addEventListener("click", toggleSpeech);
+
+const contextMenu = document.getElementById("context-menu");
+
+function hideContextMenu() {
+  contextMenu.hidden = true;
+}
+
+translation.addEventListener("contextmenu", (event) => {
+  if (!current) return;
+
+  event.preventDefault();
+  contextMenu.querySelector('[data-action="speak"]').hidden = !speakSupported;
+  contextMenu.hidden = false;
+
+  const rect = contextMenu.getBoundingClientRect();
+  const x = Math.min(event.clientX, window.innerWidth - rect.width - 8);
+  const y = Math.min(event.clientY, window.innerHeight - rect.height - 8);
+  contextMenu.style.left = Math.max(4, x) + "px";
+  contextMenu.style.top = Math.max(4, y) + "px";
+});
+
+contextMenu.addEventListener("click", (event) => {
+  const action = event.target.closest("[data-action]")?.dataset.action;
+  if (!action) return;
+
+  if (action === "copy") {
+    const selected = window.getSelection().toString();
+    const text = selected || current;
+    if (text) invoke("copy_text", { text });
+  } else if (action === "select-all") {
+    const paragraph = translation.querySelector("p.text");
+
+    if (paragraph) {
+      const range = document.createRange();
+      range.selectNodeContents(paragraph);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  } else if (action === "speak") {
+    toggleSpeech();
+  }
+
+  hideContextMenu();
+});
+
+document.addEventListener("click", hideContextMenu);
 
 copy.addEventListener("click", async () => {
   if (!current) {
@@ -244,8 +401,6 @@ copy.addEventListener("click", async () => {
   await invoke("copy_text", { text: current });
   copy.classList.add("copied");
   window.setTimeout(() => copy.classList.remove("copied"), 1200);
-  setStatus("已复制");
-  window.setTimeout(() => setStatus(""), 1500);
 });
 
 retranslate.addEventListener("click", () => {
@@ -291,6 +446,11 @@ window.addEventListener("keydown", (event) => {
   }
 
   if (event.key !== "Escape") {
+    return;
+  }
+
+  if (!contextMenu.hidden) {
+    hideContextMenu();
     return;
   }
 
@@ -774,6 +934,8 @@ listen("model-progress", (event) => {
 });
 
 listen("model-ready", () => {
+  setDot("ready");
+
   if (view === "translator" && !streaming && !current) {
     showWaiting();
   }
@@ -847,8 +1009,18 @@ listen("update-error", (event) => {
 });
 
 showWaiting();
+setDot("loading");
 resize();
 initLanguages();
+
+invoke("get_settings").then((settings) => {
+  if (settings.pinned) {
+    pinned = true;
+    pin.classList.add("active");
+    pin.title = "取消固定（取消置顶）";
+    close.hidden = true;
+  }
+});
 
 invoke("platform").then((os) => {
   // Windows keeps the window opaque, so the card fills it instead of floating.

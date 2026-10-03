@@ -79,6 +79,15 @@ body {
   height: 10px;
   border-radius: 50%;
   background: #3db57a;
+  transition: background 0.2s;
+}
+
+.dot.loading {
+  background: #e0a63c;
+}
+
+.dot.error {
+  background: #e05a5a;
 }
 
 button {
@@ -216,6 +225,18 @@ button.icon:hover:not(:disabled) {
   white-space: pre-wrap;
 }
 
+@keyframes ot-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.translation .text.streaming::after {
+  content: "▍";
+  margin-left: 1px;
+  animation: ot-blink 1s steps(1) infinite;
+}
+
 .empty-state {
   min-height: 96px;
   display: flex;
@@ -246,6 +267,27 @@ button.icon:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 112px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.context-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  border-radius: 5px;
 }
 
 .status {
@@ -752,4 +794,10 @@ button.icon.active {
 button.destructive {
   background: #e05a5a;
   color: #ffffff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .translation .text.streaming::after {
+    animation: none;
+  }
 }

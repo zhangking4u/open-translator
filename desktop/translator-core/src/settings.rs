@@ -15,6 +15,7 @@ pub struct FileConfig {
     pub serve_extension: Option<String>,
     pub auto_download: Option<String>,
     pub check_updates: Option<String>,
+    pub pinned: Option<String>,
 }
 
 pub fn load_config() -> FileConfig {
@@ -68,6 +69,7 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "serve_extension" => config.serve_extension = Some(value.to_string()),
             "auto_download" => config.auto_download = Some(value.to_string()),
             "check_updates" => config.check_updates = Some(value.to_string()),
+            "pinned" => config.pinned = Some(value.to_string()),
             _ => {}
         }
     }

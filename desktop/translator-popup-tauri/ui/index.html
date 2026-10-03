@@ -75,6 +75,13 @@
         <footer class="footer">
           <span id="status" class="status"></span>
           <span class="spacer"></span>
+          <button id="speak" class="icon" hidden title="朗读译文" aria-label="朗读译文">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H2v6h4l5 4z" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+            </svg>
+          </button>
           <button id="replace" class="icon" hidden title="替换原文" aria-label="替换原文">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M14 4c0-1.1.9-2 2-2" />
@@ -272,6 +279,12 @@
             清空历史
           </button>
         </div>
+      </div>
+
+      <div id="context-menu" class="context-menu" hidden>
+        <button data-action="copy" type="button">复制</button>
+        <button data-action="select-all" type="button">全选</button>
+        <button data-action="speak" type="button">朗读</button>
       </div>
 
       <div id="confirm-dialog" class="confirm-backdrop" hidden>
