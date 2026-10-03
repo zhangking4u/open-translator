@@ -877,10 +877,14 @@ async function renderHistory() {
   empty.hidden = history.length > 0;
   clear.hidden = history.length === 0;
 
+  document.getElementById("history-empty-hint").textContent =
+    "选中文字按 " + hotkeyLabel + " 开始";
+
   history.forEach((entry, index) => {
     const button = document.createElement("button");
     button.className = "history-entry";
     button.type = "button";
+    button.title = entry.text + "\n" + entry.translation;
 
     const text = document.createElement("span");
     text.className = "history-text";
@@ -889,17 +893,20 @@ async function renderHistory() {
     const time = document.createElement("span");
     time.className = "history-time";
     const relative = relativeTime(entry.at);
-    time.textContent = relative ? entry.target + " · " + relative : entry.target;
+    // The language tag only earns its place when it differs from the target
+    // the user is translating into right now.
+    time.textContent =
+      entry.target && entry.target !== languageState.target
+        ? relative
+          ? entry.target + " · " + relative
+          : entry.target
+        : relative;
 
     const translation = document.createElement("span");
     translation.className = "history-translation";
     translation.textContent = entry.translation;
 
-    const chevron = document.createElement("span");
-    chevron.className = "history-chevron";
-    chevron.textContent = "›";
-
-    button.append(text, time, translation, chevron);
+    button.append(text, time, translation);
     button.addEventListener("click", async () => {
       await invoke("load_history_entry", { index });
       showView("translator");
