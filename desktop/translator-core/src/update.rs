@@ -41,11 +41,18 @@ impl std::fmt::Display for UpdateError {
 impl std::error::Error for UpdateError {}
 
 /// Version compiled into the binary: the release tag when the release workflow
-/// builds it, otherwise the crate version.
+/// builds it, otherwise the crate version. The tag's `v` prefix is stripped so
+/// callers can add their own without showing `vv0.4.0`.
 pub fn current_version() -> &'static str {
-    option_env!("OPEN_TRANSLATOR_VERSION")
+    let value = option_env!("OPEN_TRANSLATOR_VERSION")
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or(env!("CARGO_PKG_VERSION"))
+        .unwrap_or(env!("CARGO_PKG_VERSION"));
+    let trimmed = value.trim();
+
+    trimmed
+        .strip_prefix('v')
+        .or_else(|| trimmed.strip_prefix('V'))
+        .unwrap_or(trimmed)
 }
 
 pub fn enabled(file: &FileConfig) -> Result<bool, String> {
@@ -226,6 +233,15 @@ mod tests {
         });
 
         format!("http://{address}/releases/latest")
+    }
+
+    #[test]
+    fn current_version_has_no_tag_prefix() {
+        let version = current_version();
+
+        assert!(!version.is_empty());
+        assert!(!version.starts_with('v'));
+        assert!(!version.starts_with('V'));
     }
 
     #[test]
