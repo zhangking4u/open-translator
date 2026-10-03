@@ -220,7 +220,7 @@ main
 
 Latest commit:
 
-d2e259f (desktop and browser extension redesign, 2026-10-03; v0.4.0 release prep)
+v0.4.0 tagged at 17019b6 (docs: record the desktop and extension redesign); release run 37112505593 published five assets
 
 
 ---
@@ -240,7 +240,7 @@ Ordinary users on Windows/macOS can download, install and use it without technic
 
 Status:
 
-`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` is in prep with the desktop (card/settings/history) and browser extension (streaming bubble, toolbar popup) redesign.
+`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets.
 
 
 ---
@@ -252,7 +252,7 @@ Status:
 
 2. Code signing / notarization (budget decision); macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
 
-3. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 in prep (desktop + extension redesign, extension zips attached to releases)
+3. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases)
 
 
 ---
@@ -619,3 +619,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 
 - `release.yml` `browser-extension` job builds and attaches `OpenTranslator-browser-chrome.zip` / `OpenTranslator-browser-firefox.zip` to `v*` releases (artifact-only on `workflow_dispatch`)
 - `browser/build.sh` zips with a top-level folder and bundles `packaging/browser/README.txt`; README documents the zip install flow (Firefox zip is unsigned, temporary loading only)
+
+
+## v0.4.0 Release (2026-10-03)
+
+
+- Tag `v0.4.0` at `17019b6`; release run 37112505593 passed the Linux/macOS/Windows package jobs and the new browser-extension job, publishing five assets (three desktop packages + two extension zips)
+- First release attaching `OpenTranslator-browser-chrome.zip` / `OpenTranslator-browser-firefox.zip`; notes cover the desktop redesign, the extension overhaul and the usual install/upgrade steps
+- Desktop real-machine visual pass on Windows/macOS pending; macOS remains CI-built only

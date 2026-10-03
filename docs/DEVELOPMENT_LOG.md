@@ -1623,6 +1623,19 @@ Verification:
 ---
 
 
+## Milestone: v0.4.0 Release (2026-10-03)
+
+
+Released:
+
+- Tag `v0.4.0` at `17019b6` (CI run 37112355538 green first); release run 37112505593 passed the Linux (~6m), macOS (~7m47s), Windows (~10m10s) and browser-extension (~7s) jobs and published five assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`, `OpenTranslator-browser-chrome.zip` and `OpenTranslator-browser-firefox.zip` (first release attaching the extension zips)
+- Release notes summarize the desktop redesign (iconified card controls, speech/context menu/status dot, history and settings rework, tray/placement polish) and the extension overhaul (streaming bubble, toolbar popup, history, per-site opt-out, clipboard/PDF paths), plus the usual install/upgrade steps
+- Desktop real-machine visual pass on Windows/macOS still pending; macOS remains CI-built only
+
+
+---
+
+
 # Git History
 
 Commit:
