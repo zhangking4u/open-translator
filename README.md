@@ -20,7 +20,7 @@
 - **macOS**：打开 `OpenTranslator-macos-*.dmg`，把 `OpenTranslator.app` 拖入「应用程序」。首次打开如被 Gatekeeper 拦截，右键 →「打开」或在「系统设置 → 隐私与安全性」中允许（当前未签名）；使用取词功能还需在「辅助功能」中授权。
 - **Linux（GNOME）**：`sudo apt install ./OpenTranslator-linux-x64.deb`，安装后运行一次 `open-translator-setup` 绑定全局快捷键（默认 `Ctrl+Alt+T`，同时写入开机自启；安装时会提示）。deb 基于 Ubuntu 24.04 构建，需要 glibc ≥ 2.39（Ubuntu 24.04+ / Debian 13+）；运行时依赖（libwebkit2gtk-4.1-0、libgtk-3-0、libayatana-appindicator3-1、wl-clipboard、libnotify-bin、libgomp1）由 apt 自动安装。
 
-首次运行会在后台从 ModelScope 下载模型（约 1.1GB，带进度与断点续传），托盘/菜单栏提示下载进度；程序开机启动后保持静默、不弹窗，按 `Ctrl+Alt+T` 或在托盘选「显示窗口」才会显示。之后任意应用选中文字按 `Ctrl+Alt+T` 即可翻译；托盘/菜单栏图标提供 显示窗口 / 立即翻译 / 历史… / 设置… / 有新版本 / 退出。
+首次运行会在后台从 ModelScope 下载模型（约 1.1GB，带进度与断点续传），托盘/菜单栏提示下载进度；程序开机启动后保持静默、不弹窗，按 `Ctrl+Alt+T` 或在托盘选「显示窗口」才会显示。之后任意应用选中文字按 `Ctrl+Alt+T` 即可翻译；托盘/菜单栏图标提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。
 
 升级：Windows 重新解压并运行 `install.ps1`（或客户端内「立即更新」）；macOS 用新 dmg 替换应用；Linux `sudo apt install ./新版OpenTranslator-linux-x64.deb` 覆盖升级。从 v0.2.x 的旧客户端升级到 v0.3.0 的 Tauri 包需要重新下载安装一次（旧客户端无法一键更新）。
 
@@ -98,7 +98,7 @@ target = zh
 
 命令行参数 > 配置文件 > 环境变量 > 默认值。参数：`--autostart`（登录自启静默进托盘）、`--translate`（取词翻译并弹窗）、`--settings` / `--history`（打开设置/历史页）、`--stdin`/`--print`（脚本化）。
 
-弹窗内可用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语；⇄ 互换语言对，`Ctrl+1/2/3` 切换最近使用的目标语言。译文流式显示并同步显示已接收字数。卡片提供 复制译文 / 替换原文（Windows）/ 重新翻译 / 固定，`Ctrl+Enter` 重译、`Ctrl+Shift+C` 复制；托盘菜单提供 显示窗口 / 立即翻译 / 历史… / 设置… / 有新版本 / 退出。
+弹窗内可用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语；⇄ 互换语言对，`Ctrl+1/2/3` 切换最近使用的目标语言。译文流式显示并同步显示已接收字数。卡片提供 复制译文 / 替换原文（Windows）/ 重新翻译 / 固定，`Ctrl+Enter` 重译、`Ctrl+Shift+C` 复制；托盘菜单提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。
 
 ### 3. 浏览器扩展（Firefox / Chrome）
 
@@ -131,8 +131,8 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 | 浏览器扩展 | ✅ | ✅ | ✅ |
 | 桌面划词 | ✅ Tauri（deb；Wayland 会话走 XWayland） | ✅ Tauri（zip/install.ps1，CI 构建） | ✅ Tauri（dmg，CI 构建，未真机验证） |
 
-- Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 构建**内嵌模型推理**的 Tauri 客户端（`translator-popup-tauri.exe`）并加入开机启动；把 GGUF 放到 `%LOCALAPPDATA%\open-translator\models\hy-mt1.5-1.8b-q4_k_m.gguf`（或配置 `model_path`）。选中文字按 `Ctrl+Alt+T`（模拟 `Ctrl+C` + 剪贴板取词）；托盘菜单提供 显示窗口 / 立即翻译 / 历史… / 设置… / 有新版本 / 退出。运行期间在 `127.0.0.1:17890` 提供 HTTP 供浏览器扩展；客户端内「立即更新」会下载 `OpenTranslator-windows-x64.zip`、解压并运行其中的 `install.ps1`（会先关闭运行中的旧版）。
-- macOS 桌面划词：发布包为 dmg（把 `OpenTranslator.app` 拖入「应用程序」）；源码安装 `./desktop/install-macos.sh` 构建内嵌推理的 Tauri 客户端到 `~/Applications/OpenTranslator.app` 并注册 LaunchAgent 开机启动。模型放到 `~/Library/Application Support/open-translator/models/`（或配置 `model_path`）。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」允许 OpenTranslator（模拟 `Cmd+C` 取词所需）；菜单栏图标提供 显示窗口 / 立即翻译 / 历史… / 设置… / 有新版本 / 退出（更新在浏览器打开 release 页）。
+- Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 构建**内嵌模型推理**的 Tauri 客户端（`translator-popup-tauri.exe`）并加入开机启动；把 GGUF 放到 `%LOCALAPPDATA%\open-translator\models\hy-mt1.5-1.8b-q4_k_m.gguf`（或配置 `model_path`）。选中文字按 `Ctrl+Alt+T`（模拟 `Ctrl+C` + 剪贴板取词）；托盘菜单提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。运行期间在 `127.0.0.1:17890` 提供 HTTP 供浏览器扩展；客户端内「立即更新」会下载 `OpenTranslator-windows-x64.zip`、解压并运行其中的 `install.ps1`（会先关闭运行中的旧版）。
+- macOS 桌面划词：发布包为 dmg（把 `OpenTranslator.app` 拖入「应用程序」）；源码安装 `./desktop/install-macos.sh` 构建内嵌推理的 Tauri 客户端到 `~/Applications/OpenTranslator.app` 并注册 LaunchAgent 开机启动。模型放到 `~/Library/Application Support/open-translator/models/`（或配置 `model_path`）。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」允许 OpenTranslator（模拟 `Cmd+C` 取词所需）；菜单栏图标提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出（更新在浏览器打开 release 页）。
 - 桌面客户端配置（Windows `%APPDATA%\open-translator\config`、macOS `~/Library/Application Support/open-translator/config`）：`model_path`、`prompt_style`（默认 `hymt`）、`serve_extension`（默认 `true`）、`auto_download`（默认 `true`，首启自动从 ModelScope 下载模型，支持断点续传与 SHA-256 校验）、`check_updates`（默认 `true`，启动时检查 GitHub 新版本并在窗口/托盘提示）、`hotkey`、`source`（默认 `auto`，自动识别源语言）、`target`；环境变量 `TRANSLATOR_MODEL_PATH` / `TRANSLATOR_PROMPT_STYLE` / `TRANSLATOR_HOTKEY` / `TRANSLATOR_CHECK_UPDATES` 可临时覆盖。
 - Windows/macOS 上也可只用浏览器扩展：安装 Ollama + 运行核心服务（`cargo run --release`）即可；HY-MT 导入脚本（Windows 需 Git Bash）或按脚本内 Modelfile 手动 `ollama create`。
 

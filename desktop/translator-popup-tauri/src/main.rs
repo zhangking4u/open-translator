@@ -776,13 +776,6 @@ fn card_position(
 
 fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
-    let translate_item = MenuItem::with_id(
-        app,
-        "translate",
-        "立即翻译选中文本",
-        true,
-        None::<&str>,
-    )?;
     let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
     let update_item = MenuItem::with_id(app, "update", "有新版本可用", false, None::<&str>)?;
@@ -792,7 +785,6 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         app,
         &[
             &show_item,
-            &translate_item,
             &history_item,
             &settings_item,
             &update_item,
@@ -809,7 +801,6 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main(app),
-            "translate" => trigger_translation(app),
             "history" => {
                 show_main(app);
                 let _ = app.emit("open-history", ());

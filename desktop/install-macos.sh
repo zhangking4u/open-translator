@@ -75,6 +75,6 @@ echo "  app:     $APP_DIR"
 echo "  agent:   $PLIST"
 echo
 echo "Select text and press Ctrl+Alt+T (Ctrl+C capture). Esc hides the window."
-echo "Tray menu: 显示窗口 / 立即翻译 / 历史… / 设置… / 退出."
+echo "Tray menu: 显示窗口 / 历史… / 设置… / 退出."
 echo "First run: allow OpenTranslator under System Settings -> Privacy & Security -> Accessibility."
 echo "Logs: ~/Library/Logs/open-translator/"
