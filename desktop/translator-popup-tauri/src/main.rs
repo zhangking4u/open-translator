@@ -5,6 +5,7 @@ mod notify;
 mod server;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -66,6 +67,9 @@ struct AppState {
     recents: Mutex<Vec<String>>,
     history: Mutex<Vec<HistoryEntry>>,
     pinned: Mutex<bool>,
+    /// Bumped on every show so only the newest always-on-top pulse clears the
+    /// state; an older timer must not cut a newer pulse short.
+    pulse_generation: AtomicU64,
     replace_window: Mutex<Option<isize>>,
     /// X11 destroys the selection owner with the last clipboard instance, so
     /// Linux keeps one alive for the app lifetime; Windows/macOS own the
@@ -258,6 +262,7 @@ fn main() {
             recents: Mutex::new(recent_targets),
             history: Mutex::new(translator_core::history::load()),
             pinned: Mutex::new(start_pinned),
+            pulse_generation: AtomicU64::new(0),
             replace_window: Mutex::new(None),
             #[cfg(target_os = "linux")]
             clipboard: Mutex::new(None),
@@ -721,7 +726,6 @@ fn show_main_in_place(app: &AppHandle) {
 
 fn show_main_with(app: &AppHandle, follow_cursor: bool) {
     if let Some(window) = app.get_webview_window("main") {
-        let was_visible = window.is_visible().unwrap_or(false);
         let _ = window.show();
 
         if follow_cursor {
@@ -733,10 +737,13 @@ fn show_main_with(app: &AppHandle, follow_cursor: bool) {
         let _ = window.set_focus();
 
         // GNOME denies focus and raise to a background app whose tray click
-        // carries no activation token, so an already-visible card stays behind
-        // the active window and looks unresponsive. Briefly lift it with
+        // carries no activation token, so the card stays behind the active
+        // window and looks unresponsive — including when it was hidden and the
+        // new map lands under a fullscreen window. Briefly lift it with
         // always-on-top to bring it to the front, then restore the pin state.
-        if was_visible && !*app.state::<AppState>().pinned.lock().unwrap() {
+        let state = app.state::<AppState>();
+        if !*state.pinned.lock().unwrap() {
+            let generation = state.pulse_generation.fetch_add(1, Ordering::SeqCst) + 1;
             let _ = window.set_always_on_top(true);
 
             let handle = window.clone();
@@ -744,7 +751,10 @@ fn show_main_with(app: &AppHandle, follow_cursor: bool) {
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(700));
 
-                if !*app_handle.state::<AppState>().pinned.lock().unwrap() {
+                let state = app_handle.state::<AppState>();
+                if state.pulse_generation.load(Ordering::SeqCst) == generation
+                    && !*state.pinned.lock().unwrap()
+                {
                     let _ = handle.set_always_on_top(false);
                 }
             });

@@ -1689,6 +1689,16 @@ Verified on the same Ubuntu 26.04/GNOME Wayland machine with a local release bui
 - verified on the dev machine: a `--wait --pipe-mode` child stays alive during playback and `spd-say -S` terminates it; unit tests cover the language mapping, the command args and the voice-listing parser
 
 
+## Tray Click Behind a Fullscreen Window (2026-10-03, after the TTS fixes)
+
+
+- User report: tray menu items seemed to work only when clicking the text; instrumented the Shell side (Ubuntu AppIndicator extension) and the app's DBusMenu: menu rows span the full width (206px when open, label ~44px), the blank area right of the text delivers `clicked` events, and hover covers the whole row — the hit box was never the problem
+- Real repro: with the card hidden and a fullscreen VS Code window, a tray 历史…/设置… click switched the view but the newly mapped card landed below the fullscreen window, so it looked like nothing happened until VS Code was hidden
+- Fix: `show_main_with` now always runs the 700 ms always-on-top raise pulse (previously only when the card was already visible), so a freshly shown card also surfaces above fullscreen windows on GNOME; pinned windows keep their permanent always-on-top
+- Verified on the dev machine (local 0.4.1 build): hidden card + fullscreen VS Code + tray 历史… now brings the history card to the front; `cargo test --release` 11 passed
+- Review follow-up: the pulse is generation-guarded (`AppState::pulse_generation`) so two shows within 700 ms no longer let the older timer clear always-on-top while the newer pulse is still active; verified by firing two menu events 0.5 s apart and watching `_NET_WM_STATE_ABOVE` persist until the second pulse's deadline
+
+
 ---
 
 
