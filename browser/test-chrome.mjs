@@ -173,6 +173,36 @@ try {
       bubble ?? "<empty>"
     );
 
+    const iconState = await evaluate(
+      pageSession,
+      `(() => {
+         const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+         const root = host && host.shadowRoot;
+         if (!root) return null;
+         const copy = root.querySelector(".copy-button");
+         const more = root.querySelector(".more-button");
+         const close = root.querySelector(".close-button");
+         return {
+           copyIcon: Boolean(copy && copy.querySelector("svg")),
+           moreIcon: Boolean(more && more.querySelector("svg")),
+           closeIcon: Boolean(close && close.querySelector("svg")),
+           copyText: copy ? copy.textContent.trim() : null,
+         };
+       })()`,
+      { contextId: isolated.id }
+    );
+    check(
+      "iconified controls",
+      Boolean(
+        iconState &&
+          iconState.copyIcon &&
+          iconState.moreIcon &&
+          iconState.closeIcon &&
+          iconState.copyText === ""
+      ),
+      JSON.stringify(iconState)
+    );
+
     const selected = await evaluate(
       pageSession,
       `(() => {
@@ -264,18 +294,31 @@ try {
         { contextId: isolated.id }
       );
 
-      const replaceReady = await evaluate(
+      const replaceState = await evaluate(
         pageSession,
         `(() => {
            const host = [...document.documentElement.children].find((el) => el.shadowRoot);
            const item = host && host.shadowRoot.querySelector('[data-action="replace"]');
-           return Boolean(item && !item.hidden && !item.disabled);
+           return {
+             ready: Boolean(item && !item.hidden && !item.disabled),
+             icon: Boolean(item && item.querySelector("svg")),
+             label: item && item.querySelector(".menu-label") ? item.querySelector(".menu-label").textContent : null,
+           };
          })()`,
         { contextId: isolated.id }
       );
-      check("replace action offered for input selection", replaceReady);
+      check(
+        "replace action offered for input selection",
+        Boolean(replaceState && replaceState.ready),
+        JSON.stringify(replaceState)
+      );
+      check(
+        "menu item icon and label",
+        Boolean(replaceState && replaceState.icon && replaceState.label === "替换原文"),
+        JSON.stringify(replaceState)
+      );
 
-      if (replaceReady) {
+      if (replaceState && replaceState.ready) {
         await evaluate(
           pageSession,
           `(() => {
