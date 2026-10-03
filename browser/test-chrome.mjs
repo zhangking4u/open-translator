@@ -919,26 +919,70 @@ try {
     );
     await evaluate(pageSession, "start()", { contextId: isolated.id });
 
-    const bottomChip = await pointIn(selectionHost, ".ot-select-button");
-    if (bottomChip) await clickAt(bottomChip.x, bottomChip.y);
-    await sleep(250);
-
-    const menuPlacement = await evaluate(
-      pageSession,
-      `(() => {
-         const host = ${selectionHost};
-         const menu = host && host.shadowRoot.querySelector(".ot-select-menu");
-         if (!menu || menu.hidden) return null;
-         const rect = menu.getBoundingClientRect();
-         return {
-           up: menu.classList.contains("ot-select-menu-up"),
-           top: rect.top,
-           bottom: rect.bottom,
-           innerHeight: window.innerHeight,
-         };
-       })()`,
-      { contextId: isolated.id }
+    // Wait for the translated text: on a fast (mock) engine the card is still
+    // swapping its controls when the chip would be clicked, which moves the
+    // button under the captured point.
+    let bottomBubble = null;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      bottomBubble = await evaluate(
+        pageSession,
+        `(() => {
+           const host = ${selectionHost};
+           const status = host && host.shadowRoot.querySelector(".status");
+           if (!host || !status || host.style.display === "none") return null;
+           return {
+             text: status.textContent,
+             streaming: status.className.includes("streaming"),
+           };
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (
+        bottomBubble &&
+        bottomBubble.text &&
+        bottomBubble.text !== "翻译中…" &&
+        !bottomBubble.streaming
+      ) {
+        break;
+      }
+      await sleep(200);
+    }
+    check(
+      "bottom selection translated",
+      Boolean(bottomBubble) &&
+        bottomBubble.text.length > 0 &&
+        !bottomBubble.text.includes("翻译失败"),
+      bottomBubble ? bottomBubble.text : "<none>"
     );
+
+    const readMenuPlacement = () =>
+      evaluate(
+        pageSession,
+        `(() => {
+           const host = ${selectionHost};
+           const menu = host && host.shadowRoot.querySelector(".ot-select-menu");
+           if (!menu || menu.hidden) return null;
+           const rect = menu.getBoundingClientRect();
+           return {
+             up: menu.classList.contains("ot-select-menu-up"),
+             top: rect.top,
+             bottom: rect.bottom,
+             innerHeight: window.innerHeight,
+           };
+         })()`,
+        { contextId: isolated.id }
+      );
+
+    // The chip itself does not move anymore, but retry the click defensively:
+    // a miss leaves the menu closed and the placement checks meaningless.
+    let menuPlacement = null;
+    for (let attempt = 0; attempt < 10 && !menuPlacement; attempt++) {
+      const bottomChip = await pointIn(selectionHost, ".ot-select-button");
+      if (bottomChip) await clickAt(bottomChip.x, bottomChip.y);
+      await sleep(250);
+      menuPlacement = await readMenuPlacement();
+    }
+
     check(
       "menu flips above near the viewport bottom",
       Boolean(menuPlacement && menuPlacement.up),
