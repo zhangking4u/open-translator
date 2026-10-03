@@ -371,19 +371,198 @@ document.getElementById("model-save").addEventListener("click", async () => {
   window.setTimeout(() => (saved.hidden = true), 1500);
 });
 
-document.getElementById("hotkey-apply").addEventListener("click", async () => {
-  const input = document.getElementById("hotkey-input");
-  const error = document.getElementById("hotkey-error");
+const hotkeyRecorder = document.getElementById("hotkey-recorder");
+const hotkeyApply = document.getElementById("hotkey-apply");
+const hotkeyReset = document.getElementById("hotkey-reset");
+const hotkeyHint = document.getElementById("hotkey-hint");
+const hotkeyError = document.getElementById("hotkey-error");
+const hotkeySaved = document.getElementById("hotkey-saved");
 
-  try {
-    await invoke("save_hotkey", { spec: input.value });
-    error.hidden = true;
-  } catch (message) {
-    error.textContent = String(message);
-    error.hidden = false;
+const DEFAULT_HOTKEY = "Ctrl+Alt+T";
+const MODIFIER_EVENT_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
+const KEY_LABELS = {
+  Control: "Ctrl",
+  Meta: "Super",
+  " ": "Space",
+  ArrowUp: "ArrowUp",
+  ArrowDown: "ArrowDown",
+  ArrowLeft: "ArrowLeft",
+  ArrowRight: "ArrowRight",
+};
+
+const hotkeyState = {
+  recording: false,
+  confirmed: false,
+  candidate: "",
+  current: "",
+};
+
+function hotkeyParts(spec) {
+  return spec ? spec.split("+") : [];
+}
+
+function keyLabel(event) {
+  if (KEY_LABELS[event.key]) {
+    return KEY_LABELS[event.key];
+  }
+  return event.key.length === 1 ? event.key.toUpperCase() : event.key;
+}
+
+function specFromEvent(event) {
+  const modifiers = [];
+  if (event.ctrlKey) modifiers.push("Ctrl");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+  if (event.metaKey) modifiers.push("Super");
+
+  if (MODIFIER_EVENT_KEYS.has(event.key)) {
+    return { modifiers, key: "" };
   }
 
+  return { modifiers, key: keyLabel(event) };
+}
+
+function renderHotkey() {
+  hotkeyRecorder.classList.toggle("recording", hotkeyState.recording);
+
+  let parts = [];
+  let placeholder = "";
+
+  if (!hotkeyState.recording) {
+    parts = hotkeyParts(hotkeyState.current);
+    if (!parts.length) placeholder = "未设置";
+  } else if (hotkeyState.candidate) {
+    parts = hotkeyParts(hotkeyState.candidate);
+  } else {
+    placeholder = "请按下快捷键…";
+  }
+
+  const nodes = [];
+  for (const part of parts) {
+    const keycap = document.createElement("kbd");
+    keycap.textContent = part;
+    nodes.push(keycap);
+  }
+  if (placeholder) {
+    const span = document.createElement("span");
+    span.className = "placeholder";
+    span.textContent = placeholder;
+    nodes.push(span);
+  }
+  hotkeyRecorder.replaceChildren(...nodes);
+
+  if (!hotkeyState.recording) {
+    hotkeyHint.textContent = "点击左侧按钮后按下新快捷键，再按一次相同组合确认；Esc 取消";
+  } else if (!hotkeyState.candidate) {
+    hotkeyHint.textContent = "请按下新快捷键（需包含 Ctrl/Alt/Super，可加 Shift）";
+  } else if (!hotkeyState.confirmed) {
+    hotkeyHint.textContent = "请再按一次相同组合确认";
+  } else {
+    hotkeyHint.textContent = "已确认，点击「应用」或按 Enter 生效";
+  }
+
+  hotkeyApply.disabled = !(hotkeyState.recording && hotkeyState.confirmed);
   resize();
+}
+
+function startHotkeyRecording() {
+  hotkeyState.recording = true;
+  hotkeyState.confirmed = false;
+  hotkeyState.candidate = "";
+  hotkeyError.hidden = true;
+  hotkeySaved.hidden = true;
+  hotkeyRecorder.focus();
+  renderHotkey();
+}
+
+function stopHotkeyRecording() {
+  hotkeyState.recording = false;
+  hotkeyState.confirmed = false;
+  hotkeyState.candidate = "";
+  renderHotkey();
+}
+
+async function applyHotkey(spec) {
+  hotkeyError.hidden = true;
+  hotkeySaved.hidden = true;
+
+  try {
+    await invoke("save_hotkey", { spec });
+    hotkeyState.current = spec;
+    hotkeyState.recording = false;
+    hotkeyState.confirmed = false;
+    hotkeyState.candidate = "";
+    hotkeySaved.hidden = false;
+    window.setTimeout(() => (hotkeySaved.hidden = true), 1500);
+  } catch (message) {
+    hotkeyError.textContent = String(message);
+    hotkeyError.hidden = false;
+  }
+
+  renderHotkey();
+}
+
+hotkeyRecorder.addEventListener("click", () => {
+  startHotkeyRecording();
+});
+
+hotkeyRecorder.addEventListener("blur", () => {
+  if (hotkeyState.recording && !hotkeyState.confirmed) {
+    stopHotkeyRecording();
+  }
+});
+
+hotkeyRecorder.addEventListener("keydown", (event) => {
+  if (!hotkeyState.recording) return;
+  if (event.isComposing) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (event.key === "Escape") {
+    stopHotkeyRecording();
+    return;
+  }
+
+  if (event.key === "Enter" && hotkeyState.confirmed) {
+    applyHotkey(hotkeyState.candidate);
+    return;
+  }
+
+  if (event.key === "Backspace" || event.key === "Delete") {
+    hotkeyState.candidate = "";
+    hotkeyState.confirmed = false;
+    renderHotkey();
+    return;
+  }
+
+  if (event.repeat || MODIFIER_EVENT_KEYS.has(event.key)) return;
+
+  const { modifiers, key } = specFromEvent(event);
+  const hasCommandModifier = modifiers.some((modifier) => modifier !== "Shift");
+
+  if (!hasCommandModifier) {
+    hotkeyError.textContent = "快捷键需要包含 Ctrl、Alt 或 Super";
+    hotkeyError.hidden = false;
+    return;
+  }
+
+  hotkeyError.hidden = true;
+
+  const next = modifiers.concat(key).join("+");
+  hotkeyState.confirmed = hotkeyState.candidate === next;
+  hotkeyState.candidate = next;
+  renderHotkey();
+});
+
+hotkeyApply.addEventListener("click", () => {
+  if (hotkeyState.candidate) {
+    applyHotkey(hotkeyState.candidate);
+  }
+});
+
+hotkeyReset.addEventListener("click", () => {
+  applyHotkey(DEFAULT_HOTKEY);
 });
 
 for (const [id, key] of [
@@ -399,8 +578,13 @@ for (const [id, key] of [
 async function openSettings() {
   const settings = await invoke("get_settings");
 
-  document.getElementById("hotkey-input").value = settings.hotkey;
-  document.getElementById("hotkey-error").hidden = true;
+  hotkeyState.current = settings.hotkey;
+  hotkeyState.recording = false;
+  hotkeyState.confirmed = false;
+  hotkeyState.candidate = "";
+  hotkeyError.hidden = true;
+  hotkeySaved.hidden = true;
+  renderHotkey();
   document.getElementById("model-input").value = settings.model_path;
   document.getElementById("switch-auto").checked = settings.auto_download;
   document.getElementById("switch-updates").checked = settings.check_updates;

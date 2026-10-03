@@ -306,8 +306,34 @@ button.icon.active {
   border-color: var(--accent);
 }
 
-.text-input.mono {
+.hotkey-recorder {
+  flex: 1;
+  min-width: 170px;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 5px 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.hotkey-recorder.recording {
+  border-color: var(--accent);
+}
+
+.hotkey-recorder .placeholder {
+  color: var(--dim);
+}
+
+.hotkey-recorder kbd {
   font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--bg);
 }
 
 .error-text {

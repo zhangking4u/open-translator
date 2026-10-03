@@ -92,11 +92,18 @@
 
         <p class="field-label">快捷键</p>
         <div class="row">
-          <input id="hotkey-input" class="text-input mono" spellcheck="false" />
-          <button id="hotkey-apply">应用</button>
+          <button
+            id="hotkey-recorder"
+            class="hotkey-recorder"
+            type="button"
+            aria-label="录制快捷键"
+          ></button>
+          <button id="hotkey-apply" disabled>应用</button>
+          <button id="hotkey-reset" title="恢复默认快捷键 Ctrl+Alt+T">恢复默认</button>
+          <span id="hotkey-saved" class="ok-text" hidden>已应用</span>
           <span id="hotkey-error" class="error-text" hidden></span>
         </div>
-        <p class="sub">例如 Ctrl+Alt+T；应用后立即生效，被占用时会保留原快捷键</p>
+        <p id="hotkey-hint" class="sub">点击左侧按钮后按下新快捷键，再按一次相同组合确认；Esc 取消</p>
 
         <p class="field-label">模型路径</p>
         <div class="row">
