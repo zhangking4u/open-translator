@@ -118,7 +118,17 @@ function showWaiting() {
   retranslate.hidden = true;
   replace.hidden = true;
   setCopyEnabled(false);
-  render('<p class="hint">等待划词</p><p class="sub">按 Ctrl+Alt+T 翻译选中文本</p>');
+  render(
+    '<div class="empty-state">' +
+      '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<circle cx="12" cy="12" r="9" />' +
+      '<path d="M3 12h18" />' +
+      '<path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z" />' +
+      "</svg>" +
+      '<p class="hint">等待划词</p>' +
+      '<p class="sub">按 Ctrl+Alt+T 翻译选中文本</p>' +
+      "</div>"
+  );
 }
 
 function showEmpty() {
@@ -214,6 +224,10 @@ close.addEventListener("click", () => {
   invoke("hide_window");
 });
 
+document.getElementById("open-history").addEventListener("click", () => {
+  openHistory();
+});
+
 pin.addEventListener("click", async () => {
   pinned = !pinned;
   await invoke("set_pinned", { pinned });
@@ -253,6 +267,18 @@ replace.addEventListener("click", async () => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "h") {
+    event.preventDefault();
+    openHistory();
+    return;
+  }
+
+  if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key === ",") {
+    event.preventDefault();
+    openSettings();
+    return;
+  }
+
   if (event.ctrlKey && !event.shiftKey && ["1", "2", "3"].includes(event.key)) {
     const target = languageState.recent_targets?.[Number(event.key) - 1];
 
