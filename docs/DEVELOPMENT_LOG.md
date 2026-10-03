@@ -1758,6 +1758,35 @@ Verification:
 
 ---
 
+## Milestone: Desktop UI Design Language (2026-10-03, after the extension dropdown unification)
+
+
+Brought the Tauri client onto the same Apple-flavoured design language as the extension and documented it as a design principle.
+
+- `ui/style.css` now defines the shared `--ot-*` tokens (neutral label ramp, system fills, `#007aff`/`#0a84ff` accent, 12/8px radii, hairline + layered shadow, system font stack, `color-scheme: light dark`); cards, groups, buttons, switches, keycaps, context menu, confirm dialog, scrollbars and the streaming caret were re-skinned on top of them, with Apple system green/orange/red for status colors
+- The `#source-select` / `#target-select` language dropdowns render through the mirrored `ui/dropdown.js` (`OTSelect`): chip button + checkmarked menu, hidden native selects as value holders; `applyLanguageState` calls `OTSelect.sync` after programmatic updates so swap/recent-target shortcuts keep the chips accurate
+- Fixed a pre-existing mojibake in `ui/main.js` ("妫€娴嬶細" → "检测：") spotted while editing
+- Documented the UI design language in `docs/ARCHITECTURE.md` (tokens, controls, dropdown sync rule, motion, enforcement) and referenced it from AGENTS and the conventions
+
+Verification:
+
+- `node --check ui/main.js ui/dropdown.js`; previewed `ui/index.html` in headless Edge with a stubbed `window.__TAURI__` (translator/settings/history, light/dark) and confirmed a real-click language pick updates the native select and calls `set_source`
+- Frontend-only change (CSS/JS): no Rust rebuild needed; the `tauri-frontend` CI job's `node --check ui/*.js` covers the new script
+
+
+---
+
+## Milestone: Dropdown Viewport Placement (2026-10-03, after the desktop UI pass)
+
+
+- Long language lists were clipped when the chip sat low on screen (the menu is an absolute layer, so the bubble/window placement cannot reserve room for it); `OTSelect.open()` now measures the free space below/above the button, flips the menu above when below is tighter than the preferred height, and always clamps `max-height` to the available space so the list scrolls instead of overflowing
+- The inline (typing bubble) variant keeps following the card flow and only clamps its height to the space below it; both variants recompute on resize and scroll while open, and the placement is applied before `onToggle` so card repositioning measures the constrained menu
+- Mirrored into `desktop/translator-popup-tauri/ui/dropdown.js` (the two files differ only in the header comment)
+- Verified: Chrome e2e gained a bottom-anchored selection scenario asserting `ot-select-menu-up` plus menu bounds (35 checks pass); a desktop preview at a 230 px viewport showed the constrained menu (`bottom 222 <= innerHeight 230`) with no script errors
+
+
+---
+
 
 # Git History
 

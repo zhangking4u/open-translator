@@ -677,3 +677,21 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Tag `v0.4.1` at `c138c1e`; release run 37123869327 passed the Linux (~7m49s), macOS (~9m22s), Windows (~12m26s) and browser-extension (~9s) jobs, publishing the same five assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`, `OpenTranslator-browser-chrome.zip` and `OpenTranslator-browser-firefox.zip`
 - Release notes recap the Linux gap closure (X11 clipboard copy, X11/XWayland replace-in-place, PRIMARY fallback, one-click deb update), the speech-dispatcher read-aloud fixes, the simplified history rows and the fullscreen tray fix, plus the usual install/upgrade steps
 - Windows/macOS real-machine visual pass still pending; macOS remains an unsigned arm64 dmg
+
+
+## Desktop UI Design Language (2026-10-03, after the extension UI pass)
+
+
+- The Tauri client moved onto the same Apple-style `--ot-*` tokens as the extension (neutral label ramp, system fills, `#007aff`/`#0a84ff` accent, 12/8px radii, hairline + layered shadow, system font stack, `color-scheme: light dark`); cards, groups, buttons, switches, keycaps, context menu, confirm dialog, scrollbars and the streaming caret were re-skinned, with Apple system green/orange/red for status colors
+- `#source-select` / `#target-select` now render through the mirrored `ui/dropdown.js` (`OTSelect`) chip menu (checkmarks, hover/focused states, hidden native selects as value holders); `applyLanguageState` syncs the chips after programmatic updates so swap and `Ctrl+1/2/3` recent-target shortcuts stay accurate
+- Fixed a pre-existing mojibake in `ui/main.js` (the detected label rendered as `妫€娴嬶細` instead of `检测：`)
+- The design language is now a documented design principle: `docs/ARCHITECTURE.md` → UI Design Language (tokens, controls, the dropdown-copy sync rule, motion, enforcement), referenced from AGENTS and the Conventions
+- Verified by previewing the frontend with a stubbed `window.__TAURI__` in headless Edge (translator/settings/history, light/dark; a real-click language pick updates the native select and calls `set_source`); frontend-only change, no Rust rebuild required
+
+
+## Dropdown Viewport Placement (2026-10-03, after the desktop UI pass)
+
+
+- Long language lists were clipped when the control sat low on screen (the menu is an absolute layer, so the bubble placement cannot reserve room for it); `OTSelect.open()` now measures the free space above/below, flips the menu above the button when the space below is tighter, and always clamps `max-height` to the available space so the list scrolls instead of overflowing
+- The inline typing-bubble variant follows the card flow and clamps its height to the space below; both variants recompute on resize/scroll while open
+- Mirrored in the desktop copy (`ui/dropdown.js`); verified by a Chrome e2e bottom-anchored selection scenario asserting `ot-select-menu-up` and viewport bounds (35 checks), plus a desktop preview at a 230 px viewport showing a constrained menu

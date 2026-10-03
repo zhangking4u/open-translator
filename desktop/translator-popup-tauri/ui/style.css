@@ -1,19 +1,48 @@
 :root {
-  --accent: #4f7cff;
-  --bg: #ffffff;
-  --fg: #1c1e21;
-  --dim: #6b7280;
-  --card-bg: #f3f4f6;
-  --border: rgba(0, 0, 0, 0.08);
+  color-scheme: light dark;
+  --ot-accent: #007aff;
+  --ot-bg: #ffffff;
+  --ot-bg-solid: #ffffff;
+  --ot-label: rgba(0, 0, 0, 0.85);
+  --ot-label-2: rgba(0, 0, 0, 0.5);
+  --ot-label-3: rgba(0, 0, 0, 0.26);
+  --ot-fill: rgba(120, 120, 128, 0.12);
+  --ot-fill-hover: rgba(120, 120, 128, 0.2);
+  --ot-separator: rgba(60, 60, 67, 0.14);
+  --ot-hairline: rgba(0, 0, 0, 0.08);
+  --ot-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.12);
+  --ot-radius: 12px;
+  --ot-radius-sm: 8px;
+  --ot-control-height: 28px;
+  --ot-control-font: 12.5px;
+  --ot-green: #248a3d;
+  --ot-orange: #c93400;
+  --ot-red: #d70015;
+  --ot-red-fill: rgba(215, 0, 21, 0.1);
+  --ot-switch-off: rgba(120, 120, 128, 0.32);
+  --ot-font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+    "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei",
+    system-ui, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1e1f22;
-    --fg: #e8eaed;
-    --dim: #9aa0a6;
-    --card-bg: #2a2c30;
-    --border: rgba(255, 255, 255, 0.1);
+    --ot-accent: #0a84ff;
+    --ot-bg: #1c1c1e;
+    --ot-bg-solid: #1c1c1e;
+    --ot-label: rgba(255, 255, 255, 0.85);
+    --ot-label-2: rgba(255, 255, 255, 0.55);
+    --ot-label-3: rgba(255, 255, 255, 0.3);
+    --ot-fill: rgba(120, 120, 128, 0.24);
+    --ot-fill-hover: rgba(120, 120, 128, 0.36);
+    --ot-separator: rgba(255, 255, 255, 0.12);
+    --ot-hairline: rgba(255, 255, 255, 0.12);
+    --ot-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5);
+    --ot-green: #30d158;
+    --ot-orange: #ff9f0a;
+    --ot-red: #ff453a;
+    --ot-red-fill: rgba(255, 69, 58, 0.16);
+    --ot-switch-off: rgba(120, 120, 128, 0.4);
   }
 }
 
@@ -30,9 +59,8 @@ body {
   margin: 0;
   padding: 0;
   background: transparent;
-  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system,
-    "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  color: var(--fg);
+  font-family: var(--ot-font);
+  color: var(--ot-label);
   user-select: none;
 }
 
@@ -48,10 +76,10 @@ body {
   position: relative;
   margin: 10px;
   padding: 14px 16px 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  background: var(--ot-bg);
+  border: none;
+  border-radius: var(--ot-radius);
+  box-shadow: inset 0 0 0 0.5px var(--ot-hairline), var(--ot-shadow);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -67,7 +95,7 @@ body {
 .titlebar .title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .spacer {
@@ -78,35 +106,36 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #3db57a;
+  background: var(--ot-green);
   transition: background 0.2s;
 }
 
 .dot.loading {
-  background: #e0a63c;
+  background: var(--ot-orange);
 }
 
 .dot.error {
-  background: #e05a5a;
+  background: var(--ot-red);
 }
 
 button {
   font: inherit;
   cursor: pointer;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: var(--card-bg);
-  color: var(--fg);
+  border: none;
+  border-radius: var(--ot-radius-sm);
+  background: var(--ot-fill);
+  color: var(--ot-label);
   padding: 6px 12px;
   font-size: 13px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  transition: background-color 0.15s ease;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--border);
+  background: var(--ot-fill-hover);
 }
 
 button:disabled {
@@ -115,22 +144,22 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--accent);
+  background: var(--ot-accent);
   color: #ffffff;
 }
 
 button.icon {
   background: transparent;
   border: none;
-  color: var(--dim);
+  color: var(--ot-label-2);
   line-height: 1;
   padding: 4px;
   border-radius: 8px;
 }
 
 button.icon:hover:not(:disabled) {
-  background: rgba(15, 23, 42, 0.06);
-  color: var(--fg);
+  background: var(--ot-fill);
+  color: var(--ot-label);
 }
 
 .titlebar .icon {
@@ -156,30 +185,35 @@ button.icon:hover:not(:disabled) {
   margin-bottom: 8px;
 }
 
+.language-row .ot-select {
+  flex: none;
+  max-width: 150px;
+}
+
 .language-row select {
   appearance: none;
   -webkit-appearance: none;
   font: inherit;
   font-size: 12.5px;
-  color: var(--fg);
-  background-color: rgba(0, 0, 0, 0.05);
+  color: var(--ot-label);
+  background-color: var(--ot-fill);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239096a0' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 6px center;
   background-size: 11px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  border: none;
+  border-radius: var(--ot-radius-sm);
   padding: 4px 22px 4px 8px;
-  max-width: 130px;
+  max-width: 150px;
   cursor: pointer;
 }
 
 .language-row select:hover {
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: var(--ot-fill-hover);
 }
 
 .language-row select:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ot-accent);
   outline-offset: 1px;
 }
 
@@ -189,11 +223,11 @@ button.icon:hover:not(:disabled) {
 }
 
 .source {
-  background: var(--card-bg);
+  background: var(--ot-fill);
   border-radius: 10px;
   padding: 8px 12px;
   font-size: 13px;
-  color: var(--dim);
+  color: var(--ot-label-2);
   max-height: 64px;
   overflow: auto;
 }
@@ -210,13 +244,13 @@ button.icon:hover:not(:disabled) {
 
 .translation .hint {
   font-size: 15px;
-  color: var(--fg);
+  color: var(--ot-label);
 }
 
 .translation .sub {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .translation .text {
@@ -225,16 +259,26 @@ button.icon:hover:not(:disabled) {
   white-space: pre-wrap;
 }
 
-@keyframes ot-blink {
+@keyframes ot-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
   50% {
-    opacity: 0;
+    opacity: 0.15;
   }
 }
 
 .translation .text.streaming::after {
-  content: "▍";
-  margin-left: 1px;
-  animation: ot-blink 1s steps(1) infinite;
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  vertical-align: -0.12em;
+  animation: ot-caret 1.1s ease-in-out infinite;
 }
 
 .empty-state {
@@ -245,7 +289,7 @@ button.icon:hover:not(:disabled) {
   justify-content: center;
   gap: 6px;
   text-align: center;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .empty-state svg {
@@ -254,7 +298,7 @@ button.icon:hover:not(:disabled) {
 
 .empty-state .hint {
   font-size: 13px;
-  color: var(--fg);
+  color: var(--ot-label);
   opacity: 0.85;
 }
 
@@ -276,10 +320,10 @@ button.icon:hover:not(:disabled) {
   flex-direction: column;
   min-width: 112px;
   padding: 4px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  background: var(--ot-bg);
+  border: none;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 0.5px var(--ot-hairline), var(--ot-shadow);
 }
 
 .context-menu button {
@@ -292,7 +336,7 @@ button.icon:hover:not(:disabled) {
 
 .status {
   font-size: 12px;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 progress {
@@ -305,17 +349,17 @@ progress {
 }
 
 progress::-webkit-progress-bar {
-  background: var(--card-bg);
+  background: var(--ot-fill);
   border-radius: 3px;
 }
 
 progress::-webkit-progress-value {
-  background: var(--accent);
+  background: var(--ot-accent);
   border-radius: 3px;
 }
 
 .error-card {
-  background: rgba(224, 90, 90, 0.12);
+  background: var(--ot-red-fill);
   border-radius: 10px;
   padding: 10px 12px;
 }
@@ -324,7 +368,7 @@ progress::-webkit-progress-value {
   margin: 0 0 4px;
   font-size: 13px;
   font-weight: 600;
-  color: #e05a5a;
+  color: var(--ot-red);
 }
 
 .error-body {
@@ -334,23 +378,23 @@ progress::-webkit-progress-value {
 }
 
 button.icon.active {
-  color: var(--accent);
+  color: var(--ot-accent);
 }
 
 .update-version {
   font-size: 12.5px;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .update-status {
   margin: 6px 0 0;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .update-status.error {
-  color: #e05a5a;
+  color: var(--ot-red);
 }
 
 .page-head {
@@ -369,14 +413,14 @@ button.icon.active {
   margin: 14px 2px 6px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .group-note {
   margin: 6px 4px 0;
   font-size: 11.5px;
   line-height: 1.45;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .group-title:first-of-type {
@@ -384,8 +428,8 @@ button.icon.active {
 }
 
 .group {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
+  background: var(--ot-fill);
+  border: none;
   border-radius: 10px;
   overflow: hidden;
 }
@@ -401,7 +445,7 @@ button.icon.active {
   left: 12px;
   right: 0;
   height: 1px;
-  background: var(--border);
+  background: var(--ot-separator);
 }
 
 .setting-row {
@@ -436,7 +480,7 @@ button.icon.active {
   height: 4px;
   margin: 0;
   border: none;
-  accent-color: var(--accent);
+  accent-color: var(--ot-accent);
 }
 
 .info {
@@ -445,11 +489,11 @@ button.icon.active {
   justify-content: center;
   width: 14px;
   height: 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ot-separator);
   border-radius: 50%;
   font-size: 10px;
   font-style: normal;
-  color: var(--dim);
+  color: var(--ot-label-2);
   cursor: help;
   user-select: none;
 }
@@ -475,7 +519,7 @@ button.icon.active {
 }
 
 .nav-row:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--ot-fill);
   border-color: transparent;
 }
 
@@ -488,7 +532,7 @@ button.icon.active {
 
 .nav-chevron {
   flex: none;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .text-input {
@@ -496,7 +540,7 @@ button.icon.active {
   min-width: 0;
   font: inherit;
   font-size: 12.5px;
-  color: var(--fg);
+  color: var(--ot-label);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -506,12 +550,12 @@ button.icon.active {
 }
 
 .text-input:hover:not(:focus) {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--ot-fill);
 }
 
 .text-input:focus {
-  border-color: var(--accent);
-  background: var(--bg);
+  border-color: var(--ot-accent);
+  background: var(--ot-bg);
 }
 
 .hotkey-recorder {
@@ -526,69 +570,58 @@ button.icon.active {
 }
 
 .hotkey-recorder:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--ot-fill);
   border-color: transparent;
 }
 
 .hotkey-recorder.recording {
-  border-color: var(--accent);
-  background: var(--bg);
+  border-color: var(--ot-accent);
+  background: var(--ot-bg);
 }
 
 .hotkey-recorder .placeholder {
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .hotkey-recorder kbd {
-  font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 12px;
+  font-family: inherit;
+  font-size: 11px;
   line-height: 1;
-  padding: 3px 6px;
+  padding: 3px 6px 4px;
   border: none;
   border-radius: 5px;
-  background: var(--bg);
+  background: var(--ot-bg);
+  box-shadow: inset 0 -0.5px 0 var(--ot-hairline);
 }
 
-@media (prefers-color-scheme: dark) {
-  .language-row select {
-    background-color: rgba(255, 255, 255, 0.1);
-  }
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
 
-  .language-row select:hover {
-    background-color: rgba(255, 255, 255, 0.14);
-  }
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 128, 0.4);
+  border-radius: 4px;
+}
 
-  .hotkey-recorder:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .text-input:hover:not(:focus) {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .nav-row:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .history-entry:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.08);
-  }
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .error-text {
   font-size: 11.5px;
-  color: #e05a5a;
+  color: var(--ot-red);
   max-width: 200px;
 }
 
 .ok-text {
   font-size: 11.5px;
-  color: #3db57a;
+  color: var(--ot-green);
 }
 
 .dim-text {
   font-size: 10.5px;
-  color: var(--dim);
+  color: var(--ot-label-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -602,7 +635,7 @@ button.icon.active {
   height: 24px;
   margin: 0;
   border-radius: 999px;
-  background: var(--border);
+  background: var(--ot-switch-off);
   position: relative;
   cursor: pointer;
   transition: background 0.15s;
@@ -622,7 +655,7 @@ button.icon.active {
 }
 
 .switch:checked {
-  background: var(--accent);
+  background: var(--ot-accent);
 }
 
 .switch:checked::after {
@@ -630,7 +663,7 @@ button.icon.active {
 }
 
 .switch:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ot-accent);
   outline-offset: 2px;
 }
 
@@ -669,11 +702,11 @@ button.icon.active {
   left: 12px;
   right: 0;
   height: 1px;
-  background: var(--border);
+  background: var(--ot-separator);
 }
 
 .history-entry:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--ot-fill);
   border-color: transparent;
 }
 
@@ -681,7 +714,7 @@ button.icon.active {
   grid-column: 1;
   grid-row: 1;
   font-size: 13.5px;
-  color: var(--fg);
+  color: var(--ot-label);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -694,7 +727,7 @@ button.icon.active {
   align-self: start;
   margin-top: 1px;
   font-size: 11px;
-  color: var(--dim);
+  color: var(--ot-label-2);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -703,7 +736,7 @@ button.icon.active {
   grid-column: 1;
   grid-row: 2;
   font-size: 12px;
-  color: var(--dim);
+  color: var(--ot-label-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -715,7 +748,7 @@ button.icon.active {
   align-items: center;
   gap: 6px;
   padding: 28px 16px;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .history-empty p {
@@ -728,7 +761,7 @@ button.icon.active {
 }
 
 .danger-row {
-  color: #e05a5a;
+  color: var(--ot-red);
   justify-content: flex-start;
 }
 
@@ -743,7 +776,7 @@ button.icon.active {
   left: 12px;
   right: 0;
   height: 1px;
-  background: var(--border);
+  background: var(--ot-separator);
 }
 
 .confirm-backdrop {
@@ -760,10 +793,10 @@ button.icon.active {
 .confirm-card {
   width: min(260px, calc(100% - 40px));
   padding: 16px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  background: var(--ot-bg);
+  border: none;
+  border-radius: var(--ot-radius);
+  box-shadow: inset 0 0 0 0.5px var(--ot-hairline), var(--ot-shadow);
   text-align: center;
 }
 
@@ -776,7 +809,7 @@ button.icon.active {
 .confirm-body {
   margin: 0 0 14px;
   font-size: 12.5px;
-  color: var(--dim);
+  color: var(--ot-label-2);
 }
 
 .confirm-actions {
@@ -789,7 +822,7 @@ button.icon.active {
 }
 
 button.destructive {
-  background: #e05a5a;
+  background: var(--ot-red);
   color: #ffffff;
 }
 

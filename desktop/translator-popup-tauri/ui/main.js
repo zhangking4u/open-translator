@@ -73,6 +73,11 @@ function applyLanguageState(state) {
   sourceSelect.value = state.source;
   targetSelect.value = state.target;
   detectedLabel.textContent = state.detected ? "检测：" + labelOf(state.detected) : "";
+
+  if (globalThis.OTSelect) {
+    OTSelect.sync(sourceSelect);
+    OTSelect.sync(targetSelect);
+  }
 }
 
 async function initLanguages() {
@@ -91,6 +96,12 @@ async function initLanguages() {
       element.textContent = option.label;
       select.appendChild(element);
     }
+  }
+
+  if (globalThis.OTSelect) {
+    OTSelect.inject();
+    OTSelect.enhance(sourceSelect, { title: "源语言" });
+    OTSelect.enhance(targetSelect, { title: "目标语言" });
   }
 
   applyLanguageState(await invoke("get_language_state"));

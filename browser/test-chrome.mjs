@@ -892,6 +892,67 @@ try {
       Boolean(auto) && auto.visible && auto.text.length > 0 && !auto.text.includes("翻译失败"),
       auto ? auto.text : "<no bubble>"
     );
+
+    // Menu placement near the bottom of the viewport: the dropdown must flip
+    // above the button (or constrain its height) so every language stays
+    // reachable.
+    await evaluate(
+      pageSession,
+      `(() => {
+         if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+         document.getElementById("bottom").scrollIntoView({ block: "end" });
+         return true;
+       })()`
+    );
+    await sleep(400);
+
+    await evaluate(
+      pageSession,
+      `(() => {
+         const range = document.createRange();
+         range.selectNodeContents(document.getElementById("bottom"));
+         const selection = getSelection();
+         selection.removeAllRanges();
+         selection.addRange(range);
+         return true;
+       })()`
+    );
+    await evaluate(pageSession, "start()", { contextId: isolated.id });
+
+    const bottomChip = await pointIn(selectionHost, ".ot-select-button");
+    if (bottomChip) await clickAt(bottomChip.x, bottomChip.y);
+    await sleep(250);
+
+    const menuPlacement = await evaluate(
+      pageSession,
+      `(() => {
+         const host = ${selectionHost};
+         const menu = host && host.shadowRoot.querySelector(".ot-select-menu");
+         if (!menu || menu.hidden) return null;
+         const rect = menu.getBoundingClientRect();
+         return {
+           up: menu.classList.contains("ot-select-menu-up"),
+           top: rect.top,
+           bottom: rect.bottom,
+           innerHeight: window.innerHeight,
+         };
+       })()`,
+      { contextId: isolated.id }
+    );
+    check(
+      "menu flips above near the viewport bottom",
+      Boolean(menuPlacement && menuPlacement.up),
+      JSON.stringify(menuPlacement)
+    );
+    check(
+      "menu stays inside the viewport",
+      Boolean(
+        menuPlacement &&
+          menuPlacement.top >= 0 &&
+          menuPlacement.bottom <= menuPlacement.innerHeight + 0.5
+      ),
+      JSON.stringify(menuPlacement)
+    );
   }
 
   await send("Target.closeTarget", { targetId: pageTargetId });

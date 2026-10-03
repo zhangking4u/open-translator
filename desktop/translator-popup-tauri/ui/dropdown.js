@@ -1,13 +1,18 @@
 "use strict";
 
-// Shared Apple-style select: replaces a native <select> with a filled chip
-// button and a checkmarked menu. The native select stays hidden in the DOM as
-// the value holder, so existing `value` / `change` code keeps working.
+// Shared Apple-style select for the desktop client: replaces a native <select>
+// with a filled chip button and a checkmarked menu. The native select stays
+// hidden in the DOM as the value holder, so existing `value` / `change` code
+// keeps working.
+//
+// This is the desktop copy of browser/extension/dropdown.js; keep the two in
+// sync (the extension version additionally embeds its cssText into shadow
+// roots, the desktop injects it into the page).
 //
 // Usage:
-//   const controller = OTSelect.enhance(select, { title, menuContainer });
+//   const controller = OTSelect.enhance(select, { title });
 //   OTSelect.sync(select);            // after setting select.value in code
-//   OTSelect.inject();                // pages only (shadow roots embed cssText)
+//   OTSelect.inject();                // once, then enhance the selects
 (function () {
   const CHECK =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';

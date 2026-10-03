@@ -199,6 +199,19 @@ Translation should work without external services whenever possible.
 Core logic should remain platform independent.
 
 
+## UI Design Language
+
+All user-facing surfaces (desktop client, browser-extension bubbles and pages) follow one Apple-flavoured visual language, so the product reads as a single native-feeling app on every platform. The tokens below are the contract; components across the repo mirror each other instead of re-inventing local styles.
+
+- **Tokens** (CSS custom properties, `--ot-*`): neutral label ramp (`--ot-label`, `-2`, `-3`), system fills (`--ot-fill`, `--ot-fill-hover`), separators/hairlines, accent (`#007aff` light / `#0a84ff` dark), status colors, `--ot-radius` 12 / `--ot-radius-sm` 8, a layered soft shadow, and the system font stack. Light and dark values live together and `color-scheme: light dark` follows the OS.
+- **Controls**: filled, borderless, rounded controls (no 1px outlines); focus is a 2px accent ring, hover steps up the fill, disabled fades to the tertiary label. Native form widgets stay only as hidden value holders; they are rendered by the shared `OTSelect` component (chip button + checkmarked menu), mirrored in `browser/extension/dropdown.js` and `desktop/translator-popup-tauri/ui/dropdown.js` — keep the two copies in sync. Menus flip above the button and clamp their height to the free viewport space when the space below is tight, so long lists stay reachable.
+- **Surfaces**: hairline plus soft layered shadow instead of hard borders; grouped settings lists; secondary text on the label ramp.
+- **Motion**: 0.15–0.2 s eases; streaming cursors are 2px rounded bars with an opacity pulse; `prefers-reduced-motion` disables animations.
+- **Typography**: `system-ui` (SF on macOS, Segoe UI on Windows) carries the type; no decorative fonts.
+
+Enforcement: extension changes keep `web-ext lint` clean and the Chrome e2e green; the desktop UI is checked by the `tauri-frontend` CI job (`node --check ui/*.js`) and should be previewed in light and dark before shipping.
+
+
 ---
 
 # 5. Current Architecture Status
@@ -211,6 +224,7 @@ Completed:
 - API layer split (`src/api`) with unit and integration tests
 - Desktop client: Tauri v2 (`desktop/translator-popup-tauri`) on Windows/macOS/Linux, embedding the engine, tray/menu-bar, `Ctrl+Alt+T`, first-run model download, in-process HTTP for the extension; the legacy GTK/eframe clients were removed in v0.3.0
 - Browser extension: Firefox MV2 (signed) + Chrome MV3, bubble language switch and auto-translate
+- Unified Apple-style UI language across the desktop client and the extension (shared `--ot-*` tokens, shared `OTSelect` dropdown component)
 - CI on ubuntu/windows/macos plus a Chrome e2e job; release packaging (Windows zip installer, macOS dmg, Linux deb)
 
 
