@@ -1565,6 +1565,64 @@ Verification:
 ---
 
 
+## Milestone: Desktop UI Redesign (2026-10-03, after v0.3.1)
+
+
+Review feedback drove a visual and interaction pass over the Tauri client's card, history and settings pages.
+
+- Card controls are iconified (inline SVGs with `aria-label`s replace the text/emoji buttons: pin/close/swap/replace/retranslate/copy); tooltips carry the shortcuts (`复制译文（Ctrl+Shift+C）`, `重新翻译（Ctrl+Enter）`, `交换语言（译文变为新原文）`), and copy flashes a check icon for 1200 ms
+- The translator card gained 朗读译文 (`speechSynthesis`, per-language voices), a right-click 复制/全选/朗读 menu, a status dot (ready/loading/error) and a single streaming paragraph; the titlebar has a 历史 (`Ctrl+H`) button and `Ctrl+,` opens settings
+- History page redesigned: entries carry a timestamp (`HistoryEntry.at`, stored as `SystemTime` ms on push in `main.rs`), rows show relative time (`刚刚`/`N 分钟前`/`昨天`/`M月D日`) + translation + chevron, the empty state is `暂无翻译记录 / 选中文字按 Ctrl+Alt+T 开始`, and 清空历史 asks for confirmation before clearing
+- Settings page regrouped into 常规/模型/服务/更新 with `.setting-row`s, `role="switch"` toggles and `i` info tooltips; the hotkey field is a recorder (double-press confirms, Esc cancels, a modifier is required, `恢复默认快捷键 Ctrl+Alt+T` shows while recording, 已应用 feedback); the back label is 完成, the model path autosaves on blur/Enter, and 更新到 v<version> falls back to 前往下载 (`open_release_page`) when the asset cannot be installed
+- Pin state persists (`FileConfig.pinned` → `SettingsPayload.pinned`; startup restores always-on-top) and `resize_window` accounts for `scale_factor()`
+- Tray/placement polish: tray and CLI opens center the window on the work area (new `center_window` command + `center_window_position`), settings/history resize then center, tray separators and localized update texts (`正在检查更新…`/`已是最新版本`/`更新检查失败`/`更新检查已关闭`/`有新版本 v<ver>…`), macOS template tray icon
+
+
+Verification:
+
+- CI run 37111545988 (`d2e259f`) green on all 12 jobs; the preceding run 37110921070 was red only in the Chrome e2e close-button check, fixed by making the expectation hover-aware (`matchMedia("(hover: hover)")`)
+- Real-machine visual pass of the redesigned card/settings/history on Windows/macOS pending
+
+
+---
+
+
+## Milestone: Browser Extension Overhaul (2026-10-03, after v0.3.1)
+
+
+- Manifests bumped to 0.2.0; shared `languages.js` (`OT_LANGUAGES`/`OT_SOURCE_LANGUAGES`); Chrome MV3 gained `alarms` and `action`, Firefox MV2 the toolbar popup
+- Translations stream: the background holds a long-lived port and parses `POST /translate/stream` SSE, with cold-start retries (`STREAM_RETRIES=3`, 1500 ms) and a fallback to `/translate` when streaming is unavailable; a 1-minute `open-translator-health` alarm drives the badge (`!` when the service is down)
+- Toolbar popup (`popup.html`/`popup.js`): service status, 最近翻译 history (click copies, 清空历史), target language, 划词自动翻译, per-site 本网站不自动翻译 and a 设置… link
+- Bubble rebuilt: visible controls are state-driven (target-language select, copy and a ⋯ menu with 复制双语/复制原文/朗读/替换原文/重新翻译/互换源/语言设置…), only 停止 while streaming and only 重试 on error; icon buttons with labels, a 已复制 flash, a shimmer + blinking caret replacing the spinner, and the close button moved into the action row (hover-revealed); popover styling (10 px radius, menu animation, custom select chevron, focus rings, dark palette)
+- Replace-original works in `<input>`/`<textarea>`/`contenteditable`; selections in inputs/textareas translate; auto-translate guards (`autoTranslateMinLength` default 2, `autoTranslateDelay` 200–800 ms) and a `disabledSites` opt-out; history capped at 20 entries, deduped by text + target
+- `translate-clipboard` command (`Alt+Shift+Y`, `clipboardRead` permission); context-menu clicks on pages without a content script (PDF viewer) open `result.html` in a small window; the content script runs in all frames
+- Browser e2e (`browser/test-chrome.mjs`) extended: history-recorded, ⋯ menu, textarea replace, waiting/streaming classes, icon buttons and the hover-revealed close button
+
+
+Verification:
+
+- CI run 37111545988 green (browser static checks, `web-ext lint` and the Chrome e2e job included)
+
+
+---
+
+
+## Milestone: Extension Release Assets (2026-10-03, after v0.3.1)
+
+
+- `release.yml` gained a `browser-extension` job: `browser/build.sh all --zip`, renaming to `OpenTranslator-browser-chrome.zip`/`OpenTranslator-browser-firefox.zip`, uploaded as workflow artifacts and attached to `v*` releases
+- `browser/build.sh` zips with a top-level folder, copies `packaging/browser/README.txt` into each build and reads the version as UTF-8
+- README gained a 浏览器扩展 install section (zip download → 加载已解压的扩展程序 / 临时载入附加组件); the Firefox zip stays unsigned, so it only supports temporary loading
+
+
+Verification:
+
+- Tagged builds attach the two zips alongside the desktop packages; `workflow_dispatch` keeps them as artifacts only
+
+
+---
+
+
 # Git History
 
 Commit:
@@ -1595,11 +1653,11 @@ docs: add project status document
 Consumer edition (ordinary users); Sprint 5 meeting translation parked.
 
 
-Released (2026-10-01): `v0.1.0` — GitHub release with the Windows zip and macOS arm64 dmg; Windows real-machine re-verification passed (capture, CJK fonts, single instance). Linux deb package implemented for the GNOME client (llama.cpp + first-run download; AppImage deferred).
+Released: `v0.3.0` (2026-10-02, Tauri client on Windows/macOS/Linux) and `v0.3.1` (2026-10-03); `v0.4.0` in prep with the desktop and browser extension redesign (card/settings/history, streaming bubble + toolbar popup, extension zips attached to releases).
 
 Planned:
 
-1. Verify the Release workflow Linux job (`workflow_dispatch`) and ship the deb with the next release
+1. Real-machine visual pass of the redesigned desktop UI on Windows/macOS (card, settings, history)
 
 2. macOS real-machine verification deferred (no Mac hardware); code signing / notarization (budget decision)
 
@@ -1624,7 +1682,7 @@ Completed sprints:
 
 ## Distribution
 
-v0.1.0 released (2026-10-01); remaining: real-machine verification on Windows/macOS, code signing/notarization.
+v0.3.0 released (2026-10-02) with the Tauri client on Windows/macOS/Linux; v0.4.0 in prep (desktop/extension redesign). Remaining: real-machine visual verification on Windows/macOS, code signing/notarization.
 
 
 ## Sprint 5

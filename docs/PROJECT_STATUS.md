@@ -220,7 +220,7 @@ main
 
 Latest commit:
 
-fd18fc2 docs: update release skill for the Linux deb (tag: v0.1.0); main at 4d813bc (desktop UI polish and Windows fixes, not yet released)
+d2e259f (desktop and browser extension redesign, 2026-10-03; v0.4.0 release prep)
 
 
 ---
@@ -240,7 +240,7 @@ Ordinary users on Windows/macOS can download, install and use it without technic
 
 Status:
 
-`v0.1.0` published 2026-10-01 (Windows zip + macOS arm64 dmg): https://github.com/zhangking4u/open-translator/releases/tag/v0.1.0
+`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` is in prep with the desktop (card/settings/history) and browser extension (streaming bubble, toolbar popup) redesign.
 
 
 ---
@@ -248,13 +248,11 @@ Status:
 ## 9. Next Steps
 
 
-1. Code signing / notarization (budget decision)
+1. Real-machine visual pass of the redesigned desktop UI (card/settings/history, v0.4.0) on Windows/macOS
 
-2. macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
+2. Code signing / notarization (budget decision); macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
 
-3. (Done 2026-10-01) v0.1.0 re-released with the Linux deb and the startup update check (three assets); Windows real-machine re-verification passed (selection capture, CJK fonts, single instance). v0.2.0 released the same day (release run 36859033510, three assets) with source-language detection, SSE streaming, GTK swap/recent targets and the clipboard toggle
-
-4. Real-machine visual pass of the redesigned desktop UIs (Windows/macOS), including the new source-language dropdown and detection hint; window geometry/position memory and an in-app settings panel are candidates for the next polish round
+3. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 in prep (desktop + extension redesign, extension zips attached to releases)
 
 
 ---
@@ -594,3 +592,30 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - The update banner was removed from the translation card (review feedback: a full row with 查看/立即更新 does not belong in the translation popup); update handling now lives in the settings page's 版本与更新 section — current version, 检查更新, 更新说明/前往下载, the primary 更新/重试 action and inline download progress
 - New commands: `check_update_now` runs a manual check and reports 正在检查/已是最新版本/检查失败 (`update-checking`/`update-none`/`update-check-failed` events; the startup check still stays quiet about those), `get_update_state` re-seeds the settings page when the startup check finished before the webview was listening; `SettingsPayload` carries `app_version` (`OPEN_TRANSLATOR_VERSION`)
 - The tray 有新版本 v… item is unchanged and remains the notification channel while the window is hidden; the Windows download/install path is unchanged
+
+
+## Desktop UI Redesign (2026-10-03, after v0.3.1)
+
+
+- Card controls iconified (SVG buttons + shortcut tooltips, copy check flash); 朗读译文 (`speechSynthesis`), right-click 复制/全选/朗读 menu, status dot, single streaming paragraph and a titlebar 历史 (`Ctrl+H`) button (`Ctrl+,` opens settings)
+- History redesigned: timestamps (`HistoryEntry.at`), relative time rows, 暂无翻译记录 empty state and a confirmed 清空历史; pin persists across restarts (`FileConfig.pinned` → `SettingsPayload.pinned`)
+- Settings regrouped into 常规/模型/服务/更新 with info tooltips and a hotkey recorder (double-press confirm, resets to `Ctrl+Alt+T`); model path autosaves; 更新到 v<version> falls back to 前往下载 when not installable
+- Tray/placement: tray and CLI opens center the window on the work area (`center_window`), tray separators and localized update texts, macOS template tray icon
+
+
+## Browser Extension Overhaul (2026-10-03, after v0.3.1)
+
+
+- Versions bumped to 0.2.0; shared `languages.js`; Chrome MV3 `alarms`/`action`, Firefox MV2 toolbar popup
+- Streaming translations over a long-lived port (`/translate/stream` SSE, cold-start retries, `/translate` fallback); health alarm drives a `!` badge when the service is down
+- Toolbar popup: service status, 最近翻译 history (click copies, 清空历史), target language, 划词自动翻译 and per-site opt-out
+- Bubble rebuilt as a popover: state-driven controls (select/copy/⋯ menu: 复制双语/复制原文/朗读/替换原文/重新翻译/互换源/语言设置…), only 停止 while streaming and 重试 on error, icon buttons, shimmer + caret streaming indicator, hover-revealed close in the action row
+- Replace-original in `<input>`/`<textarea>`/`contenteditable`, input selection support, auto-translate guards, `disabledSites`; `Alt+Shift+Y` clipboard translation; `result.html` for pages without a content script (PDF viewer); history capped at 20, deduped
+- Chrome e2e extended (history, ⋯ menu, textarea replace, streaming classes, hover-aware close check)
+
+
+## Extension Release Assets (2026-10-03, after v0.3.1)
+
+
+- `release.yml` `browser-extension` job builds and attaches `OpenTranslator-browser-chrome.zip` / `OpenTranslator-browser-firefox.zip` to `v*` releases (artifact-only on `workflow_dispatch`)
+- `browser/build.sh` zips with a top-level folder and bundles `packaging/browser/README.txt`; README documents the zip install flow (Firefox zip is unsigned, temporary loading only)
