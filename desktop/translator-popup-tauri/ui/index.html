@@ -90,75 +90,114 @@
           <button id="settings-back">返回翻译</button>
         </div>
 
-        <p class="field-label">
-          快捷键
-          <span
-            class="info"
-            role="img"
-            title="点击后按下新快捷键，再按一次相同组合确认；Esc 取消。需包含 Ctrl/Alt/Super，可加 Shift；被占用时会保留原快捷键。"
-            aria-label="点击后按下新快捷键，再按一次相同组合确认；Esc 取消。需包含 Ctrl/Alt/Super，可加 Shift；被占用时会保留原快捷键。"
-            >i</span
-          >
-        </p>
-        <div class="row">
-          <button
-            id="hotkey-recorder"
-            class="hotkey-recorder"
-            type="button"
-            aria-label="录制快捷键"
-          ></button>
-          <button id="hotkey-apply" disabled>应用</button>
-          <button id="hotkey-reset" title="恢复默认快捷键 Ctrl+Alt+T">恢复默认</button>
-          <span id="hotkey-saved" class="ok-text" hidden>已应用</span>
-          <span id="hotkey-error" class="error-text" hidden></span>
+        <p class="group-title">常规</p>
+        <div class="group">
+          <div class="setting-row">
+            <span class="setting-name">
+              快捷键
+              <span
+                class="info"
+                role="img"
+                title="点击后按下新快捷键，再按一次相同组合确认；Esc 取消。需包含 Ctrl/Alt/Super，可加 Shift；被占用时会保留原快捷键。"
+                aria-label="点击后按下新快捷键，再按一次相同组合确认；Esc 取消。需包含 Ctrl/Alt/Super，可加 Shift；被占用时会保留原快捷键。"
+                >i</span
+              >
+            </span>
+            <div class="setting-control">
+              <button
+                id="hotkey-recorder"
+                class="hotkey-recorder"
+                type="button"
+                aria-label="录制快捷键"
+              ></button>
+              <button id="hotkey-apply" disabled>应用</button>
+              <button id="hotkey-reset" title="恢复默认快捷键 Ctrl+Alt+T">恢复默认</button>
+              <span id="hotkey-saved" class="ok-text" hidden>已应用</span>
+              <span id="hotkey-error" class="error-text" hidden></span>
+            </div>
+          </div>
         </div>
 
-        <p class="field-label">
-          模型路径
-          <span
-            class="info"
-            role="img"
-            title="模型文件（.gguf）的完整路径；修改后下次启动生效；文件不存在且开启自动下载时会下载默认模型。"
-            aria-label="模型文件（.gguf）的完整路径；修改后下次启动生效；文件不存在且开启自动下载时会下载默认模型。"
-            >i</span
-          >
-        </p>
-        <div class="row">
-          <input
-            id="model-input"
-            class="text-input"
-            placeholder="留空使用默认位置"
-            spellcheck="false"
-          />
-          <button id="model-save">保存</button>
-          <span id="model-saved" class="ok-text" hidden>已保存</span>
+        <p class="group-title">模型</p>
+        <div class="group">
+          <div class="setting-row">
+            <span class="setting-name">
+              模型路径
+              <span
+                class="info"
+                role="img"
+                title="模型文件（.gguf）的完整路径；修改后下次启动生效；文件不存在且开启自动下载时会下载默认模型。"
+                aria-label="模型文件（.gguf）的完整路径；修改后下次启动生效；文件不存在且开启自动下载时会下载默认模型。"
+                >i</span
+              >
+            </span>
+            <div class="setting-control">
+              <input
+                id="model-input"
+                class="text-input"
+                placeholder="留空使用默认位置"
+                spellcheck="false"
+              />
+              <button id="model-save">保存</button>
+              <span id="model-saved" class="ok-text" hidden>已保存</span>
+            </div>
+          </div>
+          <label class="setting-row switch-row">
+            <span class="setting-name">自动下载模型</span>
+            <input
+              type="checkbox"
+              id="switch-auto"
+              class="switch"
+              role="switch"
+              aria-checked="false"
+            />
+          </label>
         </div>
 
-        <label class="check"
-          ><input type="checkbox" id="switch-auto" /> 自动下载模型</label
-        >
-        <label class="check"
-          ><input type="checkbox" id="switch-updates" /> 启动时检查更新</label
-        >
-        <label class="check"
-          ><input type="checkbox" id="switch-extension" /> 提供浏览器扩展接口</label
-        >
-
-        <div class="row config-row">
-          <button id="open-config">打开配置目录</button>
-          <span id="config-path" class="dim-text"></span>
+        <p class="group-title">服务</p>
+        <div class="group">
+          <label class="setting-row switch-row">
+            <span class="setting-name">提供浏览器扩展接口</span>
+            <input
+              type="checkbox"
+              id="switch-extension"
+              class="switch"
+              role="switch"
+              aria-checked="false"
+            />
+          </label>
+          <div class="setting-row">
+            <span class="setting-name">配置目录</span>
+            <div class="setting-control">
+              <span id="config-path" class="dim-text path-text"></span>
+              <button id="open-config">打开</button>
+            </div>
+          </div>
         </div>
 
-        <p class="field-label">版本与更新</p>
-        <div class="row">
-          <span id="app-version" class="update-version"></span>
-          <span class="spacer"></span>
-          <button id="update-notes" hidden>更新说明</button>
-          <button id="update-check">检查更新</button>
-          <button id="update-action" class="primary" hidden>更新</button>
+        <p class="group-title">更新</p>
+        <div class="group">
+          <label class="setting-row switch-row">
+            <span class="setting-name">启动时检查更新</span>
+            <input
+              type="checkbox"
+              id="switch-updates"
+              class="switch"
+              role="switch"
+              aria-checked="false"
+            />
+          </label>
+          <div class="setting-row">
+            <span class="setting-name"><span id="app-version" class="update-version"></span></span>
+            <div class="setting-control">
+              <button id="update-notes" hidden>更新说明</button>
+              <button id="update-check">检查更新</button>
+              <button id="update-action" class="primary" hidden>更新</button>
+            </div>
+          </div>
+          <p id="update-status" class="update-status" hidden></p>
+          <progress id="update-progress" max="100" value="0" hidden></progress>
         </div>
-        <p id="update-status" class="update-status" hidden></p>
-        <progress id="update-progress" max="100" value="0" hidden></progress>
       </div>
 
       <div id="history-view" hidden>

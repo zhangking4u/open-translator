@@ -561,8 +561,15 @@ for (const [id, key] of [
   ["switch-extension", "serve_extension"],
 ]) {
   document.getElementById(id).addEventListener("change", (event) => {
+    event.target.setAttribute("aria-checked", String(event.target.checked));
     invoke("save_switch", { key, value: event.target.checked });
   });
+}
+
+function setSwitch(id, checked) {
+  const input = document.getElementById(id);
+  input.checked = checked;
+  input.setAttribute("aria-checked", String(checked));
 }
 
 async function openSettings() {
@@ -576,9 +583,9 @@ async function openSettings() {
   hotkeySaved.hidden = true;
   renderHotkey();
   document.getElementById("model-input").value = settings.model_path;
-  document.getElementById("switch-auto").checked = settings.auto_download;
-  document.getElementById("switch-updates").checked = settings.check_updates;
-  document.getElementById("switch-extension").checked = settings.serve_extension;
+  setSwitch("switch-auto", settings.auto_download);
+  setSwitch("switch-updates", settings.check_updates);
+  setSwitch("switch-extension", settings.serve_extension);
   document.getElementById("config-path").textContent = settings.config_path ?? "";
   appVersion.textContent = "当前版本 v" + settings.app_version;
 
