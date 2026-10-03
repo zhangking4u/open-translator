@@ -187,6 +187,7 @@ try {
            moreIcon: Boolean(more && more.querySelector("svg")),
            closeIcon: Boolean(close && close.querySelector("svg")),
            copyText: copy ? copy.textContent.trim() : null,
+           closeHidden: close ? getComputedStyle(close).opacity === "0" : null,
          };
        })()`,
       { contextId: isolated.id }
@@ -198,10 +199,41 @@ try {
           iconState.copyIcon &&
           iconState.moreIcon &&
           iconState.closeIcon &&
-          iconState.copyText === ""
+          iconState.copyText === "" &&
+          iconState.closeHidden
       ),
       JSON.stringify(iconState)
     );
+
+    const closeBox = await evaluate(
+      pageSession,
+      `(() => {
+         const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+         const button = host && host.shadowRoot.querySelector(".close-button");
+         if (!button) return null;
+         const rect = button.getBoundingClientRect();
+         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+       })()`,
+      { contextId: isolated.id }
+    );
+    if (closeBox) {
+      await send(
+        "Input.dispatchMouseEvent",
+        { type: "mouseMoved", x: closeBox.x, y: closeBox.y, button: "none" },
+        pageSession
+      );
+      await sleep(300);
+      const closeOpacity = await evaluate(
+        pageSession,
+        `(() => {
+           const host = [...document.documentElement.children].find((el) => el.shadowRoot);
+           const button = host && host.shadowRoot.querySelector(".close-button");
+           return button ? getComputedStyle(button).opacity : null;
+         })()`,
+        { contextId: isolated.id }
+      );
+      check("close button revealed on hover", closeOpacity === "1", closeOpacity ?? "<none>");
+    }
 
     let statusClass = null;
     for (let attempt = 0; attempt < 150; attempt++) {

@@ -389,7 +389,7 @@ function ensureBubble() {
     ".card { position: relative; font: 13px/1.5 system-ui, sans-serif; color: #1f2937;",
     "  background: #fff; border: 1px solid #d1d5db; border-radius: 8px;",
     "  box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: 460px; min-width: 220px;",
-    "  padding: 10px 26px 10px 12px; }",
+    "  padding: 10px 12px; }",
     ".status { white-space: pre-wrap; word-break: break-word; min-height: 1.5em; }",
     ".status.waiting { background-image: linear-gradient(90deg, #9ca3af 0%, #374151 50%, #9ca3af 100%);",
     "  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text;",
@@ -407,8 +407,9 @@ function ensureBubble() {
     "button:hover { background: rgba(0,0,0,.06); }",
     "button:disabled { color: #c3c8cf; }",
     "button[hidden] { display: none; }",
-    ".close-button { position: absolute; top: 4px; right: 4px; padding: 2px 6px; color: #9ca3af;",
-    "  font-size: 14px; line-height: 1; }",
+    ".close-button { opacity: 0; pointer-events: none; transition: opacity .15s; }",
+    ".card:hover .close-button, .close-button:focus-visible { opacity: 1; pointer-events: auto; }",
+    "@media (hover: none) { .close-button { opacity: 1; pointer-events: auto; } }",
     ".menu { position: absolute; right: 8px; bottom: 38px; z-index: 3; min-width: 150px;",
     "  display: flex; flex-direction: column; padding: 4px; background: #fff;",
     "  border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.16); }",
@@ -433,6 +434,7 @@ function ensureBubble() {
     "@media (prefers-reduced-motion: reduce) {",
     "  .status.waiting { animation: none; background-image: none; color: #6b7280; }",
     "  .status.streaming::after { animation: none; }",
+    "  .close-button { transition: none; }",
     "}",
   ].join("\n");
 
@@ -440,13 +442,6 @@ function ensureBubble() {
   card.className = "card";
   card.setAttribute("role", "region");
   card.setAttribute("aria-label", "OpenTranslator 译文");
-
-  const closeButton = document.createElement("button");
-  closeButton.className = "close-button";
-  setButtonIcon(closeButton, "close");
-  closeButton.title = "关闭";
-  closeButton.setAttribute("aria-label", "关闭");
-  closeButton.addEventListener("click", hide);
 
   statusEl = document.createElement("div");
   statusEl.className = "status";
@@ -529,6 +524,13 @@ function ensureBubble() {
     }
   });
 
+  const closeButton = document.createElement("button");
+  closeButton.className = "close-button";
+  setButtonIcon(closeButton, "close");
+  closeButton.title = "关闭";
+  closeButton.setAttribute("aria-label", "关闭");
+  closeButton.addEventListener("click", hide);
+
   menuEl = document.createElement("div");
   menuEl.className = "menu";
   menuEl.hidden = true;
@@ -551,8 +553,8 @@ function ensureBubble() {
     menuAction(item);
   });
 
-  row.append(targetSelect, spacer, retryButton, cancelButton, copyButton, moreButton);
-  card.append(closeButton, statusEl, originalDetails, row, menuEl);
+  row.append(targetSelect, spacer, retryButton, cancelButton, copyButton, moreButton, closeButton);
+  card.append(statusEl, originalDetails, row, menuEl);
   shadow.append(style, card);
   document.documentElement.append(host);
 
