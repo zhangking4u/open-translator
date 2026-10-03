@@ -220,7 +220,7 @@ main
 
 Latest commit:
 
-v0.4.1 tagged at c138c1e (fix: surface the card above fullscreen windows on every show); release run 37123869327 published five assets
+v0.5.0 tagged at c948d99 (test: stabilize the dropdown placement e2e checks); release run 37138919115 published five assets
 
 
 ---
@@ -240,7 +240,7 @@ Ordinary users on Windows/macOS can download, install and use it without technic
 
 Status:
 
-`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray.
+`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray; `v0.5.0` (2026-10-04) adds the browser extension 边写边译 inline translation (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target) and unifies the extension/desktop UI on shared Apple-style tokens and `OTSelect` dropdowns single-sourced under `shared/ui`.
 
 
 ---
@@ -248,11 +248,11 @@ Status:
 ## 9. Next Steps
 
 
-1. Real-machine visual pass of the redesigned desktop UI (card/settings/history, v0.4.0) on Windows/macOS
+1. Real-machine visual pass of the redesigned desktop UI (card/settings/history, v0.4.0–v0.5.0) on Windows/macOS
 
 2. Code signing / notarization (budget decision); macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
 
-3. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix)
+3. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources)
 
 
 ---
@@ -706,3 +706,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - `OTSelect.place()` additionally clamps to the visible screen area (`screenY` / `screen.availHeight` / window chrome) so a webview or browser window extending past the screen bottom keeps menus reachable (best effort)
 - Verified: fresh-profile Chrome e2e exit 0 (35 checks), token presence on popup/options/result/desktop (`--ot-accent` `#007aff`, radius 12), `shared/sync-ui.sh --check`, `web-ext lint` clean
 - Accepted boundaries (recorded, not stylable): OS-native surfaces (tray menu, notifications, file dialogs, installers); the desktop card stays opaque because transparent-webview blur is unreliable across WebView2/WebKitGTK
+
+
+## v0.5.0 Release (2026-10-04)
+
+
+- Tag `v0.5.0` at `c948d99` (CI run 37138675325 green first); release run 37138919115 passed the Linux (~8m0s), macOS (~5m44s), Windows (~11m57s) and browser-extension (~9s) jobs, publishing the same five assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`, `OpenTranslator-browser-chrome.zip` and `OpenTranslator-browser-firefox.zip`
+- Release notes cover the extension 边写边译 flow (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target), the shared Apple-style tokens and `OTSelect` dropdowns across extension and desktop, viewport-aware menu placement, the translator-view switch on new translations and the single-sourced `shared/ui` copies with the `shared-ui` CI check, plus the usual install/upgrade steps
+- Verified before tagging on the same tree: local Linux deb + installed tray client manual pass, Firefox temporary-extension manual pass and Chrome e2e 36 checks; the CI flake that failed the previous run was fixed first (`test: stabilize the dropdown placement e2e checks`); Windows/macOS real-machine visual pass still pending

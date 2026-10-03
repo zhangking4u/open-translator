@@ -1814,6 +1814,20 @@ Verification:
 ---
 
 
+## Milestone: v0.5.0 Release (2026-10-04)
+
+
+Released:
+
+- Tag `v0.5.0` at `c948d99` (CI run 37138675325 green first); release run 37138919115 passed the browser-extension (~9s), Linux (~8m0s), macOS (~5m44s) and Windows (~11m57s) jobs and published five assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`, `OpenTranslator-browser-chrome.zip` and `OpenTranslator-browser-firefox.zip`
+- Release notes summarize the extension 边写边译 flow (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target), the shared Apple-style tokens and `OTSelect` dropdowns across extension and desktop, viewport-aware menu placement, the translator-view switch on new translations, and the single-sourced `shared/ui` copies behind the new `shared-ui` CI check, plus the usual install/upgrade steps
+- Verified on the same tree before tagging: local Linux deb install + tray client manual pass, Firefox temporary-extension manual pass and Chrome e2e 36 checks; the CI flake that failed the previous run was fixed first (`test: stabilize the dropdown placement e2e checks`)
+- Windows/macOS desktop real-machine visual pass still pending; macOS remains CI-built only
+
+
+---
+
+
 # Git History
 
 Commit:
@@ -1844,7 +1858,7 @@ docs: add project status document
 Consumer edition (ordinary users); Sprint 5 meeting translation parked.
 
 
-Released: `v0.3.0` (2026-10-02, Tauri client on Windows/macOS/Linux) and `v0.3.1` (2026-10-03); `v0.4.0` in prep with the desktop and browser extension redesign (card/settings/history, streaming bubble + toolbar popup, extension zips attached to releases).
+Released: `v0.4.1` (2026-10-03, Linux copy/replace/read-aloud/one-click update + fullscreen tray fix); `v0.5.0` (2026-10-04) adds the extension 边写边译 flow, the shared Apple-style UI tokens and `OTSelect` dropdowns across extension and desktop, viewport-aware menu placement, and the single-sourced `shared/ui` copies.
 
 Planned:
 
@@ -1873,7 +1887,7 @@ Completed sprints:
 
 ## Distribution
 
-v0.3.0 released (2026-10-02) with the Tauri client on Windows/macOS/Linux; v0.4.0 in prep (desktop/extension redesign). Remaining: real-machine visual verification on Windows/macOS, code signing/notarization.
+v0.5.0 released (2026-10-04) with the extension 边写边译 inline translation and the unified extension/desktop UI on shared sources. Remaining: real-machine visual verification on Windows/macOS, code signing/notarization.
 
 
 ## Sprint 5
