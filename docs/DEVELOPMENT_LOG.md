@@ -1636,6 +1636,50 @@ Released:
 ---
 
 
+## Linux Real-Machine Verification of the v0.4.0 Redesign (2026-10-03)
+
+
+- Verified the shipped `OpenTranslator-linux-x64.deb` (0.4.0, GitHub release asset) on Ubuntu 26.04 + GNOME Wayland, client running through XWayland (`prefer_x11_backend`): redesigned translator card, settings (常规/模型/服务/更新, hotkey recorder, switches, config path, 当前版本 v0.4.0) and history (newest first, relative times, language tag, 清空历史) render correctly
+- Selection capture (`wl-paste --primary`) works through both single-instance forwarding (`--settings`/`--history`/`--translate`) and a cold `--translate` start; translations, history writes and the `/health` + `POST /translate` extension API were exercised with the embedded llama.cpp engine
+- Global shortcut Ctrl+Alt+T triggers translation; `--autostart` starts hidden; the StatusNotifierItem is registered with GNOME and its DBusMenu labels are populated after login (显示窗口/历史…/设置…/已是最新版本/退出, update check reached GitHub); a hidden model-load failure invoked `notify-send` with the expected message (captured with a stub)
+- Confirmed Linux gaps (fixed in the next section): 复制 is a no-op (no Linux clipboard backend: `arboard`/`enigo` are Windows/macOS-only dependencies), 替换原文 stays hidden (Windows-only capture/replace), 朗读 is hidden (this WebKitGTK exposes no `speechSynthesis`), and updates only open the release page; the copy tooltip also advertises a Ctrl+Shift+C shortcut that has no handler in the Tauri UI
+- `apt install` does not restart a running tray client: the pre-upgrade instance kept the old binary until it was restarted (the restart is what loaded the redesign), unlike the Windows one-click updater that restarts itself
+- Pointer input cannot be synthesized on the Wayland session (XTEST motion is ignored by the compositor), so click-driven checks (copy button, pin, context menu) remain for an Xorg-session pass; keyboard paths were driven with `XSetInputFocus` + XTEST and worked
+
+
+---
+
+
+## Linux Gap Closure (2026-10-03, after v0.4.0)
+
+
+Implemented:
+
+- Copy: `arboard` is now a Linux dependency too (X11 backend) and `copy_text` is shared across platforms; the advertised `Ctrl+Shift+C` and `Ctrl+Enter` shortcuts now have handlers
+- Capture/replace: `wl-paste --primary` keeps working on Wayland and falls back to an ICCCM X11 PRIMARY read for Xorg sessions; `foreground_window` walks from the focused toolkit child to the managed top-level ancestor (WM_STATE) and rejects our own windows via `_NET_WM_PID`, so 替换原文 is offered for X11/XWayland source windows and pastes with `enigo` Ctrl+V after verifying the `x11rb` focus move (native Wayland sources stay unsupported)
+- Speech: WebKitGTK exposes no `speechSynthesis`, so the client speaks through `spd-say` (speech-dispatcher; `--priority important --pipe-mode`, text over stdin) and cancels with `--cancel`, exposes a `tts_backend` command and hides 朗读 when unavailable; the empty state now shows the configured hotkey label
+- Update: Linux one-click update — `update_asset` picks `OpenTranslator-linux-x64.deb`, `can_install` requires `pkexec` + `apt-get` and a well-formed SHA-256 (`sha256:` digest from the GitHub asset, now parsed by `translator_core::update`), the deb is downloaded with the shared downloader and verified, staged in a private 0700 directory (`$XDG_RUNTIME_DIR` or temp, unique name), and installed via `pkexec env DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades`, then the client restarts itself; without pkexec/apt or a digest the release-page link remains
+- Packaging: the deb Recommends `speech-dispatcher` and `pkexec`, and postinst tells manual upgraders to restart the client
+
+Review hardening (same day, after an adversarial review of the changes):
+
+- One long-lived `arboard::Clipboard` in `AppState` fixes X11 clipboard ownership (copy content and replace-restore no longer die with a dropped instance); the Linux replace path runs behind a guard that restores the clipboard and releases Ctrl on every exit; `replace_text` is now `#[tauri::command(async)]` so its ~385 ms paste sequence leaves the main thread alone
+- The Linux update requires the GitHub asset SHA-256 and stages the deb in a private 0700 directory, so another local user can no longer swap the package that pkexec installs
+- TTS emits `speech-ended` (with a generation token) from the reaper thread so 朗读 leaves its active state, and the model-download progress path no longer spawns `spd-say --cancel` per event; the "no selected text found" marker is a shared constant, and saving a hotkey refreshes the empty-state label
+
+
+Verified on the same Ubuntu 26.04/GNOME Wayland machine with a local release build:
+
+- `arboard` writes the X11 CLIPBOARD and a Wayland `wl-paste` reads it back (XWayland bridge); the copy button was also exercised by hand
+- Forced X11 with a broken `WAYLAND_DISPLAY` (so `wl-paste` fails) still captured the primary selection through the new X11 fallback and translated it
+- With an X11 `zenity` entry focused, `--translate` recorded the window and the card showed the 替换 icon; `XSetInputFocus` to that window sticks, so the focus step is allowed (the Ctrl+V injection itself cannot be exercised on this Wayland session — Mutter drops XTEST events — so the physical Xorg pass remains)
+- The settings page shows 更新到 v0.4.0 (installable) on Linux with pkexec/apt present; `cargo test --release --locked` passes (including the pkexec argument builder test)
+- 朗读 appears because `spd-say` is installed; the exact `--priority important --pipe-mode` invocation was validated against a dummy output module (no sound played), and `spd-say --cancel` stops playback
+
+
+---
+
+
 # Git History
 
 Commit:

@@ -35,6 +35,7 @@ struct UpdateInfo {
     version: String,
     url: String,
     asset_url: Option<String>,
+    asset_digest: Option<String>,
     can_install: bool,
 }
 
@@ -66,6 +67,11 @@ struct AppState {
     history: Mutex<Vec<HistoryEntry>>,
     pinned: Mutex<bool>,
     replace_window: Mutex<Option<isize>>,
+    /// X11 destroys the selection owner with the last clipboard instance, so
+    /// Linux keeps one alive for the app lifetime; Windows/macOS own the
+    /// clipboard in the OS and use a short-lived instance per call.
+    #[cfg(target_os = "linux")]
+    clipboard: Mutex<Option<arboard::Clipboard>>,
 }
 
 #[derive(Clone)]
@@ -113,6 +119,12 @@ struct SourcePayload {
 struct ProgressPayload {
     downloaded: u64,
     total: Option<u64>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Clone, serde::Serialize)]
+struct SpeechEndedPayload {
+    generation: u64,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -247,6 +259,8 @@ fn main() {
             history: Mutex::new(translator_core::history::load()),
             pinned: Mutex::new(start_pinned),
             replace_window: Mutex::new(None),
+            #[cfg(target_os = "linux")]
+            clipboard: Mutex::new(None),
         })
         .manage(Mutex::new(translate_config))
         .manage(InitialView(Mutex::new(initial_view)))
@@ -279,6 +293,9 @@ fn main() {
             resize_window,
             center_window,
             copy_text,
+            tts_backend,
+            speak_text,
+            stop_speaking,
             retranslate,
             get_settings,
             save_hotkey,
@@ -584,7 +601,7 @@ fn trigger_translation(app: &AppHandle) {
             Ok(text) => {
                 translate_text(&app, text);
             }
-            Err(error) if error == "no selected text found" => {
+            Err(error) if error == capture::NO_SELECTION => {
                 let _ = app.emit("empty", ());
             }
             Err(error) => {
@@ -617,13 +634,12 @@ fn translate_text(app: &AppHandle, text: String) {
         )
     };
 
-    let replaceable = cfg!(target_os = "windows")
-        && app
-            .state::<AppState>()
-            .replace_window
-            .lock()
-            .unwrap()
-            .is_some();
+    let replaceable = app
+        .state::<AppState>()
+        .replace_window
+        .lock()
+        .unwrap()
+        .is_some();
     let app = app.clone();
     let _ = app.emit(
         "source",
@@ -885,7 +901,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
                 let info = app.state::<UpdateSlot>().info.lock().unwrap().clone();
 
                 if let Some(info) = info {
-                    if info.asset_url.is_some() && cfg!(target_os = "windows") {
+                    if info.can_install {
                         start_update_install(app);
                     } else {
                         open_url(&info.url);
@@ -980,15 +996,120 @@ fn center_window(window: WebviewWindow) {
     center_window_position(&window);
 }
 
-#[tauri::command]
-fn copy_text(text: String) {
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-        let _ = clipboard.set_text(text);
+/// One clipboard instance for the whole app: on X11 the owner window is
+/// destroyed with the last `Clipboard`, which would drop the copied text
+/// before the user can paste it.
+#[cfg(target_os = "linux")]
+fn with_clipboard<R>(
+    app: &AppHandle,
+    action: impl FnOnce(&mut arboard::Clipboard) -> R,
+) -> Option<R> {
+    let state = app.state::<AppState>();
+    let mut slot = state.clipboard.lock().unwrap();
+
+    if slot.is_none() {
+        *slot = arboard::Clipboard::new().ok();
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let _ = text;
+    slot.as_mut().map(action)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn with_clipboard<R>(
+    _app: &AppHandle,
+    action: impl FnOnce(&mut arboard::Clipboard) -> R,
+) -> Option<R> {
+    arboard::Clipboard::new()
+        .ok()
+        .map(|mut clipboard| action(&mut clipboard))
+}
+
+#[tauri::command]
+fn copy_text(app: AppHandle, text: String) {
+    with_clipboard(&app, |clipboard| {
+        let _ = clipboard.set_text(text);
+    });
+}
+
+/// The Linux client cannot use the WebView's speech synthesis (WebKitGTK does
+/// not expose it), so it speaks through speech-dispatcher when available.
+#[cfg(target_os = "linux")]
+fn command_in_path(name: &str) -> bool {
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn tts_backend() -> &'static str {
+    #[cfg(target_os = "linux")]
+    {
+        if command_in_path("spd-say") {
+            "spd-say"
+        } else {
+            "none"
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        "webview"
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_reaped(command: &mut std::process::Command) {
+    if let Ok(mut child) = command.spawn() {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
+}
+
+#[tauri::command]
+fn speak_text(app: AppHandle, text: String, generation: u64) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        if text.trim().is_empty() {
+            let _ = app.emit("speech-ended", SpeechEndedPayload { generation });
+            return Ok(());
+        }
+
+        // `--pipe-mode` keeps the text out of argv, so a translation starting
+        // with `-` cannot be parsed as an option; `important` interrupts the
+        // previous message.
+        let mut child = std::process::Command::new("spd-say")
+            .args(["--priority", "important", "--pipe-mode"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|error| format!("启动朗读失败：{error}"))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            let _ = stdin.write_all(text.as_bytes());
+        }
+
+        std::thread::spawn(move || {
+            let _ = child.wait();
+            let _ = app.emit("speech-ended", SpeechEndedPayload { generation });
+        });
+
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, text, generation);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn stop_speaking() {
+    #[cfg(target_os = "linux")]
+    {
+        spawn_reaped(std::process::Command::new("spd-say").arg("--cancel"));
+    }
 }
 
 #[tauri::command]
@@ -1133,22 +1254,25 @@ fn load_history_entry(app: AppHandle, index: usize) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn replace_text(app: AppHandle, text: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
         let window = *app.state::<AppState>().replace_window.lock().unwrap();
         let Some(window) = window else {
             return Err("没有可替换的原窗口".to_string());
         };
 
-        capture::replace_selection(window, &text)
+        with_clipboard(&app, |clipboard| {
+            capture::replace_selection(window, &text, clipboard)
+        })
+        .unwrap_or_else(|| Err("无法访问系统剪贴板".to_string()))
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = (app, text);
-        Err("替换原文仅支持 Windows".to_string())
+        Err("替换原文仅支持 Windows 和 Linux（X11）".to_string())
     }
 }
 
@@ -1400,8 +1524,13 @@ fn spawn_update_check(app: AppHandle, manual: bool) {
             }
         };
 
-        let asset_url = update_asset(&info).map(|asset| asset.url.clone());
-        let can_install = asset_url.is_some() && cfg!(target_os = "windows");
+        let asset = update_asset(&info);
+        let asset_url = asset.map(|asset| asset.url.clone());
+        let asset_digest = asset
+            .and_then(|asset| asset.digest.as_deref())
+            .and_then(sha256_hex);
+        let can_install =
+            asset_url.is_some() && asset_digest.is_some() && install_supported();
 
         {
             let slot = app.state::<UpdateSlot>();
@@ -1410,6 +1539,7 @@ fn spawn_update_check(app: AppHandle, manual: bool) {
                 version: info.version.clone(),
                 url: info.url.clone(),
                 asset_url,
+                asset_digest,
                 can_install,
             });
 
@@ -1446,9 +1576,45 @@ fn run_update_check() -> Result<Option<ReleaseInfo>, String> {
 }
 
 fn update_asset(info: &ReleaseInfo) -> Option<&translator_core::update::ReleaseAsset> {
-    info.assets
-        .iter()
-        .find(|asset| asset.name == "OpenTranslator-windows-x64.zip")
+    let name = if cfg!(target_os = "windows") {
+        "OpenTranslator-windows-x64.zip"
+    } else if cfg!(target_os = "macos") {
+        "OpenTranslator-macos-arm64.dmg"
+    } else {
+        "OpenTranslator-linux-x64.deb"
+    };
+
+    info.assets.iter().find(|asset| asset.name == name)
+}
+
+/// GitHub returns asset digests as `sha256:<hex>`; accept only a full,
+/// well-formed SHA-256 so an install never runs without integrity data.
+fn sha256_hex(digest: &str) -> Option<String> {
+    let hex = digest.strip_prefix("sha256:")?;
+
+    if hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Some(hex.to_ascii_lowercase())
+    } else {
+        None
+    }
+}
+
+/// Whether this build can install the downloaded package itself. Linux uses
+/// pkexec + apt-get for the deb and falls back to the release page otherwise;
+/// macOS keeps the release-page link.
+fn install_supported() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        true
+    }
+    #[cfg(target_os = "linux")]
+    {
+        command_in_path("pkexec") && command_in_path("apt-get")
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        false
+    }
 }
 
 fn start_update_install(app: &AppHandle) {
@@ -1464,20 +1630,21 @@ fn start_update_install(app: &AppHandle) {
         *running = true;
     }
 
-    let Some(asset_url) = slot
+    let Some((asset_url, asset_digest)) = slot
         .info
         .lock()
         .unwrap()
         .as_ref()
-        .and_then(|info| info.asset_url.clone())
+        .and_then(|info| Some((info.asset_url.clone()?, info.asset_digest.clone())))
     else {
+        *slot.running.lock().unwrap() = false;
         return;
     };
 
     let app = app.clone();
 
     #[cfg(target_os = "windows")]
-    std::thread::spawn(move || match run_update_install(&app, &asset_url) {
+    std::thread::spawn(move || match run_update_install(&app, &asset_url, asset_digest) {
         Ok(()) => {
             let _ = app.emit("update-installed", ());
             app.exit(0);
@@ -1493,16 +1660,46 @@ fn start_update_install(app: &AppHandle) {
         }
     });
 
-    #[cfg(not(target_os = "windows"))]
-    let _ = (app, asset_url);
+    #[cfg(target_os = "linux")]
+    std::thread::spawn(move || match run_update_install(&app, &asset_url, asset_digest) {
+        Ok(()) => {
+            let _ = app.emit("update-installed", ());
+            // `apt` replaced the binary on disk while this process keeps the
+            // old inode, so exit first and let a delayed shell start the new
+            // build in the tray.
+            let _ = std::process::Command::new("sh")
+                .args(["-c", "sleep 1; exec /usr/bin/translator-popup --autostart"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            app.exit(0);
+        }
+        Err(error) => {
+            *app.state::<UpdateSlot>().running.lock().unwrap() = false;
+
+            if window_hidden(&app) {
+                notify::show("OpenTranslator", &error);
+            }
+
+            let _ = app.emit("update-error", ErrorPayload { message: error });
+        }
+    });
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    let _ = (app, asset_url, asset_digest);
 }
 
 /// Downloads the release package, extracts it, verifies the installer and the
 /// Tauri binary and starts `install.ps1`, which replaces this build and
 /// restarts the new one in the tray.
 #[cfg(target_os = "windows")]
-fn run_update_install(app: &AppHandle, asset_url: &str) -> Result<(), String> {
-    run_update_install_with(asset_url, &mut |downloaded, total| {
+fn run_update_install(
+    app: &AppHandle,
+    asset_url: &str,
+    expected_sha256: Option<String>,
+) -> Result<(), String> {
+    run_update_install_with(asset_url, expected_sha256.as_deref(), &mut |downloaded, total| {
         let _ = app.emit(
             "update-progress",
             ProgressPayload { downloaded, total },
@@ -1513,6 +1710,7 @@ fn run_update_install(app: &AppHandle, asset_url: &str) -> Result<(), String> {
 #[cfg(target_os = "windows")]
 fn run_update_install_with(
     asset_url: &str,
+    expected_sha256: Option<&str>,
     on_progress: &mut dyn FnMut(u64, Option<u64>),
 ) -> Result<(), String> {
     let client = translator_core::models::download_client().map_err(|error| error.to_string())?;
@@ -1533,7 +1731,7 @@ fn run_update_install_with(
             &client,
             asset_url,
             &archive,
-            None,
+            expected_sha256,
             on_progress,
         ))
         .map_err(|error| format!("下载更新失败：{error}"))?;
@@ -1580,6 +1778,119 @@ fn run_update_install_with(
 #[cfg(target_os = "windows")]
 fn ps_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
+}
+
+/// Private staging directory for the downloaded package. `mkdir` never
+/// follows an existing symlink and the unique name plus 0700 mode keeps other
+/// local users away from the path that is later installed as root.
+#[cfg(target_os = "linux")]
+struct UpdateStagingDir(PathBuf);
+
+#[cfg(target_os = "linux")]
+impl UpdateStagingDir {
+    fn create() -> Result<Self, String> {
+        use std::os::unix::fs::DirBuilderExt;
+
+        let base = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .filter(|path| path.is_dir())
+            .unwrap_or_else(std::env::temp_dir);
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let dir = base.join(format!(
+            "open-translator-update-{}-{unique}",
+            std::process::id()
+        ));
+
+        let mut builder = std::fs::DirBuilder::new();
+        builder.mode(0o700);
+
+        builder
+            .create(&dir)
+            .map_err(|error| format!("创建更新目录失败：{error}"))?;
+
+        Ok(Self(dir))
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for UpdateStagingDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Downloads the release deb and installs it through pkexec (the policykit
+/// agent asks for the user's password); the caller restarts the client.
+#[cfg(target_os = "linux")]
+fn run_update_install(
+    app: &AppHandle,
+    asset_url: &str,
+    expected_sha256: Option<String>,
+) -> Result<(), String> {
+    run_update_install_with(asset_url, expected_sha256.as_deref(), &mut |downloaded, total| {
+        let _ = app.emit(
+            "update-progress",
+            ProgressPayload { downloaded, total },
+        );
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn run_update_install_with(
+    asset_url: &str,
+    expected_sha256: Option<&str>,
+    on_progress: &mut dyn FnMut(u64, Option<u64>),
+) -> Result<(), String> {
+    let client = translator_core::models::download_client().map_err(|error| error.to_string())?;
+
+    let staging = UpdateStagingDir::create()?;
+    let deb = staging.path().join("OpenTranslator-linux-x64.deb");
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| format!("初始化更新下载失败：{error}"))?;
+
+    runtime
+        .block_on(translator_core::models::download(
+            &client,
+            asset_url,
+            &deb,
+            expected_sha256,
+            on_progress,
+        ))
+        .map_err(|error| format!("下载更新失败：{error}"))?;
+
+    let status = std::process::Command::new("pkexec")
+        .args(pkexec_apt_args())
+        .arg(&deb)
+        .status()
+        .map_err(|error| format!("启动安装程序失败：{error}"))?;
+
+    if !status.success() {
+        return Err("安装更新失败（认证被取消或 apt 出错）".to_string());
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn pkexec_apt_args() -> [&'static str; 6] {
+    [
+        "env",
+        "DEBIAN_FRONTEND=noninteractive",
+        "apt-get",
+        "install",
+        "-y",
+        "--allow-downgrades",
+    ]
 }
 
 fn open_url(url: &str) {
@@ -1689,6 +2000,50 @@ fn make_icon_rgba() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::{WorkArea, card_position};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pkexec_install_args_are_noninteractive() {
+        let args = super::pkexec_apt_args();
+
+        assert_eq!(args[0], "env");
+        assert_eq!(args[2], "apt-get");
+        assert!(args.contains(&"DEBIAN_FRONTEND=noninteractive"));
+        assert!(args.contains(&"--allow-downgrades"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn staging_dirs_are_private_and_unique() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let first = super::UpdateStagingDir::create().unwrap();
+        let second = super::UpdateStagingDir::create().unwrap();
+
+        assert_ne!(first.path(), second.path());
+        let mode = std::fs::metadata(first.path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
+    }
+
+    #[test]
+    fn accepts_only_well_formed_sha256_digests() {
+        let valid = format!("sha256:{}", "AB12".repeat(16));
+        assert_eq!(
+            super::sha256_hex(&valid),
+            Some("ab12".repeat(16))
+        );
+
+        assert_eq!(super::sha256_hex("sha256:1234"), None);
+        assert_eq!(super::sha256_hex("md5:abcd"), None);
+        assert_eq!(
+            super::sha256_hex(&format!("sha256:{}", "zz".repeat(32))),
+            None
+        );
+    }
 
     fn work() -> WorkArea {
         WorkArea {
@@ -1822,6 +2177,7 @@ mod update_tests {
 
         run_update_install_with(
             &format!("http://{address}/pkg.zip"),
+            None,
             &mut |downloaded, total| {
                 recorded.lock().unwrap().push((downloaded, total));
             },

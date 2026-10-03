@@ -12,6 +12,8 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct ReleaseAsset {
     pub name: String,
     pub url: String,
+    /// GitHub asset digest, e.g. `sha256:...`, when the API provides one.
+    pub digest: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,10 +120,15 @@ pub async fn check(
                 .filter_map(|asset| {
                     let name = asset.get("name")?.as_str()?;
                     let url = asset.get("browser_download_url")?.as_str()?;
+                    let digest = asset
+                        .get("digest")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string());
 
                     Some(ReleaseAsset {
                         name: name.to_string(),
                         url: url.to_string(),
+                        digest,
                     })
                 })
                 .collect()

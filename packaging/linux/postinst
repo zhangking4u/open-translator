@@ -4,6 +4,12 @@ set -e
 if [ "$1" = "configure" ]; then
     echo "OpenTranslator installed."
     echo "Run 'open-translator-setup' as your desktop user to bind the global shortcut (default Ctrl+Alt+T)."
+
+    if [ -n "$2" ]; then
+        echo "Upgraded from $2: restart the tray client (or log in again) to load the new version."
+        # The one-click updater replaces the running client itself, so only
+        # upgrades done by hand need the reminder.
+    fi
 fi
 
 exit 0

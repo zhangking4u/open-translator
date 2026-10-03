@@ -28,9 +28,17 @@ Environment overrides: TRANSLATOR_MODEL_PATH (existing GGUF),
 TRANSLATOR_HOTKEY (shortcut), TRANSLATOR_CHECK_UPDATES=false (disable the
 update check).
 
+Upgrading: the client's "更新到 v..." action downloads the new deb, verifies
+its SHA-256 (GitHub release asset digest) and installs it through pkexec (a
+policykit password prompt), then restarts itself. After a manual `apt install`
+the running tray client keeps the old binary until it is restarted or you log
+in again.
+
 Remove the shortcut and the autostart entry: open-translator-setup --uninstall
 
-Requirements: glibc >= 2.39 (built on Ubuntu 24.04), a Wayland or X11 session
-with wl-clipboard; the runtime dependencies (libwebkit2gtk-4.1-0, libgtk-3-0,
-libayatana-appindicator3-1, wl-clipboard, libnotify-bin, libgomp1) are
-installed by apt.
+Requirements: glibc >= 2.39 (built on Ubuntu 24.04), a Wayland (XWayland) or
+X11 session with wl-clipboard. Reading the selection falls back to the X11
+PRIMARY selection, so plain Xorg sessions work too. Runtime dependencies
+(libwebkit2gtk-4.1-0, libgtk-3-0, libayatana-appindicator3-1, wl-clipboard,
+libnotify-bin, libgomp1) are installed by apt; speech-dispatcher enables
+reading translations aloud and pkexec enables the in-client deb update.

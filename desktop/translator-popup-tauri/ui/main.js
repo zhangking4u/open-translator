@@ -33,7 +33,10 @@ const SPEECH_LANGS = {
   ru: "ru-RU",
   th: "th-TH",
 };
-const speakSupported = "speechSynthesis" in window;
+let speakBackend = "webview";
+let speakSupported = "speechSynthesis" in window;
+let speechGeneration = 0;
+let hotkeyLabel = "Ctrl+Alt+T";
 
 let current = "";
 let lastSource = "";
@@ -113,7 +116,15 @@ function setDot(state) {
 function stopSpeaking() {
   if (!speakSupported) return;
 
-  window.speechSynthesis.cancel();
+  if (speakBackend === "spd-say") {
+    if (speak.classList.contains("active")) {
+      speechGeneration += 1;
+      invoke("stop_speaking");
+    }
+  } else {
+    window.speechSynthesis.cancel();
+  }
+
   speak.classList.remove("active");
   speak.title = "朗读译文";
 }
@@ -132,6 +143,23 @@ function pickVoice(lang) {
 
 function toggleSpeech() {
   if (!speakSupported || !current) return;
+
+  if (speakBackend === "spd-say") {
+    if (speak.classList.contains("active")) {
+      stopSpeaking();
+      return;
+    }
+
+    speak.classList.add("active");
+    speak.title = "停止朗读";
+    const generation = ++speechGeneration;
+    invoke("speak_text", { text: current, generation }).catch((message) => {
+      stopSpeaking();
+      setStatus(String(message));
+      window.setTimeout(() => setStatus(""), 3000);
+    });
+    return;
+  }
 
   const synth = window.speechSynthesis;
 
@@ -204,7 +232,9 @@ function showWaiting() {
       '<path d="m13 11 7 3-3 1-1 3z" />' +
       "</svg>" +
       '<p class="hint">等待划词</p>' +
-      '<p class="sub">按 Ctrl+Alt+T 翻译选中文本</p>' +
+      '<p class="sub">按 ' +
+      hotkeyLabel +
+      " 翻译选中文本</p>" +
       "</div>"
   );
 }
@@ -441,6 +471,24 @@ window.addEventListener("keydown", (event) => {
     if (target) {
       invoke("set_target", { target });
       event.preventDefault();
+    }
+
+    return;
+  }
+
+  if (event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === "c") {
+    if (!copy.disabled) {
+      event.preventDefault();
+      copy.click();
+    }
+
+    return;
+  }
+
+  if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key === "Enter") {
+    if (!retranslate.hidden) {
+      event.preventDefault();
+      retranslate.click();
     }
 
     return;
@@ -689,6 +737,11 @@ async function applyHotkey(spec) {
     hotkeyState.candidate = "";
     hotkeySaved.hidden = false;
     window.setTimeout(() => (hotkeySaved.hidden = true), 1500);
+    hotkeyLabel = spec;
+
+    if (view === "translator" && !current && !streaming) {
+      showWaiting();
+    }
   } catch (message) {
     hotkeyError.textContent = String(message);
     hotkeyError.hidden = false;
@@ -1019,12 +1072,37 @@ resize();
 initLanguages();
 
 invoke("get_settings").then((settings) => {
+  hotkeyLabel = settings.hotkey || hotkeyLabel;
+
   if (settings.pinned) {
     pinned = true;
     pin.classList.add("active");
     pin.title = "取消固定（取消置顶）";
     close.hidden = true;
   }
+
+  if (view === "translator" && !current && !streaming) {
+    showWaiting();
+  }
+});
+
+invoke("tts_backend").then((backend) => {
+  speakBackend = backend;
+  speakSupported =
+    backend === "spd-say" || (backend === "webview" && "speechSynthesis" in window);
+
+  if (speakSupported && current) {
+    speak.hidden = false;
+  }
+});
+
+listen("speech-ended", (event) => {
+  if (event.payload.generation !== speechGeneration) {
+    return;
+  }
+
+  speak.classList.remove("active");
+  speak.title = "朗读译文";
 });
 
 invoke("platform").then((os) => {

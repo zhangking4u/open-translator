@@ -627,3 +627,23 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Tag `v0.4.0` at `17019b6`; release run 37112505593 passed the Linux/macOS/Windows package jobs and the new browser-extension job, publishing five assets (three desktop packages + two extension zips)
 - First release attaching `OpenTranslator-browser-chrome.zip` / `OpenTranslator-browser-firefox.zip`; notes cover the desktop redesign, the extension overhaul and the usual install/upgrade steps
 - Desktop real-machine visual pass on Windows/macOS pending; macOS remains CI-built only
+
+
+## Linux Real-Machine Verification of the v0.4.0 Redesign (2026-10-03)
+
+
+- Runner: Ubuntu 26.04 + GNOME Wayland, `OpenTranslator-linux-x64.deb` 0.4.0 from the GitHub release installed over the previous version; the client runs through XWayland (`prefer_x11_backend`) with the embedded `hy-mt1.5-1.8b-q4_k_m.gguf` model
+- Verified: redesigned card/settings/history (history newest first with relative times), `wl-paste --primary` selection capture via CLI forwarding and a cold `--translate` start, global shortcut Ctrl+Alt+T, hidden `--autostart` start, tray item and populated DBusMenu labels (显示窗口/历史…/设置…/已是最新版本/退出, update check reached GitHub), single-instance forwarding, extension API (`/health` → llama-cpp, `POST /translate`) and a hidden model-error notification through `notify-send` (stub-captured)
+- Confirmed Linux gaps（已在下面的 Gap Closure 一节修复）: 复制 is a no-op (no Linux clipboard backend: `arboard`/`enigo` are Windows/macOS-only deps), 替换原文 is hidden (Windows-only), 朗读 is hidden (no `speechSynthesis` in this WebKitGTK), updates open the release page only, and the copy tooltip advertises Ctrl+Shift+C with no handler
+- `apt` upgrades do not restart a running tray client; the running pre-upgrade binary keeps serving until the next launch/login (the restart was required to load the redesign)
+- Pointer input cannot be synthesized under this Wayland session (XTEST motion ignored), so click-driven checks (copy button, pin, context menu) stay for the Xorg-session pass; keyboard paths used `XSetInputFocus` + XTEST
+
+
+## Linux Gap Closure (2026-10-03, after v0.4.0)
+
+
+- Copy works on Linux now: `arboard` X11 backend (bridge to Wayland verified), a single long-lived clipboard instance, shared `copy_text`, and the advertised `Ctrl+Shift+C` / `Ctrl+Enter` shortcuts are implemented
+- Capture falls back to the X11 PRIMARY selection for Xorg sessions; replace-in-place works for X11/XWayland source windows (managed top-level via WM_STATE, own-window PID guard, verified focus, `enigo` Ctrl+V, clipboard/Ctrl guard on every exit)
+- 朗读 speaks through `spd-say` (with a `speech-ended` event so the button leaves its active state); Linux one-click update verifies the GitHub asset SHA-256, stages the deb in a private 0700 directory and installs it with `pkexec apt-get`, then restarts the client (release-page fallback without pkexec/apt or a digest); the empty state shows the configured hotkey
+- Packaging Recommends `speech-dispatcher` + `pkexec`; postinst reminds manual upgraders to restart the client
+- Verified with the local release build on the same machine (arboard bridge, X11 fallback capture, replace target detection, installable update button, `cargo test`); the physical Xorg-session input pass (pointer and XTEST key injection) is still outstanding because Mutter drops synthetic input under Wayland

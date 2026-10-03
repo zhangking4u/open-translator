@@ -4848,6 +4848,7 @@ dependencies = [
  "translator-core",
  "translator-service",
  "windows-sys 0.59.0",
+ "x11rb",
 ]
 
 [[package]]
