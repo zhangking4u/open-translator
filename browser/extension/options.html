@@ -4,13 +4,19 @@
   <meta charset="utf-8">
   <title>OpenTranslator 设置</title>
   <style>
-    body { font: 14px/1.6 system-ui, sans-serif; margin: 24px; max-width: 420px; }
+    body { font: 14px/1.6 system-ui, sans-serif; margin: 24px; max-width: 460px; }
     label { display: block; margin-bottom: 12px; }
     label.checkbox { display: flex; align-items: center; gap: 6px; }
-    input { width: 100%; padding: 4px 6px; font: inherit; }
+    input[type="url"] { width: 100%; padding: 4px 6px; font: inherit; }
+    select { width: 100%; padding: 4px 6px; font: inherit; }
     label.checkbox input { width: auto; }
-    button { font: inherit; padding: 4px 12px; margin-right: 8px; }
+    button { font: inherit; padding: 4px 12px; margin-right: 8px; cursor: pointer; }
     #status { color: #374151; min-height: 1.6em; }
+    h2 { font-size: 15px; margin-bottom: 4px; }
+    #sites { list-style: none; padding: 0; margin: 0; }
+    #sites li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }
+    #sites button { padding: 2px 8px; margin: 0; }
+    .hint { color: #6b7280; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -19,11 +25,11 @@
     <label>服务地址
       <input id="serviceUrl" type="url" required>
     </label>
-    <label>源语言（auto 为自动检测）
-      <input id="source" placeholder="auto">
+    <label>源语言
+      <select id="source"></select>
     </label>
     <label>目标语言
-      <input id="target">
+      <select id="target"></select>
     </label>
     <label class="checkbox">
       <input id="autoTranslate" type="checkbox"> 划词自动翻译（选中文字后自动弹出译文）
@@ -32,6 +38,10 @@
     <button type="button" id="test">测试连接</button>
   </form>
   <p id="status"></p>
+  <h2>已关闭自动翻译的网站</h2>
+  <ul id="sites"></ul>
+  <p class="hint">快捷键可在浏览器的扩展快捷键页面修改（chrome://extensions/shortcuts 或 edge://extensions/shortcuts）。</p>
+  <script src="languages.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

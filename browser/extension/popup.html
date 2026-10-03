@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>OpenTranslator</title>
+  <style>
+    body { font: 13px/1.6 system-ui, sans-serif; margin: 12px; width: 280px; color: #1f2937; }
+    h1 { font-size: 14px; margin: 0 0 8px; }
+    #status { margin: 0 0 10px; color: #6b7280; }
+    #status.ok { color: #15803d; }
+    #status.bad { color: #b91c1c; }
+    label { display: block; margin-bottom: 8px; }
+    select { width: 100%; padding: 3px 6px; font: inherit; }
+    label.checkbox { display: flex; align-items: center; gap: 6px; }
+    label.checkbox input { margin: 0; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button { font: inherit; padding: 4px 10px; flex: 1; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>OpenTranslator</h1>
+  <p id="status">检查服务状态…</p>
+  <label>目标语言
+    <select id="target"></select>
+  </label>
+  <label class="checkbox">
+    <input id="autoTranslate" type="checkbox"> 划词自动翻译
+  </label>
+  <label class="checkbox" id="siteRow" hidden>
+    <input id="siteDisabled" type="checkbox"> 本网站不自动翻译
+  </label>
+  <div class="row">
+    <button type="button" id="openSettings">设置…</button>
+  </div>
+  <script src="languages.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

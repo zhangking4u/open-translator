@@ -109,7 +109,7 @@ target = zh
 - **Firefox**：`about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选 `browser/dist/firefox/manifest.json`
 - **Chrome/Edge**：`chrome://extensions` → 打开「开发者模式」→「加载已解压的扩展程序」→ 选 `browser/dist/chrome`
 
-刷新已打开的网页，选中文字 → 右键「翻译选中文本（OpenTranslator）」或 `Alt+Shift+T`；气泡底部可直接切换目标语言（就地重译），设置页可改服务地址/语言对，并可开启「划词自动翻译」。
+刷新已打开的网页，选中文字 → 右键「翻译选中文本（OpenTranslator）」或 `Alt+Shift+T`；气泡流式显示译文，底部可切换源/目标语言、互换语言、复制、重试/停止，并可对当前网站关闭自动翻译。点击工具栏图标查看服务状态、快速修改目标语言与自动翻译开关；设置页可改服务地址、语言对，并管理已关闭自动翻译的站点。
 
 > Firefox 的正式版本已按上述流程签名（AMO unlisted，自动审核通过）并在本机永久安装；临时加载仅用于开发调试。
 

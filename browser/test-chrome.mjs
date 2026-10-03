@@ -177,7 +177,7 @@ try {
       pageSession,
       `(() => {
          const host = [...document.documentElement.children].find((el) => el.shadowRoot);
-         const select = host && host.shadowRoot.querySelector("select");
+         const select = host && host.shadowRoot.querySelector(".target-select");
          if (!select) return null;
          select.value = "ja";
          select.dispatchEvent(new Event("change", { bubbles: true }));

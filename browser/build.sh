@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/extension"
 DIST="$SCRIPT_DIR/dist"
 
-SHARED_FILES=(background.js content.js options.html options.js)
+SHARED_FILES=(background.js content.js languages.js options.html options.js popup.html popup.js)
 
 usage() {
     sed -n '2,4p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'

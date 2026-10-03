@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "OpenTranslator",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Translate the selected text with the local OpenTranslator service.",
   "browser_specific_settings": {
     "gecko": {
@@ -17,8 +17,13 @@
   "permissions": [
     "contextMenus",
     "storage",
+    "alarms",
     "http://127.0.0.1/*"
   ],
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_title": "OpenTranslator"
+  },
   "background": {
     "scripts": [
       "background.js"
@@ -31,6 +36,7 @@
         "<all_urls>"
       ],
       "js": [
+        "languages.js",
         "content.js"
       ]
     }
