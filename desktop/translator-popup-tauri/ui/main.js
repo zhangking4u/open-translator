@@ -227,6 +227,8 @@ copy.addEventListener("click", async () => {
   }
 
   await invoke("copy_text", { text: current });
+  copy.classList.add("copied");
+  window.setTimeout(() => copy.classList.remove("copied"), 1200);
   setStatus("已复制");
   window.setTimeout(() => setStatus(""), 1500);
 });

@@ -85,6 +85,10 @@ button {
   color: var(--fg);
   padding: 6px 12px;
   font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 button:hover:not(:disabled) {
@@ -105,9 +109,30 @@ button.icon {
   background: transparent;
   border: none;
   color: var(--dim);
-  font-size: 17px;
   line-height: 1;
-  padding: 2px 6px;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+button.icon:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--fg);
+}
+
+.titlebar .icon {
+  padding: 3px;
+}
+
+#copy .icon-check {
+  display: none;
+}
+
+#copy.copied .icon-copy {
+  display: none;
+}
+
+#copy.copied .icon-check {
+  display: block;
 }
 
 .language-row {
@@ -126,12 +151,6 @@ button.icon {
   border-radius: 8px;
   padding: 4px 8px;
   max-width: 130px;
-}
-
-.language-row .icon {
-  font-size: 15px;
-  border-radius: 8px;
-  padding: 2px 6px;
 }
 
 .language-row .dim-text {

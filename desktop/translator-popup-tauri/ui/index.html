@@ -12,14 +12,31 @@
         <span class="dot" id="dot"></span>
         <span class="title" id="title" data-tauri-drag-region>OpenTranslator</span>
         <span class="spacer" data-tauri-drag-region></span>
-        <button id="pin" class="icon" title="固定窗口（保持最前）">📌</button>
-        <button id="close" class="icon" title="隐藏（Esc）">×</button>
+        <button id="pin" class="icon" title="固定窗口（保持最前）" aria-label="固定窗口">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 17v5" />
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+          </svg>
+        </button>
+        <button id="close" class="icon" title="隐藏（Esc）" aria-label="隐藏">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </button>
       </header>
 
       <div id="translator-view">
         <div class="language-row">
           <select id="source-select" title="源语言"></select>
-          <button id="swap" class="icon" title="交换语言（译文变为新原文）">⇄</button>
+          <button id="swap" class="icon" title="交换语言（译文变为新原文）" aria-label="交换语言">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m8 3-4 4 4 4" />
+              <path d="M4 7h16" />
+              <path d="m16 21 4-4-4-4" />
+              <path d="M20 17H4" />
+            </svg>
+          </button>
           <select id="target-select" title="目标语言"></select>
           <span id="detected" class="dim-text"></span>
         </div>
@@ -34,9 +51,35 @@
         <footer class="footer">
           <span id="status" class="status"></span>
           <span class="spacer"></span>
-          <button id="replace" hidden>替换原文</button>
-          <button id="retranslate" hidden>重新翻译</button>
-          <button id="copy" class="primary" disabled>复制译文</button>
+          <button id="replace" class="icon" hidden title="替换原文" aria-label="替换原文">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 4c0-1.1.9-2 2-2" />
+              <path d="M20 2c1.1 0 2 .9 2 2" />
+              <path d="M22 8c0 1.1-.9 2-2 2" />
+              <path d="M16 10c-1.1 0-2-.9-2-2" />
+              <path d="m3 7 3 3 3-3" />
+              <path d="M6 10V5c0-1.7 1.3-3 3-3h1" />
+              <rect width="8" height="8" x="2" y="14" rx="2" />
+            </svg>
+          </button>
+          <button id="retranslate" class="icon" hidden title="重新翻译（Ctrl+Enter）" aria-label="重新翻译">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+              <path d="M8 16H3v5" />
+            </svg>
+          </button>
+          <button id="copy" class="primary" disabled title="复制译文（Ctrl+Shift+C）" aria-label="复制译文">
+            <svg class="icon-copy" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="14" height="14" x="8" y="8" rx="2" />
+              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+            </svg>
+            <svg class="icon-check" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+            <span>复制</span>
+          </button>
         </footer>
       </div>
 
