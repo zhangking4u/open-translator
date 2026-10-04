@@ -15,6 +15,9 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* The window is sized to the card; an open dropdown menu must never create
+     a page scrollbar (it would shrink the viewport and shift the rows left). */
+  overflow: hidden;
   background: transparent;
   font-family: var(--ot-font);
   color: var(--ot-label);

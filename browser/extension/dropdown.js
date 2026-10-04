@@ -41,6 +41,7 @@
     "  scrollbar-width: thin; scrollbar-color: rgba(120,120,128,.4) transparent; }",
     ".ot-select-menu[hidden] { display: none; }",
     ".ot-select-menu-up { top: auto; bottom: calc(100% + 6px); }",
+    ".ot-select-menu-right { left: auto; right: 0; }",
     ".ot-select-menu::-webkit-scrollbar { width: 6px; }",
     ".ot-select-menu::-webkit-scrollbar-thumb { background: rgba(120,120,128,.4); border-radius: 3px; }",
     ".ot-select-menu::-webkit-scrollbar-track { background: transparent; }",
@@ -144,7 +145,24 @@
       itemList.forEach((item, itemIndex) => {
         item.classList.toggle("focused", itemIndex === index);
       });
-      if (itemList[index]) itemList[index].scrollIntoView({ block: "nearest" });
+
+      // Scroll only the menu itself: `scrollIntoView` would also scroll the
+      // document horizontally when the menu sits near the window edge, moving
+      // the whole card (seen as the settings rows shifting left on open).
+      const item = itemList[index];
+
+      if (!item) {
+        return;
+      }
+
+      const top = item.offsetTop;
+      const bottom = top + item.offsetHeight;
+
+      if (top < menu.scrollTop) {
+        menu.scrollTop = top;
+      } else if (bottom > menu.scrollTop + menu.clientHeight) {
+        menu.scrollTop = bottom - menu.clientHeight;
+      }
     }
 
     function sync() {
@@ -178,6 +196,14 @@
       menu.classList.toggle("ot-select-menu-up", flipped);
       menu.style.maxHeight =
         Math.max(96, Math.min(preferred, flipped ? spaceAbove : spaceBelow)) + "px";
+
+      // Near the right edge the menu would overflow the window and trigger a
+      // document scrollbar; right-align it to the button instead.
+      const menuWidth = menu.getBoundingClientRect().width;
+      const viewportWidth = document.documentElement.clientWidth;
+      const overflowRight = rect.left + menuWidth > viewportWidth - margin;
+      const overflowLeft = rect.right - menuWidth < margin;
+      menu.classList.toggle("ot-select-menu-right", overflowRight && !overflowLeft);
     }
 
     function close() {
