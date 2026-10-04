@@ -20,7 +20,9 @@ translator-core = { version = "0.1.0", path = "../translator-core" }
 translator-service = { version = "0.1.0", path = "../../core/translator-service" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-x11rb = "0.13"
+atspi = { version = "0.30", default-features = false, features = ["connection", "proxies"] }
+futures-lite = "2"
+x11rb = { version = "0.13", features = ["xfixes"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

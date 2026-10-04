@@ -19,6 +19,9 @@ pub struct FileConfig {
     pub selection_mode: Option<String>,
     pub selection_delay: Option<String>,
     pub selection_min_length: Option<String>,
+    pub ball_visibility: Option<String>,
+    pub ball_x: Option<String>,
+    pub ball_y: Option<String>,
 }
 
 pub fn load_config() -> FileConfig {
@@ -76,6 +79,9 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "selection_mode" => config.selection_mode = Some(value.to_string()),
             "selection_delay" => config.selection_delay = Some(value.to_string()),
             "selection_min_length" => config.selection_min_length = Some(value.to_string()),
+            "ball_visibility" => config.ball_visibility = Some(value.to_string()),
+            "ball_x" => config.ball_x = Some(value.to_string()),
+            "ball_y" => config.ball_y = Some(value.to_string()),
             _ => {}
         }
     }
@@ -139,6 +145,38 @@ pub fn apply_value(contents: &str, key: &str, value: &str) -> String {
     output
 }
 
+/// Removes a key from the config file (used when the floating ball returns to
+/// its default dock position).
+pub fn persist_remove(key: &str) {
+    let Some(path) = config_path() else {
+        return;
+    };
+
+    let Ok(contents) = std::fs::read_to_string(&path) else {
+        return;
+    };
+
+    let _ = std::fs::write(&path, apply_remove(&contents, key));
+}
+
+pub fn apply_remove(contents: &str, key: &str) -> String {
+    let lines: Vec<&str> = contents
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+
+            match trimmed.split_once('=') {
+                Some((candidate, _)) => candidate.trim() != key,
+                None => true,
+            }
+        })
+        .collect();
+
+    let mut output = lines.join("\n");
+    output.push('\n');
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,7 +190,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_delay = 650\nselection_min_length = 3\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nunknown = x\n",
         )
         .unwrap();
 
@@ -176,6 +214,29 @@ mod tests {
         assert_eq!(config.selection_mode.as_deref(), Some("ball"));
         assert_eq!(config.selection_delay.as_deref(), Some("650"));
         assert_eq!(config.selection_min_length.as_deref(), Some("3"));
+        assert_eq!(config.ball_visibility.as_deref(), Some("selection"));
+        assert_eq!(config.ball_x.as_deref(), Some("120"));
+        assert_eq!(config.ball_y.as_deref(), Some("480"));
+    }
+
+    #[test]
+    fn apply_remove_drops_only_the_requested_key() {
+        let updated = apply_remove(
+            "source = en\nball_x = 120\nball_y = 480\ntarget = zh\n",
+            "ball_x",
+        );
+
+        assert!(!updated.contains("ball_x"));
+        assert!(updated.contains("ball_y = 480"));
+        assert!(updated.contains("source = en"));
+        assert!(updated.contains("target = zh"));
+    }
+
+    #[test]
+    fn apply_remove_keeps_other_lines_intact() {
+        let updated = apply_remove("# comment\nsource = en\n", "ball_x");
+
+        assert_eq!(updated, "# comment\nsource = en\n");
     }
 
     #[test]

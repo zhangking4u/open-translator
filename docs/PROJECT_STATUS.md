@@ -744,3 +744,29 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Text read order: raw AX `AXUIElementCopyAttributeValue` for the focused element's selected text, gated by `AXIsProcessTrusted` (the accessibility permission the capture path already needs); for drags without AX text, the existing `capture::capture_selection` Cmd+C fallback, which is a plain copy on macOS and safe even without a selection
 - New macOS-only direct deps `core-foundation` 0.10 and `core-graphics` 0.25 (both already transitive); the module was cross-compile-checked with `cargo check --target aarch64-apple-darwin` in a scratch crate before integration, and `cargo test --locked` on Linux stays green (15 tests)
 - `selection_supported()` is now true on all three desktop targets; macOS real-machine verification is still pending (no Mac hardware), so the first macOS release should be treated as an experimental watcher
+
+
+## Selection Translation — Real-Machine Feedback Fix (2026-10-04)
+
+
+- GNOME Wayland manual testing showed direct mode interrupting text selection: the 400 ms settle fired at brief drag pauses, and each trigger re-focused the card, pulsed always-on-top and moved it to the current cursor, causing flicker
+- Linux settle default is now 900 ms, watcher triggers are rate-limited to one per 1.5 s (latest text wins), and watcher-triggered cards show without focus, without the always-on-top pulse and without repositioning while already visible (`show_main_popup`); Windows/macOS keep the 400 ms default because their watchers see the mouse-up
+- A second pass showed the deeper issue: overlapping watcher triggers each started a streaming translation (interleaved card updates plus a growing engine queue), and the card landed where the next drag starts; translations are now single-flight with a one-slot newest-text follow-up (queued text replaces itself, the running request chains into it), and the popup prefers to sit above the cursor
+- A third pass could still not select with the mouse: the card kept mapping over the working area because native Wayland pointer coordinates are unreliable; the watcher popup now parks in the bottom-right corner on native Wayland (above-cursor elsewhere) and is shown non-focusable (`set_focusable(false)`, `card_engaged` on click), and turning the mode off hides it
+- Rebuilt locally for another manual pass; X11/Windows/macOS checks still pending
+
+
+## Selection Translation — Docked Confirm Ball (2026-10-04)
+
+
+- Redesign after the first-principles review: on native Wayland a regular app cannot observe global input/pointer coordinates or place a window next to a selection, so confirmation moved to a fixed target. Linux `ball` mode is now a docked confirm ball (right-edge-center default, draggable and persisted via `ball_x`/`ball_y`, `ball_visibility` = always-dim or selection), with `idle`/`armed`/`busy` states; the watcher only arms it and a 150 ms hover commits. The card opens beside the ball, non-focusable, and `card_engaged` restores focus on click
+- `auto` became Windows/macOS-only (Linux clamps it to `ball`, the UI removes the option); the settings group gained 悬浮球显示 and 恢复默认 rows. Windows/macOS keep the selection-following ball and the shared settle/guard pipeline; translations remain single-flight
+- `cargo test --locked` green in both crates (core 63, client 16), `node --check` and `cargo check` clean; local client rebuilt and restarted for the next manual pass
+
+
+## Selection Translation — Real-Machine Hardening (2026-10-04)
+
+
+- Root cause of the drag interruption confirmed by A/B testing: the 400 ms `wl-paste` PRIMARY polling. The watcher now uses XFixes selection-owner events (GNOME mirrors every Wayland selection update to X11) and reads PRIMARY exactly once after the selection has been quiet; no X display falls back to slow polling. The docked ball's 200x200 GTK default-size lock was fixed (44x44 enforced before first show), idle ticks no longer touch the ball window, the ball dims again after a translation, a hover commit reads the current selection on the spot, and the card raises itself after every commit
+- AT-SPI typing filter (`atspi` 0.30): focused text objects are checked for a real selection so caret-only updates keep the ball dim where the toolkit exposes text events; Electron/VS Code with accessibility off emits no text events and keeps the fallback (known limitation, documented)
+- Manual pass on GNOME Wayland: docked ball, hover translation, settings and history behave; Windows/macOS/X11 real-machine checks remain pending

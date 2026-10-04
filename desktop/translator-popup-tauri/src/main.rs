@@ -6,7 +6,7 @@ mod selection_watch;
 mod server;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -86,6 +86,19 @@ struct AppState {
     /// The watcher ignores selections until this instant after a hotkey
     /// trigger (the hotkey captures the same selection itself).
     suppress_until: Mutex<Option<Instant>>,
+    /// True while a translation is streaming. The engine is serialized, so
+    /// watcher bursts must not stack translations; instead the newest text
+    /// waits in `queued` and replaces any previous follow-up.
+    translating: AtomicBool,
+    queued: Mutex<Option<String>>,
+    /// The card is currently on screen because the selection watcher showed
+    /// it (as opposed to a hotkey/tray show); disabling the feature hides it.
+    popup: AtomicBool,
+    /// Text of the last committed (hovered) selection, so hovering the docked
+    /// ball again only re-shows the card instead of translating twice.
+    last_translated: Mutex<Option<String>>,
+    /// Docked ball presentation state (see `BALL_*`).
+    ball_state: AtomicU64,
     /// X11 destroys the selection owner with the last clipboard instance, so
     /// Linux keeps one alive for the app lifetime; Windows/macOS own the
     /// clipboard in the OS and use a short-lived instance per call.
@@ -101,6 +114,12 @@ struct PendingSelection {
     /// Foreground window recorded at selection time, for replace-in-place.
     window: Option<isize>,
 }
+
+/// Docked ball states: dim when nothing is selected, lit when text is ready,
+/// pulsing while the translation runs.
+const BALL_IDLE: u64 = 0;
+const BALL_ARMED: u64 = 1;
+const BALL_BUSY: u64 = 2;
 
 #[derive(Clone)]
 struct TranslateConfig {
@@ -139,6 +158,10 @@ struct SettingsPayload {
     selection_min_length: usize,
     selection_supported: bool,
     selection_ball_supported: bool,
+    selection_auto_supported: bool,
+    ball_docked: bool,
+    ball_visibility: String,
+    ball_custom_position: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -180,6 +203,13 @@ fn prefer_x11_backend() {
         unsafe {
             std::env::set_var("GDK_BACKEND", "x11");
         }
+    }
+
+    if selection_debug() || std::env::var_os("TRANSLATOR_SELECTION_DEBUG").is_some() {
+        eprintln!(
+            "SELDBG backend x11_available={x11_available} on_wayland={on_wayland} forced={backend_forced} gdk_now={:?}",
+            std::env::var("GDK_BACKEND")
+        );
     }
 }
 
@@ -297,6 +327,11 @@ fn main() {
             pending_selection: Mutex::new(None),
             ball_generation: AtomicU64::new(0),
             suppress_until: Mutex::new(None),
+            translating: AtomicBool::new(false),
+            queued: Mutex::new(None),
+            popup: AtomicBool::new(false),
+            last_translated: Mutex::new(None),
+            ball_state: AtomicU64::new(BALL_IDLE),
             #[cfg(target_os = "linux")]
             clipboard: Mutex::new(None),
         })
@@ -338,8 +373,13 @@ fn main() {
             retranslate,
             ball_hover,
             ball_click,
+            card_engaged,
             save_selection_mode,
             save_selection_options,
+            save_ball_visibility,
+            move_ball_by,
+            save_ball_position,
+            reset_ball_position,
             get_settings,
             save_hotkey,
             save_model_path,
@@ -372,6 +412,7 @@ fn main() {
             }
 
             selection_watch::ensure(handle.clone());
+            apply_ball_visibility(&handle);
 
             if start_pinned {
                 if let Some(window) = app.get_webview_window("main") {
@@ -633,9 +674,13 @@ fn fail_model(app: &AppHandle, message: String) {
 }
 
 fn trigger_translation(app: &AppHandle) {
-    // The hotkey captures the selection itself; drop a pending ball and keep
-    // the watcher quiet so the same selection is not translated twice.
-    hide_ball(app);
+    // The hotkey captures the selection itself; drop a pending follow-ball on
+    // the selection-following platforms and keep the watcher quiet so the same
+    // selection is not translated twice. The docked ball stays put.
+    if !selection_watch::ball_docked() {
+        hide_ball(app);
+    }
+
     mark_suppressed(app, Duration::from_millis(1200));
 
     let app = app.clone();
@@ -667,22 +712,289 @@ fn trigger_translation(app: &AppHandle) {
 
 /// The ball stays visible for a while after a selection; ignore any timer that
 /// belongs to a superseded show.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 const BALL_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn mark_suppressed(app: &AppHandle, duration: Duration) {
     *app.state::<AppState>().suppress_until.lock().unwrap() = Some(Instant::now() + duration);
 }
 
+/// `TRANSLATOR_SELECTION_DEBUG=1` enables SELDBG diagnostics for the selection
+/// feature (used to bisect real-machine interference).
+fn selection_debug() -> bool {
+    std::env::var_os("TRANSLATOR_SELECTION_DEBUG").is_some()
+}
+
 fn hide_ball(app: &AppHandle) {
     let state = app.state::<AppState>();
     state.ball_generation.fetch_add(1, Ordering::SeqCst);
+    state.ball_state.store(BALL_IDLE, Ordering::SeqCst);
     *state.pending_selection.lock().unwrap() = None;
+    *state.last_translated.lock().unwrap() = None;
 
     if let Some(ball) = app.get_webview_window("ball") {
         let _ = ball.hide();
     }
 }
 
+/// Docked-ball state change: store it and refresh visibility + the ball UI.
+fn set_ball_state(app: &AppHandle, state_value: u64) {
+    app.state::<AppState>()
+        .ball_state
+        .store(state_value, Ordering::SeqCst);
+    apply_ball_visibility(app);
+}
+
+/// The Linux watcher arms the docked ball instead of translating directly:
+/// store the settled selection and light the ball; clearing the selection
+/// returns it to idle. Only actual state changes touch the ball window, so an
+/// idle watcher cannot make it flicker or move.
+#[cfg(target_os = "linux")]
+fn set_selection_pending(app: &AppHandle, pending: Option<PendingSelection>) {
+    let state = app.state::<AppState>();
+    let armed = pending.is_some();
+
+    if !armed {
+        *state.last_translated.lock().unwrap() = None;
+    }
+
+    let had_pending = {
+        let mut current = state.pending_selection.lock().unwrap();
+        let had_pending = current.is_some();
+        *current = pending;
+        had_pending
+    };
+
+    let target = if armed { BALL_ARMED } else { BALL_IDLE };
+
+    if had_pending != armed || state.ball_state.load(Ordering::SeqCst) != target {
+        set_ball_state(app, target);
+    }
+}
+
+/// Show/hide the docked ball based on the mode and the user's visibility
+/// setting, and push the state to `ball.js` (`idle`/`armed`/`busy`).
+fn apply_ball_visibility(app: &AppHandle) {
+    #[cfg(target_os = "linux")]
+    {
+        let state = app.state::<AppState>();
+        let settings = *state.selection.lock().unwrap();
+        let ball_state = state.ball_state.load(Ordering::SeqCst);
+
+        let state_name = match ball_state {
+            BALL_ARMED => "armed",
+            BALL_BUSY => "busy",
+            _ => "idle",
+        };
+        let _ = app.emit_to("ball", "ball-state", state_name);
+
+        let Some(ball) = app.get_webview_window("ball") else {
+            return;
+        };
+
+        let visible = settings.mode != selection_watch::SelectionMode::Off
+            && (settings.ball_visibility == selection_watch::BallVisibility::Always
+                || ball_state != BALL_IDLE);
+        let was_visible = ball.is_visible().unwrap_or(false);
+
+        if visible && !was_visible {
+            // Belt and braces against GTK default-size locking: enforce the
+            // ball size right before it is realized for the first time.
+            let size = tauri::LogicalSize::new(44.0, 44.0);
+            let _ = ball.set_min_size(Some(size));
+            let _ = ball.set_max_size(Some(size));
+            let _ = ball.set_size(size);
+
+            place_docked_ball(app);
+            let _ = ball.show();
+
+            if crate::selection_debug() {
+                eprintln!(
+                    "SELDBG ball shown size={:?}",
+                    ball.outer_size().map(|size| (size.width, size.height))
+                );
+            }
+        } else if !visible && was_visible {
+            let _ = ball.hide();
+        }
+
+        if crate::selection_debug() && visible != was_visible {
+            eprintln!("SELDBG ball visible={visible} was={was_visible} state={state_name}");
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        // The selection-following platforms keep their own ball show/hide
+        // flow; reading the state here also keeps it shared across platforms.
+        let _ = app.state::<AppState>().ball_state.load(Ordering::SeqCst);
+    }
+}
+
+/// Places the docked ball at its configured (or default) position, clamped to
+/// the monitor work area so a monitor change cannot lose it off-screen. The
+/// ball is a fixed 44-logical-pixel square, so the geometry does not depend on
+/// GTK's possibly-stale reported size before the first realization.
+#[cfg(target_os = "linux")]
+fn place_docked_ball(app: &AppHandle) {
+    let Some(ball) = app.get_webview_window("ball") else {
+        return;
+    };
+
+    let Some(monitor) = ball
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| ball.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+
+    let scale = monitor.scale_factor();
+    let edge = (44.0 * scale).round() as i32;
+    let margin = (8.0 * scale) as i32;
+    let inset = (4.0 * scale) as i32;
+    let work = monitor.work_area();
+
+    let config = translator_core::settings::load_config();
+    let custom = config
+        .ball_x
+        .as_deref()
+        .and_then(|value| value.trim().parse::<i32>().ok())
+        .zip(
+            config
+                .ball_y
+                .as_deref()
+                .and_then(|value| value.trim().parse::<i32>().ok()),
+        );
+
+    let (mut x, mut y) = custom.unwrap_or_else(|| {
+        (
+            work.position.x + work.size.width as i32 - edge - margin,
+            work.position.y + (work.size.height as i32 - edge) / 2,
+        )
+    });
+
+    let min_x = work.position.x + inset;
+    let min_y = work.position.y + inset;
+    let max_x = work.position.x + work.size.width as i32 - edge - inset;
+    let max_y = work.position.y + work.size.height as i32 - edge - inset;
+
+    x = x.clamp(min_x, max_x.max(min_x));
+    y = y.clamp(min_y, max_y.max(min_y));
+
+    let _ = ball.set_position(PhysicalPosition::new(x, y));
+}
+
+/// The card appears beside the docked ball (predictable position): on the
+/// side of the ball that faces the work-area center, vertically centered on it.
+#[cfg(target_os = "linux")]
+fn show_card_next_to_ball(app: &AppHandle) {
+    let Some(card) = app.get_webview_window("main") else {
+        return;
+    };
+
+    app.state::<AppState>()
+        .popup
+        .store(true, Ordering::SeqCst);
+
+    let was_visible = card.is_visible().unwrap_or(false);
+
+    if !was_visible {
+        let _ = card.set_focusable(false);
+    }
+
+    let _ = card.show();
+
+    if crate::selection_debug() {
+        eprintln!("SELDBG card popup was_visible={was_visible}");
+    }
+
+    if was_visible {
+        // Already visible but likely behind the app the user is working in:
+        // raise it without stealing focus.
+        pulse_above(app, &card);
+        return;
+    }
+
+    let Ok(card_size) = card.outer_size().or_else(|_| card.inner_size()) else {
+        return;
+    };
+
+    let Some(ball) = app.get_webview_window("ball") else {
+        place_popup_corner(&card);
+        return;
+    };
+
+    let (Ok(ball_position), Ok(ball_size)) =
+        (ball.outer_position(), ball.outer_size().or_else(|_| ball.inner_size()))
+    else {
+        place_popup_corner(&card);
+        return;
+    };
+
+    let gap = 12;
+    let ball_center_x = ball_position.x + ball_size.width as i32 / 2;
+    let ball_center_y = ball_position.y + ball_size.height as i32 / 2;
+
+    let (work_x, work_y, work_right, work_bottom) = ball
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| ball.primary_monitor().ok().flatten())
+        .map(|monitor| {
+            let work = monitor.work_area();
+
+            (
+                work.position.x,
+                work.position.y,
+                work.position.x + work.size.width as i32,
+                work.position.y + work.size.height as i32,
+            )
+        })
+        .unwrap_or((0, 0, i32::MAX, i32::MAX));
+
+    let margin = 12;
+    let mut x = if ball_center_x * 2 >= work_x + work_right {
+        ball_position.x - card_size.width as i32 - gap
+    } else {
+        ball_position.x + ball_size.width as i32 + gap
+    };
+    let mut y = ball_center_y - card_size.height as i32 / 2;
+
+    x = x.clamp(work_x + margin, work_right - card_size.width as i32 - margin);
+    y = y.clamp(work_y + margin, work_bottom - card_size.height as i32 - margin);
+
+    let _ = card.set_position(PhysicalPosition::new(x, y));
+    pulse_above(app, &card);
+}
+
+/// After a translation finishes: if the translated selection is still the
+/// pending one, the confirmation is complete and the ball goes back to dim
+/// (idle) so it can signal the next selection; a newer selection armed while
+/// the translation ran keeps it lit. Re-hovering the same selection only
+/// re-shows the card (`last_translated` is kept for that).
+fn refresh_ball_state(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let translated = state.last_translated.lock().unwrap().clone();
+    let pending_text = state
+        .pending_selection
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|pending| pending.text.clone());
+
+    match (translated, pending_text) {
+        (Some(translated), Some(pending)) if pending == translated => {
+            *state.pending_selection.lock().unwrap() = None;
+            set_ball_state(app, BALL_IDLE);
+        }
+        (_, Some(_)) => set_ball_state(app, BALL_ARMED),
+        (_, None) => set_ball_state(app, BALL_IDLE),
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn show_ball(app: &AppHandle, text: String, anchor: (i32, i32), window: Option<isize>) {
     let state = app.state::<AppState>();
     let generation = state.ball_generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -714,29 +1026,83 @@ fn show_ball(app: &AppHandle, text: String, anchor: (i32, i32), window: Option<i
     });
 }
 
-/// The user moved onto (or clicked) the ball: this is the commit point, so the
-/// pending selection is translated and the card opens near the cursor (which is
-/// on the ball, i.e. next to the selection).
+/// The user hovered the ball: this is the commit point.
 fn hover_ball(app: &AppHandle) {
-    let pending = app
-        .state::<AppState>()
-        .pending_selection
-        .lock()
-        .unwrap()
-        .take();
+    #[cfg(target_os = "linux")]
+    {
+        // Typing in an input mirrors text to PRIMARY; never translate that.
+        if !crate::selection_watch::atspi_selection_ok() {
+            return;
+        }
 
-    hide_ball(app);
+        // Docked ball: it stays visible and the card appears beside it.
+        // Hovering the same selection again only re-shows the existing card.
+        // The current PRIMARY is read right here: hovering is an explicit
+        // confirmation, so a fresh selection must not wait for the settle
+        // timer (which used to make the card appear "late" or not at all).
+        let armed = app
+            .state::<AppState>()
+            .pending_selection
+            .lock()
+            .unwrap()
+            .clone();
 
-    let Some(pending) = pending else {
-        return;
-    };
+        let settings = *app.state::<AppState>().selection.lock().unwrap();
+        let fresh = crate::selection_watch::read_primary_now().filter(|text| settings.accepts(text));
+        let text = fresh.or_else(|| armed.as_ref().map(|pending| pending.text.clone()));
 
-    *app.state::<AppState>().replace_window.lock().unwrap() = pending.window;
-    mark_suppressed(app, Duration::from_millis(1200));
-    show_main(app);
-    translate_text(app, pending.text);
+        let Some(text) = text else {
+            return;
+        };
+
+        if crate::selection_debug() {
+            eprintln!("SELDBG hover len={}", text.chars().count());
+        }
+
+        let already_translated = app
+            .state::<AppState>()
+            .last_translated
+            .lock()
+            .unwrap()
+            .as_deref()
+            == Some(text.as_str());
+
+        if already_translated {
+            show_card_next_to_ball(app);
+            return;
+        }
+
+        let window = armed.and_then(|pending| pending.window);
+        *app.state::<AppState>().replace_window.lock().unwrap() = window;
+        *app.state::<AppState>().last_translated.lock().unwrap() = Some(text.clone());
+        set_ball_state(app, BALL_BUSY);
+        show_card_next_to_ball(app);
+        translate_text(app, text);
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let pending = app
+            .state::<AppState>()
+            .pending_selection
+            .lock()
+            .unwrap()
+            .take();
+
+        hide_ball(app);
+
+        let Some(pending) = pending else {
+            return;
+        };
+
+        *app.state::<AppState>().replace_window.lock().unwrap() = pending.window;
+        mark_suppressed(app, Duration::from_millis(1200));
+        show_main_popup(app);
+        translate_text(app, pending.text);
+    }
 }
 
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn place_ball_window(app: &AppHandle, anchor: (i32, i32)) {
     let Some(ball) = app.get_webview_window("ball") else {
         return;
@@ -799,7 +1165,7 @@ fn place_ball_window(app: &AppHandle, anchor: (i32, i32)) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
 fn monitor_at(app: &AppHandle, point: (i32, i32)) -> Option<tauri::Monitor> {
     app.available_monitors().ok()?.into_iter().find(|monitor| {
         let position = monitor.position();
@@ -840,11 +1206,26 @@ fn monitor_work_area_logical(app: &AppHandle, point: (i32, i32)) -> Option<WorkA
 }
 
 fn translate_text(app: &AppHandle, text: String) {
-    *app.state::<AppState>().last_text.lock().unwrap() = Some(text.clone());
+    let state = app.state::<AppState>();
+    *state.last_text.lock().unwrap() = Some(text.clone());
 
+    // The engine processes requests serially. A burst of watcher triggers must
+    // not queue translations whose streams keep rewriting the card after it
+    // has moved on; remember only the newest follow-up text instead and let
+    // the running translation chain into it.
+    if state.translating.swap(true, Ordering::SeqCst) {
+        *state.queued.lock().unwrap() = Some(text);
+        return;
+    }
+
+    start_translation(app, text);
+}
+
+fn start_translation(app: &AppHandle, text: String) {
     let engine = app.state::<AppState>().engine.lock().unwrap().clone();
     let Some(engine) = engine else {
         *app.state::<AppState>().pending.lock().unwrap() = Some(text);
+        app.state::<AppState>().translating.store(false, Ordering::SeqCst);
         return;
     };
 
@@ -861,6 +1242,10 @@ fn translate_text(app: &AppHandle, text: String) {
             config.source.clone(),
         )
     };
+
+    if crate::selection_debug() {
+        eprintln!("SELDBG translate start len={}", text.chars().count());
+    }
 
     let replaceable = app
         .state::<AppState>()
@@ -892,6 +1277,7 @@ fn translate_text(app: &AppHandle, text: String) {
         let result = engine.translate_blocking_streaming(&request, move |piece| {
             let _ = delta_app.emit("delta", piece.to_string());
         });
+        let ok = result.is_ok();
 
         match result {
             Ok(result) => {
@@ -932,21 +1318,137 @@ fn translate_text(app: &AppHandle, text: String) {
                 );
             }
         }
+
+        if crate::selection_debug() {
+            eprintln!("SELDBG translate done ok={ok}");
+        }
+
+        // Chain into the newest follow-up that arrived while this translation
+        // was running (watcher bursts coalesce into at most one extra pass).
+        let state = app.state::<AppState>();
+        let next = state.queued.lock().unwrap().take();
+        state.translating.store(false, Ordering::SeqCst);
+        drop(state);
+
+        if let Some(next) = next {
+            translate_text(&app, next);
+        } else {
+            refresh_ball_state(&app);
+        }
     });
 }
 
 fn show_main(app: &AppHandle) {
-    show_main_with(app, true);
+    show_main_with(app, true, true);
 }
 
 /// Tray/CLI entry points center the window instead of following the cursor,
 /// which would otherwise leave it stuck against the taskbar where the tray
 /// menu is anchored.
 fn show_main_in_place(app: &AppHandle) {
-    show_main_with(app, false);
+    show_main_with(app, false, true);
 }
 
-fn show_main_with(app: &AppHandle, follow_cursor: bool) {
+/// Selection-watcher card: it must not steal focus or pulse above other
+/// windows (that interrupts the user's drag and causes GNOME activation
+/// flicker), and it must not jump to a new spot on every refresh while it is
+/// already visible — only the content updates then.
+#[cfg(not(target_os = "linux"))]
+fn show_main_popup(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        app.state::<AppState>()
+            .popup
+            .store(true, Ordering::SeqCst);
+
+        let was_visible = window.is_visible().unwrap_or(false);
+
+        if !was_visible {
+            // Never let a watcher popup take focus, not even on map: the
+            // source application must keep the selection and the drag. The
+            // card becomes focusable again when the user clicks it.
+            let _ = window.set_focusable(false);
+            let _ = window.show();
+            place_popup_near_cursor(app, &window);
+        } else {
+            let _ = window.show();
+        }
+    }
+}
+
+/// Bottom-right corner of the current monitor's work area (fallback when the
+/// docked ball is not available).
+#[cfg(target_os = "linux")]
+fn place_popup_corner(window: &WebviewWindow) {
+    let Ok(size) = window.outer_size().or_else(|_| window.inner_size()) else {
+        return;
+    };
+
+    let Some(monitor) = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+
+    let work = monitor.work_area();
+    let margin = (16.0 * monitor.scale_factor()) as i32;
+    let x = work.position.x + work.size.width as i32 - size.width as i32 - margin;
+    let y = work.position.y + work.size.height as i32 - size.height as i32 - margin;
+
+    let _ = window.set_position(PhysicalPosition::new(
+        x.max(work.position.x + margin),
+        y.max(work.position.y + margin),
+    ));
+}
+
+/// Popup placement that stays out of the user's way: prefer above the cursor
+/// (selections usually drag downward/right), fall back below with a wider gap,
+/// so starting the next selection in the same area does not hit the card.
+#[cfg(not(target_os = "linux"))]
+fn place_popup_near_cursor(app: &AppHandle, window: &WebviewWindow) {
+    let Ok(cursor) = app.cursor_position() else {
+        return;
+    };
+
+    let Ok(size) = window.outer_size().or_else(|_| window.inner_size()) else {
+        return;
+    };
+
+    let Some(monitor) = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+
+    let work = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let margin = (12.0 * scale) as i32;
+    let gap = (18.0 * scale) as i32;
+
+    let min_x = work.position.x + margin;
+    let min_y = work.position.y + margin;
+    let max_x = work.position.x + work.size.width as i32 - size.width as i32 - margin;
+    let max_y = work.position.y + work.size.height as i32 - size.height as i32 - margin;
+
+    let mut x = cursor.x as i32 + margin;
+    let mut y = cursor.y as i32 - size.height as i32 - gap;
+
+    if y < min_y {
+        y = cursor.y as i32 + gap;
+    }
+
+    x = x.clamp(min_x, max_x.max(min_x));
+    y = y.clamp(min_y, max_y.max(min_y));
+
+    let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+fn show_main_with(app: &AppHandle, follow_cursor: bool, activate: bool) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
 
@@ -956,32 +1458,52 @@ fn show_main_with(app: &AppHandle, follow_cursor: bool) {
             center_window_position(&window);
         }
 
-        let _ = window.set_focus();
-
-        // GNOME denies focus and raise to a background app whose tray click
-        // carries no activation token, so the card stays behind the active
-        // window and looks unresponsive — including when it was hidden and the
-        // new map lands under a fullscreen window. Briefly lift it with
-        // always-on-top to bring it to the front, then restore the pin state.
-        let state = app.state::<AppState>();
-        if !*state.pinned.lock().unwrap() {
-            let generation = state.pulse_generation.fetch_add(1, Ordering::SeqCst) + 1;
-            let _ = window.set_always_on_top(true);
-
-            let handle = window.clone();
-            let app_handle = app.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(700));
-
-                let state = app_handle.state::<AppState>();
-                if state.pulse_generation.load(Ordering::SeqCst) == generation
-                    && !*state.pinned.lock().unwrap()
-                {
-                    let _ = handle.set_always_on_top(false);
-                }
-            });
+        if !activate {
+            return;
         }
+
+        app.state::<AppState>()
+            .popup
+            .store(false, Ordering::SeqCst);
+        let _ = window.set_focusable(true);
+        let _ = window.set_focus();
+        pulse_above(app, &window);
     }
+}
+
+/// GNOME denies focus and raise to a background app whose tray click carries no
+/// activation token, so the card can stay behind the active window and look
+/// unresponsive — including when it was hidden and the new map lands under a
+/// fullscreen window. Briefly lift it with always-on-top (without touching
+/// keyboard focus), then restore the pin state.
+fn pulse_above(app: &AppHandle, window: &WebviewWindow) {
+    let state = app.state::<AppState>();
+
+    if *state.pinned.lock().unwrap()
+        || std::env::var_os("TRANSLATOR_SELECTION_NO_PULSE").is_some()
+    {
+        return;
+    }
+
+    if crate::selection_debug() {
+        eprintln!("SELDBG pulse always-on-top");
+    }
+
+    let generation = state.pulse_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let _ = window.set_always_on_top(true);
+
+    let handle = window.clone();
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(700));
+
+        let state = app_handle.state::<AppState>();
+        if state.pulse_generation.load(Ordering::SeqCst) == generation
+            && !*state.pinned.lock().unwrap()
+        {
+            let _ = handle.set_always_on_top(false);
+        }
+    });
 }
 
 fn center_window_position(window: &WebviewWindow) {
@@ -1096,18 +1618,37 @@ fn card_position(
 /// The floating ball is a hidden always-on-top window without decorations,
 /// taskbar entry or focus; it is only mapped while a selection is pending.
 fn build_ball_window(app: &AppHandle) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(app, "ball", WebviewUrl::App("ball.html".into()))
+    // Diagnostic switch: run the watcher without the ball window at all.
+    if std::env::var_os("TRANSLATOR_SELECTION_NO_BALL").is_some() {
+        return Ok(());
+    }
+
+    // No `resizable(false)` here: on Linux GTK applies it before the size
+    // request is realized, which locks an undecorated window at its 200x200
+    // default and turns the ball into a 200x200 click-blocking window.
+    let ball = WebviewWindowBuilder::new(app, "ball", WebviewUrl::App("ball.html".into()))
         .title("OpenTranslator")
         .inner_size(44.0, 44.0)
         .decorations(false)
         .transparent(true)
         .always_on_top(true)
         .skip_taskbar(true)
-        .resizable(false)
         .focused(false)
         .shadow(false)
         .visible(false)
         .build()?;
+
+    // The ball is dragged and hovered, never typed into: keeping it
+    // non-focusable means interacting with it cannot steal the selection from
+    // the source application.
+    let _ = ball.set_focusable(false);
+
+    if selection_debug() {
+        eprintln!(
+            "SELDBG ball built size={:?}",
+            ball.outer_size().map(|size| (size.width, size.height))
+        );
+    }
 
     Ok(())
 }
@@ -1193,12 +1734,25 @@ fn hide_window(app: AppHandle, window: WebviewWindow) {
         return;
     }
 
+    app.state::<AppState>()
+        .popup
+        .store(false, Ordering::SeqCst);
     let _ = window.hide();
 }
 
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
+}
+
+/// The user clicked the watcher popup: make it a normal focusable card so
+/// keyboard shortcuts work again.
+#[tauri::command]
+fn card_engaged(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_focusable(true);
+        let _ = window.set_focus();
+    }
 }
 
 /// Called by `ball.js` when the mouse dwells on the ball.
@@ -1222,11 +1776,97 @@ fn save_selection_mode(app: AppHandle, mode: String) -> Result<(), String> {
         other => return Err(format!("unknown selection mode: {other}")),
     };
 
-    app.state::<AppState>().selection.lock().unwrap().mode = parsed;
+    let state = app.state::<AppState>();
+    state.selection.lock().unwrap().mode = parsed;
     translator_core::settings::persist_value("selection_mode", parsed.as_str());
-    hide_ball(&app);
-    selection_watch::ensure(app);
+
+    if parsed == selection_watch::SelectionMode::Off {
+        hide_ball(&app);
+        *state.queued.lock().unwrap() = None;
+
+        // A card that the watcher popped up should not linger once the feature
+        // is disabled.
+        if state.popup.swap(false, Ordering::SeqCst) && !*state.pinned.lock().unwrap() {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.hide();
+            }
+        }
+    }
+
+    selection_watch::ensure(app.clone());
+    apply_ball_visibility(&app);
     Ok(())
+}
+
+#[tauri::command]
+fn save_ball_visibility(app: AppHandle, value: String) -> Result<(), String> {
+    let visibility = selection_watch::BallVisibility::parse(Some(&value))
+        .ok_or_else(|| format!("unknown ball visibility: {value}"))?;
+
+    app.state::<AppState>().selection.lock().unwrap().ball_visibility = visibility;
+    translator_core::settings::persist_value("ball_visibility", visibility.as_str());
+    apply_ball_visibility(&app);
+    Ok(())
+}
+
+/// Live drag of the docked ball (deltas in logical pixels from `ball.js`).
+#[tauri::command]
+fn move_ball_by(app: AppHandle, dx: f64, dy: f64) {
+    let Some(ball) = app.get_webview_window("ball") else {
+        return;
+    };
+
+    let Ok(position) = ball.outer_position() else {
+        return;
+    };
+
+    let scale = ball.scale_factor().unwrap_or(1.0);
+    let mut x = position.x + (dx * scale).round() as i32;
+    let mut y = position.y + (dy * scale).round() as i32;
+
+    if let Some(monitor) = ball
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| ball.primary_monitor().ok().flatten())
+    {
+        let work = monitor.work_area();
+        let Ok(size) = ball.outer_size().or_else(|_| ball.inner_size()) else {
+            return;
+        };
+        let margin = (4.0 * monitor.scale_factor()) as i32;
+        let max_x = work.position.x + work.size.width as i32 - size.width as i32 - margin;
+        let max_y = work.position.y + work.size.height as i32 - size.height as i32 - margin;
+
+        x = x.clamp(work.position.x + margin, max_x.max(work.position.x + margin));
+        y = y.clamp(work.position.y + margin, max_y.max(work.position.y + margin));
+    }
+
+    let _ = ball.set_position(PhysicalPosition::new(x, y));
+}
+
+/// Persists the docked ball position after a drag.
+#[tauri::command]
+fn save_ball_position(app: AppHandle) {
+    let Some(ball) = app.get_webview_window("ball") else {
+        return;
+    };
+
+    let Ok(position) = ball.outer_position() else {
+        return;
+    };
+
+    translator_core::settings::persist_value("ball_x", &position.x.to_string());
+    translator_core::settings::persist_value("ball_y", &position.y.to_string());
+    apply_ball_visibility(&app);
+}
+
+/// Returns the docked ball to the default right-edge-center position.
+#[tauri::command]
+fn reset_ball_position(app: AppHandle) {
+    translator_core::settings::persist_remove("ball_x");
+    translator_core::settings::persist_remove("ball_y");
+    apply_ball_visibility(&app);
 }
 
 #[tauri::command]
@@ -1537,6 +2177,10 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
         selection_min_length: selection.min_length,
         selection_supported: selection_watch::selection_supported(),
         selection_ball_supported: selection_watch::ball_supported(),
+        selection_auto_supported: selection_watch::auto_supported(),
+        ball_docked: selection_watch::ball_docked(),
+        ball_visibility: selection.ball_visibility.as_str().to_string(),
+        ball_custom_position: config.ball_x.is_some() || config.ball_y.is_some(),
     }
 }
 

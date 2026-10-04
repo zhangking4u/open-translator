@@ -151,6 +151,30 @@
               <span id="selection-saved" class="ok-text" hidden>已保存</span>
             </div>
           </div>
+          <div class="setting-row" id="ball-visibility-row">
+            <span class="setting-name">悬浮球显示</span>
+            <div class="setting-control">
+              <select id="ball-visibility" class="setting-select" title="悬浮球显示方式">
+                <option value="always">一直显示</option>
+                <option value="selection">选中后显示</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row" id="ball-position-row">
+            <span class="setting-name">
+              悬浮球位置
+              <span
+                class="info"
+                role="img"
+                title="按住悬浮球拖动即可调整停靠位置，松开后自动保存。"
+                aria-label="按住悬浮球拖动即可调整停靠位置，松开后自动保存。"
+                >i</span
+              >
+            </span>
+            <div class="setting-control">
+              <button id="reset-ball-position">恢复默认</button>
+            </div>
+          </div>
           <div class="setting-row">
             <span class="setting-name">最小字数</span>
             <div class="setting-control">

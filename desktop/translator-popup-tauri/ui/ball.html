@@ -7,8 +7,13 @@
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="ball.css" />
   </head>
-  <body>
-    <button id="ball" type="button" aria-label="翻译选中文本" title="翻译选中文本">
+  <body data-state="idle">
+    <button
+      id="ball"
+      type="button"
+      aria-label="选中文字后悬停此处翻译；按住可拖动位置"
+      title="选中文字后悬停此处翻译；按住可拖动位置"
+    >
       <svg
         viewBox="0 0 24 24"
         width="18"

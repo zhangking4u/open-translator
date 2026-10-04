@@ -27,6 +27,10 @@ const selectionDelay = document.getElementById("selection-delay");
 const selectionSaved = document.getElementById("selection-saved");
 const selectionNote = document.getElementById("selection-note");
 const selectionGroup = document.getElementById("selection-group");
+const ballVisibilitySelect = document.getElementById("ball-visibility");
+const ballVisibilityRow = document.getElementById("ball-visibility-row");
+const ballPositionRow = document.getElementById("ball-position-row");
+const resetBallPosition = document.getElementById("reset-ball-position");
 let selectionModeValue = "off";
 let selectionBallSupported = true;
 
@@ -106,15 +110,42 @@ async function initLanguages() {
     }
   }
 
+  const settings = await invoke("get_settings").catch(() => null);
+
   if (globalThis.OTSelect) {
     OTSelect.inject();
+    removeUnsupportedSelectionOptions(settings);
     OTSelect.enhance(sourceSelect, { title: "源语言" });
     OTSelect.enhance(targetSelect, { title: "目标语言" });
     OTSelect.enhance(selectionModeSelect, { title: "划词触发方式" });
+    OTSelect.enhance(ballVisibilitySelect, { title: "悬浮球显示方式" });
   }
 
   applyLanguageState(await invoke("get_language_state"));
+
+  if (settings) {
+    applySelectionSettings(settings);
+  }
+
   resize();
+}
+
+// "直接翻译" is not offered where the watcher has no mouse-release signal
+// (Linux); the option must go before OTSelect builds its menu items.
+function removeUnsupportedSelectionOptions(settings) {
+  if (!settings || settings.selection_auto_supported) {
+    return;
+  }
+
+  const option = selectionModeSelect.querySelector('option[value="auto"]');
+
+  if (option) {
+    option.remove();
+  }
+
+  if (selectionModeSelect.value === "auto") {
+    selectionModeSelect.value = "ball";
+  }
 }
 
 sourceSelect.addEventListener("change", () => {
@@ -481,6 +512,16 @@ contextMenu.addEventListener("click", (event) => {
 });
 
 document.addEventListener("click", hideContextMenu);
+
+// Watcher popups are shown non-focusable (so they never interrupt the user's
+// selection); the first click turns the card into a normal focusable window.
+document.addEventListener(
+  "pointerdown",
+  () => {
+    invoke("card_engaged");
+  },
+  { capture: true }
+);
 
 copy.addEventListener("click", async () => {
   if (!current) {
@@ -894,23 +935,27 @@ function flashSelectionSaved() {
 function applySelectionSettings(settings) {
   selectionModeValue = settings.selection_supported ? settings.selection_mode : "off";
   selectionBallSupported = settings.selection_ball_supported;
+  removeUnsupportedSelectionOptions(settings);
   selectionModeSelect.value = selectionModeValue;
   selectionMinLength.value = settings.selection_min_length;
   selectionDelay.value = settings.selection_delay_ms;
   selectionGroup.hidden = !settings.selection_supported;
 
-  let note = "";
+  ballVisibilitySelect.value = settings.ball_visibility || "always";
+  const docked = Boolean(settings.selection_supported && settings.ball_docked);
+  ballVisibilityRow.hidden = !docked;
+  ballPositionRow.hidden = !docked;
 
-  if (settings.selection_supported && !settings.selection_ball_supported) {
-    note =
-      "当前会话无法获取全局鼠标位置（Wayland）：悬浮球不可用，选择「悬浮球」时会直接翻译。";
-  }
+  const note = docked
+    ? "选中文字后，把鼠标移到悬浮球上悬停即可翻译；按住小球可以拖动位置。"
+    : "";
 
   selectionNote.textContent = note;
   selectionNote.hidden = note.length === 0;
 
   if (globalThis.OTSelect) {
     OTSelect.sync(selectionModeSelect);
+    OTSelect.sync(ballVisibilitySelect);
   }
 }
 
@@ -945,6 +990,26 @@ async function saveSelectionOptions() {
 
 selectionMinLength.addEventListener("change", saveSelectionOptions);
 selectionDelay.addEventListener("change", saveSelectionOptions);
+
+ballVisibilitySelect.addEventListener("change", async () => {
+  try {
+    await invoke("save_ball_visibility", { value: ballVisibilitySelect.value });
+    flashSelectionSaved();
+  } catch (message) {
+    setStatus(String(message));
+    window.setTimeout(() => setStatus(""), 3000);
+  }
+});
+
+resetBallPosition.addEventListener("click", async () => {
+  try {
+    await invoke("reset_ball_position");
+    flashSelectionSaved();
+  } catch (message) {
+    setStatus(String(message));
+    window.setTimeout(() => setStatus(""), 3000);
+  }
+});
 
 async function openSettings() {
   const settings = await invoke("get_settings");

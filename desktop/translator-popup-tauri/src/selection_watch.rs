@@ -5,11 +5,14 @@
 //! directly (`auto`). It never writes the clipboard and never synthesizes
 //! keys; the platform readers only inspect the current selection.
 //!
-//! Linux polls the PRIMARY selection because GNOME/Wayland offers no selection
-//! change events to regular clients (`wl-paste --watch` needs the wlroots
-//! data-control protocol) and because the same loop then works on X11 and
-//! Wayland. Windows and macOS use native mouse hooks (a `WH_MOUSE_LL` hook and
-//! a listen-only `CGEventTap`) feeding the same settle/guard flow. The
+//! Linux subscribes to XFixes selection-owner updates and reads PRIMARY only
+//! once the selection has been quiet for the settle delay. GNOME mirrors every
+//! Wayland selection update to X11 (XFixes events fire on each update, verified
+//! on GNOME 50), so this replaces the earlier 400 ms `wl-paste` polling that
+//! disturbed native selection drags; only a session without an X display falls
+//! back to slow `wl-paste` polling. Windows and macOS use native mouse hooks (a
+//! `WH_MOUSE_LL` hook and a listen-only `CGEventTap`) feeding the same
+//! settle/guard flow. The
 //! platform readers inspect the current selection; the synthetic copy only
 //! runs as a last resort (Windows drags outside terminals, macOS drags without
 //! AX text) and Linux never touches the clipboard at all.
@@ -19,15 +22,18 @@ use std::time::Duration;
 
 use tauri::AppHandle;
 
+/// Linux sees no mouse-release signal (native Wayland especially), so a
+/// selection needs a longer settle before it counts as committed; the hook
+/// platforms see the actual mouse-up and can stay snappier.
+#[cfg(target_os = "linux")]
+pub const DEFAULT_DELAY_MS: u64 = 900;
+#[cfg(not(target_os = "linux"))]
 pub const DEFAULT_DELAY_MS: u64 = 400;
 pub const DEFAULT_MIN_LENGTH: usize = 2;
 pub const MIN_DELAY_MS: u64 = 100;
 pub const MAX_DELAY_MS: u64 = 3000;
 pub const MIN_LENGTH: usize = 1;
 pub const MAX_LENGTH: usize = 50;
-
-#[cfg(target_os = "linux")]
-const POLL_INTERVAL: Duration = Duration::from_millis(400);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SelectionMode {
@@ -56,11 +62,39 @@ impl SelectionMode {
     }
 }
 
+/// When the docked ball is on screen: always (dim without a selection) or
+/// only after a selection was armed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BallVisibility {
+    Always,
+    Selection,
+}
+
+impl BallVisibility {
+    /// `None` for unknown/missing values, so callers can fall back to the
+    /// default (config) or reject the input (settings command).
+    pub fn parse(value: Option<&str>) -> Option<Self> {
+        match value.map(str::trim) {
+            Some("always") => Some(Self::Always),
+            Some("selection") => Some(Self::Selection),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::Selection => "selection",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct SelectionSettings {
     pub mode: SelectionMode,
     pub delay: Duration,
     pub min_length: usize,
+    pub ball_visibility: BallVisibility,
 }
 
 impl SelectionSettings {
@@ -79,10 +113,25 @@ impl SelectionSettings {
             .unwrap_or(DEFAULT_MIN_LENGTH)
             .clamp(MIN_LENGTH, MAX_LENGTH);
 
+        let mode = SelectionMode::parse(config.selection_mode.as_deref());
+
+        // Direct translation has no mouse-release signal on Linux and is not
+        // offered in the UI there; an old config value falls back to the ball.
+        #[cfg(target_os = "linux")]
+        let mode = if mode == SelectionMode::Auto {
+            SelectionMode::Ball
+        } else {
+            mode
+        };
+
+        let ball_visibility =
+            BallVisibility::parse(config.ball_visibility.as_deref()).unwrap_or(BallVisibility::Always);
+
         Self {
-            mode: SelectionMode::parse(config.selection_mode.as_deref()),
+            mode,
             delay: Duration::from_millis(delay_ms),
             min_length,
+            ball_visibility,
         }
     }
 
@@ -106,21 +155,33 @@ pub fn selection_supported() -> bool {
     ))
 }
 
-/// Whether the platform can anchor the ball next to the selection. Native
-/// Wayland has no global pointer position and no window placement, so the ball
-/// degrades to direct translation there.
+/// Whether the platform has a selection ball: a fixed docked ball on Linux
+/// (the pointer anchor is unreliable on native Wayland) and a
+/// selection-following ball on Windows/macOS.
 pub fn ball_supported() -> bool {
+    cfg!(any(
+        target_os = "linux",
+        target_os = "windows",
+        target_os = "macos"
+    ))
+}
+
+/// The Linux ball is docked at a fixed, draggable position; the hook platforms
+/// keep the ball next to the selection.
+pub fn ball_docked() -> bool {
+    cfg!(target_os = "linux")
+}
+
+/// Direct translation on selection needs a mouse-release signal to be safe;
+/// Linux watchers only have PRIMARY polling, so the UI does not offer it there.
+pub fn auto_supported() -> bool {
     #[cfg(target_os = "linux")]
     {
-        matches!(session(), Session::X11)
+        false
     }
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    #[cfg(not(target_os = "linux"))]
     {
         true
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-    {
-        false
     }
 }
 
@@ -185,14 +246,15 @@ fn blocked(app: &AppHandle) -> bool {
         return true;
     }
 
-    // Selections made inside our own visible windows must not trigger the
+    // Selections made inside our own visible card must not trigger the
     // watcher. `is_focused` is read from the runtime's cached focus state, so
-    // a hidden card can never leave stale focus behind.
-    for label in ["main", "ball"] {
-        if let Some(window) = app.get_webview_window(label) {
-            if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-                return true;
-            }
+    // a hidden card can never leave stale focus behind. The ball is
+    // intentionally non-focusable and has no selectable content, so it is not
+    // part of this check (some WMs still report it as active, which used to
+    // make the watcher block itself).
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+            return true;
         }
     }
 
@@ -205,11 +267,7 @@ fn blocked(app: &AppHandle) -> bool {
     false
 }
 
-#[cfg(any(
-    target_os = "linux",
-    target_os = "windows",
-    target_os = "macos"
-))]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn handle(
     app: &AppHandle,
     settings: SelectionSettings,
@@ -230,7 +288,7 @@ fn handle(
     // degrades to the direct path instead of silently doing nothing.
     crate::hide_ball(app);
     *app.state::<crate::AppState>().replace_window.lock().unwrap() = window;
-    crate::show_main(app);
+    crate::show_main_popup(app);
     crate::translate_text(app, text);
 }
 
@@ -310,6 +368,213 @@ fn capture_fallback(event: &MouseUp) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
+/// AT-SPI focus tracking (Linux): many toolkits mirror typed text to PRIMARY,
+/// so the watcher asks the accessibility layer whether the focused text object
+/// really has a selection. Best-effort: without a connection, a focused object
+/// or a Text interface the result is "unknown" and the watcher keeps its
+/// PRIMARY-only behaviour.
+#[cfg(target_os = "linux")]
+mod atspi {
+    use std::sync::{LazyLock, Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    use atspi::AccessibilityConnection;
+    use atspi::events::ObjectEvents;
+    use atspi::events::object::{StateChangedEvent, TextCaretMovedEvent, TextChangedEvent, TextSelectionChangedEvent};
+    use atspi::proxy::accessible::ObjectRefExt;
+    use atspi::proxy::proxy_ext::ProxyExt;
+    use atspi::ObjectRefOwned;
+    use futures_lite::stream::StreamExt;
+
+    /// A stale "no selection" verdict must not survive long: after a few
+    /// seconds without AT-SPI events the watcher falls back to PRIMARY.
+    const FRESHNESS: Duration = Duration::from_secs(5);
+
+    struct Verdict {
+        selection: Option<bool>,
+        updated: Instant,
+    }
+
+    static STATE: LazyLock<Mutex<Verdict>> = LazyLock::new(|| {
+        Mutex::new(Verdict {
+            selection: None,
+            updated: Instant::now(),
+        })
+    });
+    /// When the last `TextSelectionChanged` event was seen; caret/text events
+    /// shortly after a selection change must not flip the verdict to "typing".
+    static LAST_SELECTION: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
+    static FOCUSED: Mutex<Option<ObjectRefOwned>> = Mutex::new(None);
+    static CONNECTION: OnceLock<AccessibilityConnection> = OnceLock::new();
+
+    /// How long a selection-change event keeps "typing" inference at bay.
+    const SELECTION_GRACE: Duration = Duration::from_millis(1000);
+
+    pub fn spawn() {
+        std::thread::spawn(|| tauri::async_runtime::block_on(run()));
+    }
+
+    async fn run() {
+        if crate::selection_debug() {
+            eprintln!("SELDBG atspi thread start");
+        }
+
+        let connection = match AccessibilityConnection::new().await {
+            Ok(connection) => connection,
+            Err(error) => {
+                if crate::selection_debug() {
+                    eprintln!("SELDBG atspi connect failed: {error}");
+                }
+
+                return;
+            }
+        };
+
+        if let Err(error) = connection.register_event::<ObjectEvents>().await {
+            if crate::selection_debug() {
+                eprintln!("SELDBG atspi register failed: {error}");
+            }
+
+            return;
+        }
+
+        let _ = CONNECTION.set(connection.clone());
+        let mut events = connection.event_stream();
+
+        if crate::selection_debug() {
+            eprintln!("SELDBG atspi connected");
+        }
+
+        while let Some(Ok(event)) = events.next().await {
+            if let Ok(change) = StateChangedEvent::try_from(event.clone()) {
+                if change.state == "focused".into() {
+                    if change.enabled {
+                        *FOCUSED.lock().unwrap() = Some(change.item.clone());
+                        update(&connection, &change.item, "focus").await;
+                    } else {
+                        let is_current =
+                            FOCUSED.lock().unwrap().as_ref() == Some(&change.item);
+
+                        if is_current {
+                            *FOCUSED.lock().unwrap() = None;
+                        }
+                    }
+                }
+
+                continue;
+            }
+
+            // Text events also reveal the active text object (covers focus
+            // events missed before the listener started).
+            if let Ok(selection) = TextSelectionChangedEvent::try_from(event.clone()) {
+                *FOCUSED.lock().unwrap() = Some(selection.item.clone());
+                update(&connection, &selection.item, "selection").await;
+                continue;
+            }
+
+            if let Ok(caret) = TextCaretMovedEvent::try_from(event.clone()) {
+                *FOCUSED.lock().unwrap() = Some(caret.item.clone());
+                update(&connection, &caret.item, "caret").await;
+                continue;
+            }
+
+            if let Ok(changed) = TextChangedEvent::try_from(event.clone()) {
+                update(&connection, &changed.item, "text").await;
+            }
+        }
+    }
+
+    async fn update(connection: &AccessibilityConnection, item: &ObjectRefOwned, kind: &str) {
+        let verdict = selection_state(connection, item).await;
+        let now = Instant::now();
+
+        if kind == "selection" {
+            *LAST_SELECTION.lock().unwrap() = Some(now);
+        }
+
+        let mut state = STATE.lock().unwrap();
+
+        match verdict {
+            Some(value) => state.selection = Some(value),
+            None => match kind {
+                // A selection-change event is strong evidence even when the
+                // element exposes no queryable Text interface.
+                "selection" => state.selection = Some(true),
+                // Caret/text updates without a nearby selection change are
+                // the typing signature (Electron apps expose no Text
+                // interface, but do report these).
+                "caret" | "text" => {
+                    let recent_selection = LAST_SELECTION
+                        .lock()
+                        .unwrap()
+                        .map(|at| at.elapsed() < SELECTION_GRACE)
+                        .unwrap_or(false);
+
+                    if !recent_selection {
+                        state.selection = Some(false);
+                    }
+                }
+                // Focus of an unqueryable element: unknown, fall back.
+                _ => state.selection = None,
+            },
+        }
+
+        state.updated = now;
+
+        if crate::selection_debug() {
+            eprintln!("SELDBG atspi event={kind} selection={:?}", state.selection);
+        }
+    }
+
+    async fn selection_state(
+        connection: &AccessibilityConnection,
+        item: &ObjectRefOwned,
+    ) -> Option<bool> {
+        let text = item
+            .clone()
+            .into_accessible_proxy(connection.connection())
+            .await
+            .ok()?
+            .proxies()
+            .await
+            .ok()?
+            .text()
+            .await
+            .ok()?;
+
+        let count = text.get_n_selections().await.ok()?;
+
+        if count <= 0 {
+            return Some(false);
+        }
+
+        let (start, end) = text.get_selection(0).await.ok()?;
+        let selected = text.get_text(start, end).await.ok()?;
+
+        Some(!selected.trim().is_empty())
+    }
+
+    /// `false` only when AT-SPI positively says the focused text object has no
+    /// selection (typing/caret only); unknown allows the old behaviour.
+    pub fn selection_ok() -> bool {
+        let Ok(state) = STATE.lock() else {
+            return true;
+        };
+
+        if state.updated.elapsed() > FRESHNESS {
+            return true;
+        }
+
+        state.selection != Some(false)
+    }
+}
+
+/// See [`atspi::selection_ok`].
+#[cfg(target_os = "linux")]
+pub(crate) fn atspi_selection_ok() -> bool {
+    atspi::selection_ok()
+}
+
 #[cfg(target_os = "linux")]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Session {
@@ -334,10 +599,34 @@ fn session() -> Session {
     }
 }
 
+/// Reads the current PRIMARY selection on demand (used by the hover commit):
+/// the user explicitly confirmed, so there is no need to wait for the settle
+/// timer, and a fresh selection works even before it was armed.
+#[cfg(target_os = "linux")]
+pub(crate) fn read_primary_now() -> Option<String> {
+    read_primary()
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
 #[cfg(target_os = "linux")]
 fn read_primary() -> Result<String, String> {
+    // Diagnostic switch: keep the watcher running but never touch the
+    // selection, to isolate PRIMARY polling as an interference source.
+    if std::env::var_os("TRANSLATOR_SELECTION_NO_PRIMARY").is_some() {
+        return Err("disabled".to_string());
+    }
+
     match session() {
         Session::X11 => crate::capture::primary_selection_x11(),
+        // Under Wayland the XWayland bridge serves the same PRIMARY selection
+        // and reading it over X11 avoids spawning `wl-paste` every poll, which
+        // was shown to disturb native selection drags on GNOME. Only fall back
+        // to `wl-paste` when there is no X display at all.
+        Session::Wayland if std::env::var_os("DISPLAY").is_some() => {
+            crate::capture::primary_selection_x11()
+        }
         Session::Wayland => crate::capture::primary_selection_wayland(),
         Session::Unknown => crate::capture::capture_selection(),
     }
@@ -345,63 +634,166 @@ fn read_primary() -> Result<String, String> {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use tauri::AppHandle;
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xfixes::{ConnectionExt as _, SelectionEventMask};
+    use x11rb::protocol::xproto::{Atom, ConnectionExt as _};
+    use x11rb::rust_connection::RustConnection;
 
-    use super::{POLL_INTERVAL, SelectionMode, blocked, handle, read_primary, settings};
+    use super::{SelectionMode, blocked, read_primary, settings};
+
+    /// How often the event connection is drained; events arrive
+    /// asynchronously, so this only bounds the reaction latency.
+    const TICK: Duration = Duration::from_millis(100);
+    /// Without an X display there are no selection events; fall back to a slow
+    /// `wl-paste` poll (last resort: it can disturb native drags).
+    const FALLBACK_INTERVAL: Duration = Duration::from_millis(1500);
 
     pub fn run(app: AppHandle) {
-        // `last_seen` dedupes: the same selected text is only acted upon once
-        // until the selection changes (an empty selection resets it).
+        super::atspi::spawn();
+
+        match watch_connection() {
+            Some((conn, primary)) => run_xfixes(app, conn, primary),
+            None => run_fallback(app),
+        }
+    }
+
+    /// Subscribe to XFixes selection-owner updates for PRIMARY. Every Wayland
+    /// selection update is mirrored to X11 (verified on GNOME), so this
+    /// replaces polling: the watcher only *reads* the selection once it has
+    /// been quiet for the settle delay, which keeps native drags undisturbed.
+    fn watch_connection() -> Option<(RustConnection, Atom)> {
+        let (conn, screen_num) = x11rb::connect(None).ok()?;
+        let root = conn.setup().roots[screen_num].root;
+        let primary = conn
+            .intern_atom(false, b"PRIMARY")
+            .ok()?
+            .reply()
+            .ok()?
+            .atom;
+
+        conn.xfixes_query_version(5, 0).ok()?.reply().ok()?;
+        conn.xfixes_select_selection_input(root, primary, SelectionEventMask::SET_SELECTION_OWNER)
+            .ok()?;
+        conn.flush().ok()?;
+
+        if crate::selection_debug() {
+            eprintln!("SELDBG watcher xfixes ready");
+        }
+
+        Some((conn, primary))
+    }
+
+    fn run_xfixes(app: AppHandle, conn: RustConnection, primary: Atom) {
+        let mut last_change: Option<Instant> = None;
         let mut last_seen: Option<String> = None;
-        // `pending` waits out the settle delay so a drag does not fire.
-        let mut pending: Option<(String, Instant)> = None;
 
         loop {
-            std::thread::sleep(POLL_INTERVAL);
+            while let Ok(Some(event)) = conn.poll_for_event() {
+                if let x11rb::protocol::Event::XfixesSelectionNotify(event) = event {
+                    if event.selection == primary {
+                        last_change = Some(Instant::now());
+
+                        if crate::selection_debug() {
+                            eprintln!("SELDBG xfix event");
+                        }
+                    }
+                }
+            }
+
+            std::thread::sleep(TICK);
+
+            let settings = settings(&app);
+
+            if settings.mode == SelectionMode::Off {
+                last_change = None;
+                last_seen = None;
+                crate::set_selection_pending(&app, None);
+                continue;
+            }
+
+            let Some(changed_at) = last_change else {
+                continue;
+            };
+
+            if changed_at.elapsed() < settings.delay {
+                continue;
+            }
+
+            // Quiet: this is the only selection read, and it happens after the
+            // user stopped changing the selection.
+            last_change = None;
+            let text = read_primary().unwrap_or_default();
+            apply_candidate(&app, text, &mut last_seen);
+        }
+    }
+
+    fn run_fallback(app: AppHandle) {
+        let mut last_seen: Option<String> = None;
+
+        loop {
+            std::thread::sleep(FALLBACK_INTERVAL);
 
             let settings = settings(&app);
 
             if settings.mode == SelectionMode::Off {
                 last_seen = None;
-                pending = None;
+                crate::set_selection_pending(&app, None);
                 continue;
             }
 
             let text = read_primary().unwrap_or_default();
-
-            if text.is_empty() {
-                last_seen = None;
-                pending = None;
-                continue;
-            }
-
-            if last_seen.as_deref() != Some(text.as_str()) {
-                last_seen = Some(text.clone());
-                pending = Some((text, Instant::now()));
-                continue;
-            }
-
-            let Some((pending_text, since)) = pending.as_ref() else {
-                continue;
-            };
-
-            if since.elapsed() < settings.delay {
-                continue;
-            }
-
-            let text = pending_text.clone();
-            pending = None;
-
-            if !settings.accepts(&text) || blocked(&app) {
-                continue;
-            }
-
-            let anchor = crate::capture::pointer_position();
-            let window = crate::capture::foreground_window();
-            handle(&app, settings, text, anchor, window);
+            apply_candidate(&app, text, &mut last_seen);
         }
+    }
+
+    /// Dedupe + guards + arm; shared so the event and fallback loops behave
+    /// identically.
+    fn apply_candidate(app: &AppHandle, text: String, last_seen: &mut Option<String>) {
+        if text.trim().is_empty() {
+            *last_seen = None;
+            crate::set_selection_pending(app, None);
+            return;
+        }
+
+        if last_seen.as_deref() == Some(text.as_str()) {
+            return;
+        }
+
+        *last_seen = Some(text.clone());
+
+        // Typing in an input mirrors the text to PRIMARY on many toolkits; the
+        // accessibility layer tells a real selection apart from a caret.
+        if !super::atspi::selection_ok() {
+            if crate::selection_debug() {
+                eprintln!("SELDBG skip atspi (no text selection)");
+            }
+
+            return;
+        }
+
+        let settings = settings(app);
+
+        if !settings.accepts(&text) || blocked(app) {
+            if crate::selection_debug() {
+                eprintln!(
+                    "SELDBG skip accepts={} blocked={}",
+                    settings.accepts(&text),
+                    blocked(app)
+                );
+            }
+
+            return;
+        }
+
+        if crate::selection_debug() {
+            eprintln!("SELDBG arm len={}", text.chars().count());
+        }
+
+        let window = crate::capture::foreground_window();
+        crate::set_selection_pending(app, Some(crate::PendingSelection { text, window }));
     }
 }
 
@@ -820,11 +1212,26 @@ mod tests {
     }
 
     #[test]
+    fn parses_ball_visibility() {
+        assert_eq!(
+            BallVisibility::parse(Some("always")),
+            Some(BallVisibility::Always)
+        );
+        assert_eq!(
+            BallVisibility::parse(Some(" selection ")),
+            Some(BallVisibility::Selection)
+        );
+        assert_eq!(BallVisibility::parse(Some("bogus")), None);
+        assert_eq!(BallVisibility::parse(None), None);
+    }
+
+    #[test]
     fn accepts_only_matching_mode_and_length() {
         let off = SelectionSettings {
             mode: SelectionMode::Off,
             delay: Duration::from_millis(DEFAULT_DELAY_MS),
             min_length: 2,
+            ball_visibility: BallVisibility::Always,
         };
         assert!(!off.accepts("hello"));
 

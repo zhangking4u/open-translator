@@ -1,188 +1,162 @@
-# Selection Translation (划词翻译) — Design & Landing Plan
+# Selection Translation (划词翻译) — Design & Landing
 
-Status: Phase 1–5 landed (Linux, Windows, macOS cross-target compile-checked); real-machine checks pending on X11/Windows/macOS (see §7).
+Status: Linux uses the docked confirm ball (Wayland and X11); Windows/macOS use
+the selection-following ball and keep direct translation. Real-machine checks
+on X11/Windows/macOS are still pending.
 
 
 ## 1. Goal
 
-Add browser-extension-style selection translation to the desktop client:
+A mouse-only, continuous confirmation flow: select text, then the next mouse
+action confirms the translation — without leaving the mouse and without the
+tool ever interrupting the selection or the current activity.
 
-- Select text anywhere, then either
-  - **悬浮球 (ball)**: a small floating ball appears next to the selection; moving
-    the mouse onto it starts the translation, or
-  - **直接翻译 (auto)**: the translation card opens as soon as the selection settles.
-- The card titlebar gets a gear button that jumps to the settings page, where the
-  mode is chosen.
-- The existing global hotkey (`Ctrl+Alt+T`) keeps working in every mode.
-
-The feature reuses the existing capture paths and the translation card; the new
-parts are a selection watcher, a second always-on-top window for the ball, and
-the settings plumbing.
+Selecting text is ambiguous (copy, edit, highlight), so the tool never treats a
+selection itself as translation intent. Confirmation is always an explicit
+small gesture: hover the ball (Linux/Windows/macOS) or, where a mouse-release
+signal is observable, the opt-in direct mode (Windows/macOS only).
 
 
-## 2. Interaction modes
+## 2. Modes
 
-`selection_mode` config key, three values:
+| value | Linux | Windows/macOS |
+| --- | --- | --- |
+| `off` (default) | nothing | nothing |
+| `ball` | docked confirm ball | selection-following ball |
+| `auto` | not offered; a config value falls back to `ball` | direct card after the mouse-up settle |
 
-| value | behavior |
-| --- | --- |
-| `off` (default) | current behavior; only the hotkey translates |
-| `ball` | selection settles → ball appears near the selection; mouse enters the ball (or clicks it) → card opens with the translation; ball auto-hides after 5 s, on a new selection, or when the card shows |
-| `auto` | selection settles → card opens immediately |
-
-Parameters (`selection_min_length` default 2 chars, `selection_delay` default
-400 ms, clamped 100–3000 ms). A selection shorter than the minimum is ignored.
-The delay is a settle time: the selection must be unchanged for that long before
-anything happens, so dragging across text does not fire.
-
-Priority/conflict rules:
-
-- The hotkey always wins. It hides the ball, suppresses the watcher for 1.2 s and
-  captures the selection itself.
-- While the card is focused (the user is selecting/copying inside the card) the
-  watcher ignores selections.
-- A pinned card is never disturbed by the watcher.
-- The same text is only translated once until the selection changes (empty
-  selection resets the dedupe), so moving the mouse does not retrigger.
-- Ball and auto translations are recorded in history exactly like hotkey ones.
-
-The ball is intentionally a separate small window, not part of the card: it must
-not steal focus, must sit above other windows, and must disappear without
-touching the card until the user commits.
+The settings UI hides `auto` where it is not supported.
 
 
-## 3. Ball UX
+## 3. Docked confirm ball (Linux)
 
-- 44×44 px transparent window, circular accent button (shared `--ot-*` tokens,
-  white translate glyph, hairline + shadow, light/dark parity).
-- Appears offset to the bottom-right of the selection anchor, clamped to the
-  monitor work area (reuses `card_position`).
-- Hover intent: 120 ms dwell in `ball.js` before invoking `ball_hover`; leaving
-  early cancels. A click triggers immediately.
-- Hovering translates the pending selection and hides the ball; the card then
-  opens near the cursor (i.e. near the ball).
-- No drag/keyboard interaction in v1; no focus, no taskbar entry, no shadow.
+Native Wayland gives regular applications no global pointer events, no reliable
+selection anchor and no arbitrary window placement, so a ball or card next to
+the selection cannot be trusted. The only reliable capabilities are reading the
+PRIMARY selection and owning a fixed-position window — so confirmation lives at
+a fixed dock instead of beside the selection.
+
+- **Dock**: right edge, vertically centered on the primary monitor by default,
+  inset 8 px. The ball is draggable (`ball.js` reports deltas via
+  `move_ball_by`, `save_ball_position` persists them); the position is clamped
+  to the work area on every placement and after monitor changes.
+- **Visibility** (`ball_visibility`): `always` (default) keeps the ball visible
+  and dim while nothing is selected; `selection` shows it only once a selection
+  is armed.
+- **States** (`ball-state` event consumed by `ball.js`): `idle` (dim), `armed`
+  (accent, a settled selection is ready), `busy` (pulse while translating).
+- **Confirm**: hover only, 150 ms dwell; leaving cancels. A drag never counts
+  as a hover, and a click is not a confirm. The ball is non-focusable
+  (`set_focusable(false)`), so interacting with it cannot steal the selection
+  from the source application.
+- **Card**: opens beside the ball (side facing the work-area center, vertically
+  centered, clamped), shown non-focusable so the source app keeps focus; the
+  first click on the card makes it focusable again (`card_engaged`). Every
+  commit raises the card with the 700 ms always-on-top pulse (no focus), so a
+  card that was already visible cannot stay hidden behind the active window.
+  Hovering the same selection again only re-shows the card; it does not
+  retranslate. When a translation finishes, the ball goes back to `idle`
+  (dim) unless a newer selection was armed meanwhile.
+- **Selection watcher**: event-driven through XFixes. GNOME mirrors every
+  Wayland PRIMARY update to X11, and `xfixes_select_selection_input` reports
+  each update (verified on GNOME 50). The watcher never polls and **never
+  reads the selection while it is changing**: after the last event it waits
+  `selection_delay` (default 900 ms on Linux), then reads PRIMARY once over the
+  XWayland bridge. The earlier 400 ms `wl-paste` polling was measured to
+  interrupt native drag selection and was removed; only a session without an
+  X display falls back to slow `wl-paste` polling.
+- **Hover commit**: hovering is explicit confirmation, so `ball_hover` reads
+  the current PRIMARY on the spot (one X11 read) instead of waiting for the
+  settle timer or a previously armed text. Hovering before the ball lights up
+  therefore works, and typed text is only translated when the user asks for it.
+- **Typing filter (AT-SPI)**: many toolkits mirror typed text to PRIMARY.
+  When the accessibility bus is available, the watcher tracks the focused text
+  object and asks whether it really has a selection (`GetNSelections`); caret
+  and text-change events without a nearby selection change count as typing and
+  keep the ball dim. Apps that expose no text events at all (Electron/VS Code
+  with accessibility off) provide no signal, so the watcher falls back to the
+  PRIMARY-only behaviour there — typing can still light the ball in those
+  apps; enabling `editor.accessibilitySupport` in VS Code makes the filter
+  work. The filter is best-effort: a missing connection, object or Text
+  interface is "unknown" and never blocks the feature.
+- **Hotkey** (`Ctrl+Alt+T`) still captures the selection and opens the focused
+  card (cursor placement, always-on-top pulse) exactly as before.
 
 
-## 4. Config & state
+## 4. Selection-following ball (Windows/macOS)
 
-`translator-core::settings::FileConfig` gains:
+- Windows: a `WH_MOUSE_LL` hook records left-button down/up (drag = >4 px) and
+  forwards mouse-up to a worker that settles for `selection_delay` (default
+  400 ms). Text comes from UI Automation (`TextPattern.GetSelection`), password
+  fields are skipped; only drags outside a terminal-class blocklist fall back to
+  the synthetic Ctrl+C capture with clipboard restore.
+- macOS: a listen-only `CGEventTap` feeds the same settle flow; raw
+  `AXUIElementCopyAttributeValue` reads the selected text, and Cmd+C (a plain
+  copy) covers drags in apps that do not expose AX.
+- The ball appears near the selection anchor, commits on hover, hides after the
+  commit, and auto-hides after 5 s. `auto` mode opens the card directly after
+  the settle.
 
+Both watchers share the same settle/guard pipeline, and translations are
+single-flight: while one request streams, newer text only replaces a one-slot
+queued follow-up, so bursts cannot interleave streams or stack engine work.
+
+
+## 5. Configuration
+
+| key | values | default |
+| --- | --- | --- |
+| `selection_mode` | `off`, `ball`, `auto` (auto: Windows/macOS only) | `off` |
+| `selection_delay` | 100–3000 ms settle | 900 (Linux) / 400 |
+| `selection_min_length` | 1–50 chars | 2 |
+| `ball_visibility` | `always`, `selection` | `always` |
+| `ball_x`, `ball_y` | custom dock position (physical px) | right-edge center |
+
+
+## 6. Flow (Linux docked ball)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: no usable selection (dim)
+    Idle --> Armed: PRIMARY settles, >= min length
+    Armed --> Busy: hover 150 ms -> ball_hover
+    Busy --> Idle: translation done (card stays; dim again)
+    Armed --> Idle: selection cleared / feature off
+    Armed --> Armed: new selection replaces the pending text
 ```
-selection_mode = off | ball | auto
-selection_delay = 400          # ms, 100..3000
-selection_min_length = 2       # characters, 1..50
-```
-
-Runtime state (`AppState` in the Tauri client):
-
-| field | meaning |
-| --- | --- |
-| `selection: Mutex<SelectionSettings>` | live mode/delay/min-length (updated by the settings commands, seeded from the config file at startup) |
-| `pending_selection: Mutex<Option<PendingSelection>>` | text + replace-window waiting for a ball hover |
-| `ball_generation: AtomicU64` | invalidates stale auto-hide timers |
-| `suppress_until: Mutex<Option<Instant>>` | hotkey suppression window |
-| `focused_window: Mutex<Option<String>>` | which of our windows has focus (self-selection filter) |
-
-`SettingsPayload` exposes `selection_mode`, `selection_delay_ms`,
-`selection_min_length`, `selection_supported`, `selection_ball_supported`.
-The settings group is hidden when `selection_supported` is false, and shows a
-note when `selection_ball_supported` is false (Wayland degrades `ball` to
-`auto`).
 
 
-## 5. Runtime architecture
+## 7. Platform matrix
 
-```
-selection_watch (thread)          main window (card)         ball window
-  poll / hook                       translate_text            ball.html/js
-      |                                  ^                        |
-      v                                  |                     hover/click
-  settle + guard                     show_main                    |
-      |                                  |                        v
-      +-- mode=auto ----------------> translate_text          ball_hover
-      |                                                           |
-      +-- mode=ball --> pending_selection + show_ball ------------+
-```
-
-- `selection_watch.rs` owns: config parsing, mode enum, settle/guards, and the
-  platform watcher. Linux polls the PRIMARY selection (no clipboard writes, no
-  synthetic keys); the poll interval is 400 ms and the configured delay is
-  applied as a settle window on top.
-- Guards before acting: mode != off, length >= min, the watcher has not already
-  acted on this exact selection, not pinned, our window not focused, not
-  suppressed, selection not empty. Empty selections reset the watcher dedupe.
-- `ball_hover`/`ball_click` take the pending selection, hide the ball, set
-  `replace_window`, suppress the watcher briefly, show the card and translate.
-- `hide_ball` bumps `ball_generation`, hides the window and drops the pending
-  selection; a 5 s timer only hides when the generation still matches.
-- `trigger_translation` (hotkey) hides the ball first and suppresses the watcher.
-
-Linux specifics:
-
-- Session detection: `XDG_SESSION_TYPE` (fallback: `WAYLAND_DISPLAY`/`DISPLAY`).
-  - X11 → read PRIMARY over X11 (`capture::primary_selection_x11`), anchor from
-    `capture::pointer_position` (XQueryPointer); ball fully supported.
-  - Wayland → read PRIMARY through `wl-paste` (`capture::primary_selection_wayland`);
-    global pointer coordinates are unavailable, so `ball` degrades to `auto`.
-  - Unknown → best-effort `capture_selection`.
-- GNOME/Wayland cannot watch selection changes (`wl-paste --watch` needs
-  wlr-data-control, which Mutter does not implement — verified on the dev
-  machine), hence polling. This also keeps one code path for X11 and Wayland.
-- 400 ms polling of `wl-paste` (Wayland) / X11 selection reads costs a process
-  spawn per tick only while a non-off mode is enabled; while off, the loop skips
-  reading entirely.
-
-No clipboard access and no synthesized keystrokes happen on Linux, so selection
-translation is side-effect free there (PRIMARY is read only). On Windows the
-UI Automation read comes first and the existing capture fallback only runs after
-a detected drag outside known terminal windows, where Ctrl+C would be SIGINT
-(see §7).
-
-
-## 6. Files
-
-- `docs/SELECTION_TRANSLATION.md` — this document.
-- `desktop/translator-core/src/settings.rs` — new keys + tests.
-- `desktop/translator-popup-tauri/src/selection_watch.rs` — new module.
-- `desktop/translator-popup-tauri/src/capture.rs` — public PRIMARY/pointer
-  helpers (`primary_selection_x11`, `primary_selection_wayland`,
-  `pointer_position`).
-- `desktop/translator-popup-tauri/src/main.rs` — state, commands (`ball_hover`,
-  `ball_leave`, `ball_click`, `save_selection_mode`, `save_selection_options`),
-  window creation, focus tracking, watcher startup.
-- `desktop/translator-popup-tauri/ui/ball.{html,css,js}` — ball window.
-- `desktop/translator-popup-tauri/ui/{index.html,main.js,style.css}` — settings
-  group, gear button, mode-aware empty-state hint.
-- `desktop/translator-popup-tauri/capabilities/default.json` — add the `ball`
-  window.
-
-
-## 7. Platform phases
-
-| phase | platform | mechanism | state |
+| platform | sensor | confirm UI | state |
 | --- | --- | --- | --- |
-| 1 | translator-core | config keys + parsing | landed |
-| 2 | Linux | PRIMARY polling + settle/guards | landed |
-| 3 | Linux/X11 | ball window + hover flow + settings UI | landed |
-| 4 | Windows | `WH_MOUSE_LL` hook thread (mouse-up, drag detected by distance, settle wait), UI Automation `TextPattern.GetSelection()` for text, cursor position as the anchor, enigo Ctrl+C fallback only after a detected drag, with clipboard restore and a terminal-class blocklist (Ctrl+C is SIGINT there); password fields are skipped through `CurrentIsPassword` | landed (cross-target compile-checked; real-machine check pending) |
-| 5 | macOS | Listen-only session `CGEventTap` (core-graphics) for mouse down/up, cursor point as the anchor (`LogicalPosition`), raw `AXUIElementCopyAttributeValue` reads for the selected text (accessibility permission is already required by the capture path); for drags without AX text, the existing Cmd+C capture (a plain copy, safe without a selection); password/secure fields expose no AX text | landed (cross-target compile-checked; real-machine check pending) |
-
-All three desktop targets now report `selection_supported()`; `ball_supported()`
-is still false on native Wayland, where the ball degrades to direct translation
-and the settings page says so.
+| Linux/Wayland | XFixes events + one X11 read after quiet (AT-SPI typing filter) | docked ball | landed, manual pass in progress |
+| Linux/X11 | PRIMARY via X11 | docked ball | landed, manual pass pending |
+| Windows | WH_MOUSE_LL + UIA | selection-following ball / auto | landed, cross-compile-checked, real-machine pending |
+| macOS | CGEventTap + AX | selection-following ball / auto | landed, cross-compile-checked, real-machine pending |
 
 
-## 8. Verification
+## 8. Files
 
-- `cargo test` in `desktop/translator-core` (config parsing) and in
-  `desktop/translator-popup-tauri` (settle/guard/placement unit tests).
-- `node --check ui/main.js ui/ball.js ui/dropdown.js`.
-- `python3 -m json.tool` for `capabilities/default.json` / `tauri.conf.json`.
-- `bash shared/sync-ui.sh --check` (tokens/dropdown copies untouched).
-- Manual on Linux X11: enable 悬浮球, select text, move onto the ball, card opens
-  and history records the translation; enable 直接翻译 and check the card opens
-  after the settle delay; hotkey still suppresses the watcher; settings gear on
-  the card opens the settings page.
-- Manual on GNOME Wayland: the settings note explains the degrade and selections
-  translate directly (no ball).
+- `desktop/translator-popup-tauri/src/selection_watch.rs` — modes, watcher,
+  settle/guards, platform modules.
+- `desktop/translator-popup-tauri/src/main.rs` — ball window, dock placement,
+  states, hover commit, card placement, settings commands.
+- `desktop/translator-popup-tauri/ui/ball.{html,css,js}` — ball UI, hover dwell,
+  drag handling.
+- `desktop/translator-core/src/settings.rs` — `selection_*`, `ball_*` keys and
+  `persist_remove`.
+
+
+## 9. Verification
+
+- `cargo test` in `desktop/translator-core` and
+  `desktop/translator-popup-tauri`.
+- `node --check ui/main.js ui/ball.js ui/dropdown.js`; `python3 -m json.tool`
+  for the capabilities/config; `bash shared/sync-ui.sh --check`.
+- Manual (Linux): enable 悬浮球, confirm the ball appears at the right edge and
+  is dim; select text → it lights up; move onto it → after ~150 ms the card
+  opens beside it with the translation; hovering again re-shows the card
+  without retranslating; drag the ball and reload to confirm the position
+  persists; switch 悬浮球显示 to 选中后显示 and confirm it hides while idle;
+  check that selecting text is never interrupted.

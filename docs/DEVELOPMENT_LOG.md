@@ -1854,6 +1854,37 @@ Released:
 - `selection_supported()` now covers Linux/Windows/macOS; macOS behavior is compile-checked but not real-machine-verified (no Mac hardware), so it ships as an experimental watcher. Manual X11/Windows/macOS checks remain on the follow-up list
 
 
+## Selection Translation: Real-Machine Feedback Fix (2026-10-04, after 9b4b066)
+
+
+- Local Linux verification on GNOME Wayland found direct mode unusable: the 400 ms settle fired during brief pauses while dragging, and every trigger re-showed the card with `set_focus()` plus the 700 ms always-on-top pulse and a fresh cursor placement, so the card flickered and stole focus mid-selection ("没法好好选词")
+- First fixes: Linux default settle raised to 900 ms (Windows/macOS keep 400 ms because they see the mouse-up); the Linux watcher rate-limits triggers to one per 1.5 s and keeps the pending text, so an evolving selection is translated once with the latest text instead of on every pause; the watcher/ball commit path now uses `show_main_popup` — no focus, no always-on-top pulse, and no repositioning while the card is already visible
+- The second manual pass still felt unusable, which exposed two deeper defects: every watcher trigger started a new `translate_text` whose streaming events kept rewriting the card (multiple streams interleaving and engine work stacking behind the serialized actor), and the card mapped at cursor + (12, 18), i.e. exactly where the next drag in the same paragraph starts
+- Second fixes: `translate_text` is now single-flight — while a translation streams, newer text only replaces a one-slot `queued` follow-up and the running request chains into it when it finishes; the popup placement prefers above the cursor (below only when there is no room, with a wider gap); switching the mode off clears the queued follow-up
+- Third pass still could not select with the mouse because the card kept mapping where the user was working (native Wayland has no trustworthy global pointer position, and the 520x344 card then swallowed the next press): on native Wayland the popup now parks in the bottom-right corner of the work area, and every watcher popup is shown `set_focusable(false)` (X11/Windows/macOS keep the above-cursor placement); clicking the card re-enables focus via the new `card_engaged` command, and disabling the mode hides a watcher popup
+- Rebuilt locally and restarted the tray client for the next manual pass; X11/Windows/macOS verification still pending
+
+
+## Selection Translation: Docked Confirm Ball Redesign (2026-10-04)
+
+
+- First-principles decision after the Wayland failures: an app cannot observe global input, pointer coordinates or place a window next to a selection there, so confirmation moves to a target that does not need any of that. Confirmation is now an explicit, mouse-continuous hover on a fixed docked ball, which is the only interaction Wayland allows a regular application to detect reliably
+- Linux `ball` mode is now the docked confirm ball: right-edge-center default, draggable (JS drag + `move_ball_by`/`save_ball_position`, persisted as `ball_x`/`ball_y`, clamped), `ball_visibility` = `always` (dim idle, default) or `selection`, and `idle`/`armed`/`busy` states pushed to `ball.js` via the `ball-state` event. The watcher only arms the pending text; it never translates
+- Hover-only commit with a 150 ms dwell (no click confirm, dragging never commits); the non-focusable card opens beside the ball (`show_card_next_to_ball`) and clicking it restores focus (`card_engaged`). Hovering the same selection again re-shows the card without retranslating; a new selection replaces the pending text
+- `auto` is Windows/macOS-only now: Linux clamps it to `ball` in `from_config`, the settings UI removes the option, and the settings group gains 悬浮球显示 + 恢复默认 rows (the Wayland note is gone). Windows/macOS keep the selection-following ball and the shared settle/guard pipeline; translations stay single-flight
+- Verified: `cargo test --locked` green in both crates (core 63, client 16), `node --check`, `cargo check`; local client rebuilt and restarted for the next manual pass, X11/Windows/macOS checks still pending
+
+
+## Selection Translation: Real-Machine Hardening (2026-10-04)
+
+
+- Manual testing on GNOME Wayland/VS Code found the real drag interrupter: the 400 ms `wl-paste` PRIMARY polling. An A/B run with reads disabled selected normally; an XFixes probe (with `wl-copy` driving the primary) proved GNOME mirrors every Wayland selection update to X11 as a selection-owner event (owner constant, timestamp changes). The watcher is now event-driven: it never reads while the selection changes and reads PRIMARY once after the settle delay; only a session without an X display falls back to slow `wl-paste` polling
+- The docked ball was actually 200x200: GTK locked it at its default size because `resizable(false)` was applied before the size request; the ball now removes that flag and enforces 44x44 before its first show (verified on X: `44x44+1868+534`). Idle watcher ticks no longer call `set_position`/`show` on the ball
+- UX fixes from the same pass: the ball returns to idle after a translation (a newer armed selection keeps it lit); a hover commit reads the current PRIMARY on the spot instead of waiting for the settle/arm; the card raises itself with the 700 ms always-on-top pulse after every commit so it cannot stay hidden behind the active window
+- AT-SPI typing filter (`atspi` 0.30, Linux): tracks the focused text object and queries `GetNSelections`, so caret/text updates without a nearby selection change keep the ball dim (applies to GTK/Firefox and other apps that expose text events). VS Code/Electron with accessibility off emits only focus events, so there is no signal to distinguish typing from selection there; accepted as a known limitation (documented, with the `editor.accessibilitySupport` workaround). Diagnostics: every event kind is logged under `TRANSLATOR_SELECTION_DEBUG=1`
+- Verified: `cargo test --locked` green in both crates (core 63, client 16), release build clean, manual pass on GNOME Wayland for docked ball + hover + settings + history; Windows/macOS/X11 checks still pending
+
+
 ---
 
 

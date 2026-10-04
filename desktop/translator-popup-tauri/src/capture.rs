@@ -567,18 +567,3 @@ pub fn primary_selection_x11() -> Result<String, String> {
 pub fn primary_selection_wayland() -> Result<String, String> {
     wayland_primary()
 }
-
-/// Global pointer position in X11 root coordinates. Under XWayland the value
-/// can be stale while the pointer sits over a native Wayland window, so only
-/// callers on real X11 sessions may trust it.
-#[cfg(target_os = "linux")]
-pub fn pointer_position() -> Option<(i32, i32)> {
-    use x11rb::connection::Connection;
-    use x11rb::protocol::xproto::ConnectionExt;
-
-    let (conn, screen_num) = x11rb::connect(None).ok()?;
-    let root = conn.setup().roots[screen_num].root;
-    let reply = conn.query_pointer(root).ok()?.reply().ok()?;
-
-    Some((reply.root_x as i32, reply.root_y as i32))
-}
