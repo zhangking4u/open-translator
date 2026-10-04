@@ -25,7 +25,9 @@ signal is observable, the opt-in direct mode (Windows/macOS only).
 | `ball` | docked confirm ball | selection-following ball |
 | `auto` | not offered; a config value falls back to `ball` | direct card after the mouse-up settle |
 
-The settings UI hides `auto` where it is not supported.
+The settings UI exposes a 划词翻译 master switch plus a 翻译方式 choice
+(悬浮球翻译/立即翻译) that only appears where `auto` is supported; the tray has
+the same choice as a 划词翻译 submenu and both stay in sync.
 
 
 ## 3. Docked confirm ball (Linux)
@@ -110,6 +112,7 @@ queued follow-up, so bursts cannot interleave streams or stack engine work.
 | key | values | default |
 | --- | --- | --- |
 | `selection_mode` | `off`, `ball`, `auto` (auto: Windows/macOS only) | `off` |
+| `selection_method` | `ball`, `auto`: remembered for the next switch-on | `ball` |
 | `selection_delay` | 100–3000 ms settle | 900 (Linux) / 400 |
 | `selection_min_length` | 1–50 chars | 2 |
 | `ball_visibility` | `always`, `selection` | `always` |

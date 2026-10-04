@@ -778,4 +778,11 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - The settings page now follows "a row exists only when users materially differ and the product cannot infer the answer": 选中文字后 (segmented: 不自动翻译/悬浮球翻译/立即翻译) + 按快捷键翻译, two system switches, and a collapsed 关于 block (version/update/model/config). `selection_delay`, `selection_min_length` and `ball_visibility` are config-file-only; the ball position resets by dropping the ball near its default dock (48 px snap)
 - Removed the 悬浮球显示/最小字数/触发延迟/自动下载模型/位置 rows and their commands (`save_ball_visibility`, `save_selection_options`, `reset_ball_position`); added `ui/segmented.js` for short mode selects
 - Polish: values right-align in their rows (the hotkey recorder no longer stretches), the model row opens its location in the file manager (`open_model_location`), and the model input shows the effective path (blank config now falls back to the default model; 使用默认 resets a custom path)
+
+
+## Settings Page — Apple-PM Restructure (2026-10-04)
+
+
+- 关于 became a separate view reached from a 版本 nav row (stable settings height); 划词翻译 became a master switch + a 翻译方式 choice only where 立即翻译 exists (new `selection_method` key remembers the choice); 登录时启动 is managed by the client (`autostart_enabled`/`set_autostart` on all three platforms); 自动检查更新 moved next to the version, 浏览器扩展 and 本地模型 gained status lines; the tray gained a 划词翻译 submenu with checkmarks that syncs the settings switch
+- Verified with 17 client tests (new autostart toggle test) and headless-Chrome checks of the settings/关于 flow on Linux and Windows-style stubs; release build and restart clean
 - Verified with a headless-Chrome harness against the real page (both platform layouts, About expand/collapse, no JS errors) plus a green release build

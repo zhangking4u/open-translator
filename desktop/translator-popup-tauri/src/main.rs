@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use translator_core::update::ReleaseInfo;
 use tauri::tray::TrayIconBuilder;
 use tauri::{
@@ -75,6 +75,13 @@ struct AppState {
     /// state; an older timer must not cut a newer pulse short.
     pulse_generation: AtomicU64,
     replace_window: Mutex<Option<isize>>,
+    /// Address the extension HTTP service would bind to (shown in 关于).
+    extension_addr: String,
+    /// Whether the extension HTTP service was started for this run; the
+    /// settings switch only takes effect on the next start.
+    extension_running: bool,
+    /// Tray "划词翻译" check items, kept for check-state updates.
+    selection_menu: Mutex<Option<SelectionMenu>>,
     /// Live 划词 settings; updated by the settings commands and read by the
     /// watcher on every poll.
     selection: Mutex<selection_watch::SelectionSettings>,
@@ -113,6 +120,14 @@ struct PendingSelection {
     text: String,
     /// Foreground window recorded at selection time, for replace-in-place.
     window: Option<isize>,
+}
+
+/// Tray menu handles for the 划词翻译 submenu, so the checkmarks can follow the
+/// current mode.
+struct SelectionMenu {
+    off: CheckMenuItem<tauri::Wry>,
+    ball: CheckMenuItem<tauri::Wry>,
+    auto: CheckMenuItem<tauri::Wry>,
 }
 
 /// Docked ball states: dim when nothing is selected, lit when text is ready,
@@ -155,11 +170,15 @@ struct SettingsPayload {
     config_path: Option<String>,
     app_version: String,
     selection_mode: String,
+    selection_method: String,
     selection_delay_ms: u64,
     selection_min_length: usize,
     selection_supported: bool,
     selection_ball_supported: bool,
     selection_auto_supported: bool,
+    model_exists: bool,
+    extension_addr: String,
+    extension_running: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -285,6 +304,11 @@ fn main() {
             .unwrap_or_default(),
     });
 
+    let extension_addr = server_plan
+        .as_ref()
+        .map(|plan| plan.bind_addr.clone())
+        .unwrap_or_else(|| "http://127.0.0.1:17890".to_string());
+
     let translate_on_start = args.translate;
     let autostart = args.autostart;
     // A --translate cold start must not show the window before the capture
@@ -321,6 +345,9 @@ fn main() {
             pinned: Mutex::new(start_pinned),
             pulse_generation: AtomicU64::new(0),
             replace_window: Mutex::new(None),
+            extension_addr,
+            extension_running: server_plan.is_some(),
+            selection_menu: Mutex::new(None),
             selection: Mutex::new(selection_watch::SelectionSettings::from_config(&config)),
             pending_selection: Mutex::new(None),
             ball_generation: AtomicU64::new(0),
@@ -373,6 +400,9 @@ fn main() {
             ball_click,
             card_engaged,
             save_selection_mode,
+            save_selection_method,
+            autostart_enabled,
+            set_autostart,
             move_ball_by,
             save_ball_position,
             get_settings,
@@ -1676,6 +1706,43 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let update_item = MenuItem::with_id(app, "update", "正在检查更新…", false, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
+    // Quick mode switch without opening the card; the settings switch stays in
+    // sync through the "selection-mode" event.
+    let mode = *app.state::<AppState>().selection.lock().unwrap();
+    let selection_off = CheckMenuItem::with_id(
+        app,
+        "selection-off",
+        "不自动翻译",
+        true,
+        mode.mode == selection_watch::SelectionMode::Off,
+        None::<&str>,
+    )?;
+    let selection_ball = CheckMenuItem::with_id(
+        app,
+        "selection-ball",
+        "悬浮球翻译",
+        true,
+        mode.mode == selection_watch::SelectionMode::Ball,
+        None::<&str>,
+    )?;
+    let selection_auto = CheckMenuItem::with_id(
+        app,
+        "selection-auto",
+        "立即翻译",
+        selection_watch::auto_supported(),
+        mode.mode == selection_watch::SelectionMode::Auto,
+        None::<&str>,
+    )?;
+    // 立即翻译 only exists where the watcher sees a mouse release.
+    let mut selection_items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        vec![&selection_off, &selection_ball];
+
+    if selection_watch::auto_supported() {
+        selection_items.push(&selection_auto);
+    }
+
+    let selection_menu = Submenu::with_items(app, "划词翻译", true, &selection_items)?;
+
     let menu = Menu::with_items(
         app,
         &[
@@ -1683,6 +1750,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &history_item,
             &settings_item,
+            &selection_menu,
             &update_item,
             &PredefinedMenuItem::separator(app)?,
             &quit_item,
@@ -1690,6 +1758,11 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     )?;
 
     *app.state::<UpdateSlot>().item.lock().unwrap() = Some(update_item);
+    *app.state::<AppState>().selection_menu.lock().unwrap() = Some(SelectionMenu {
+        off: selection_off,
+        ball: selection_ball,
+        auto: selection_auto,
+    });
 
     let tray = TrayIconBuilder::with_id("main")
         .icon(Image::new_owned(make_icon_rgba(), 32, 32))
@@ -1717,6 +1790,15 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
                     }
                 }
             }
+            "selection-off" => {
+                set_selection_mode_from_menu(app, selection_watch::SelectionMode::Off)
+            }
+            "selection-ball" => {
+                set_selection_mode_from_menu(app, selection_watch::SelectionMode::Ball)
+            }
+            "selection-auto" => {
+                set_selection_mode_from_menu(app, selection_watch::SelectionMode::Auto)
+            }
             "quit" => app.exit(0),
             _ => {}
         });
@@ -1726,6 +1808,13 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
 
     tray.build(app)?;
     Ok(())
+}
+
+/// Tray entry point for the mode submenu: applies the mode, moves the
+/// checkmark and tells an open card so its switch stays in sync.
+fn set_selection_mode_from_menu(app: &AppHandle, mode: selection_watch::SelectionMode) {
+    apply_selection_mode(app, mode);
+    let _ = app.emit("selection-mode", mode.as_str());
 }
 
 fn set_tooltip(app: &AppHandle, text: &str) {
@@ -1792,12 +1881,37 @@ fn save_selection_mode(app: AppHandle, mode: String) -> Result<(), String> {
         other => return Err(format!("unknown selection mode: {other}")),
     };
 
+    apply_selection_mode(&app, parsed);
+    Ok(())
+}
+
+/// Applies a selection mode from any entry point (settings switch, tray menu):
+/// updates the runtime state, persists it and adjusts the watcher/ball.
+fn apply_selection_mode(app: &AppHandle, parsed: selection_watch::SelectionMode) {
     let state = app.state::<AppState>();
     state.selection.lock().unwrap().mode = parsed;
     translator_core::settings::persist_value("selection_mode", parsed.as_str());
 
+    // Remember the method for the next switch-on and keep the tray checkmarks
+    // in sync, whichever entry point changed the mode.
+    if parsed != selection_watch::SelectionMode::Off {
+        translator_core::settings::persist_value("selection_method", parsed.as_str());
+    }
+
+    if let Some(menu) = state.selection_menu.lock().unwrap().as_ref() {
+        let _ = menu
+            .off
+            .set_checked(parsed == selection_watch::SelectionMode::Off);
+        let _ = menu
+            .ball
+            .set_checked(parsed == selection_watch::SelectionMode::Ball);
+        let _ = menu
+            .auto
+            .set_checked(parsed == selection_watch::SelectionMode::Auto);
+    }
+
     if parsed == selection_watch::SelectionMode::Off {
-        hide_ball(&app);
+        hide_ball(app);
         *state.queued.lock().unwrap() = None;
 
         // A card that the watcher popped up should not linger once the feature
@@ -1810,7 +1924,19 @@ fn save_selection_mode(app: AppHandle, mode: String) -> Result<(), String> {
     }
 
     selection_watch::ensure(app.clone());
-    apply_ball_visibility(&app);
+    apply_ball_visibility(app);
+}
+
+/// Remembers the preferred mode for the next time the master switch is turned
+/// on (`ball` or `auto`).
+#[tauri::command]
+fn save_selection_method(value: String) -> Result<(), String> {
+    let method = match value.trim() {
+        "ball" | "auto" => value.trim().to_string(),
+        other => return Err(format!("unknown selection method: {other}")),
+    };
+
+    translator_core::settings::persist_value("selection_method", &method);
     Ok(())
 }
 
@@ -2160,7 +2286,7 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
 
     SettingsPayload {
         hotkey,
-        model_path: config.model_path.unwrap_or_default(),
+        model_path: config.model_path.clone().unwrap_or_default(),
         default_model_path: translator_core::paths::default_model_path()
             .map(|path| path.to_string_lossy().to_string())
             .unwrap_or_default(),
@@ -2172,11 +2298,23 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
             .map(|path| path.to_string_lossy().to_string()),
         app_version: translator_core::update::current_version().to_string(),
         selection_mode: selection.mode.as_str().to_string(),
+        selection_method: config
+            .selection_method
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| *value == "auto")
+            .unwrap_or("ball")
+            .to_string(),
         selection_delay_ms: selection.delay_ms(),
         selection_min_length: selection.min_length,
         selection_supported: selection_watch::selection_supported(),
         selection_ball_supported: selection_watch::ball_supported(),
         selection_auto_supported: selection_watch::auto_supported(),
+        model_exists: resolve_model_path(&config)
+            .map(|path| path.is_file())
+            .unwrap_or(false),
+        extension_addr: app.state::<AppState>().extension_addr.clone(),
+        extension_running: app.state::<AppState>().extension_running,
     }
 }
 
@@ -2223,6 +2361,251 @@ fn save_switch(key: String, value: bool) -> Result<(), String> {
 
     translator_core::settings::persist_value(&key, if value { "true" } else { "false" });
     Ok(())
+}
+
+/// Login-startup registration managed by the client itself, so the settings
+/// switch works without re-running the installers.
+///
+/// NOTE: the three entry artifacts must stay in sync with the installers that
+/// write the same paths and `--autostart` flag:
+/// `packaging/linux/open-translator-setup`, `desktop/install-macos.sh`,
+/// `desktop/install-windows.ps1` and `packaging/windows/install.ps1`.
+mod autostart {
+    use std::path::PathBuf;
+
+    /// Quotes a path for the Desktop Entry `Exec=` field: wrap in double
+    /// quotes and escape the four characters the spec reserves. A path with a
+    /// line break cannot be represented and is rejected instead.
+    #[cfg(any(target_os = "linux", test))]
+    fn desktop_exec_quote(path: &str) -> Result<String, String> {
+        if path.contains(['\n', '\r']) {
+            return Err("the executable path contains a line break".to_string());
+        }
+
+        let mut quoted = String::with_capacity(path.len() + 2);
+        quoted.push('"');
+
+        for character in path.chars() {
+            if matches!(character, '"' | '`' | '$' | '\\') {
+                quoted.push('\\');
+            }
+
+            quoted.push(character);
+        }
+
+        quoted.push('"');
+        Ok(quoted)
+    }
+
+    /// Escapes text for the XML plist written on macOS.
+    #[cfg(any(target_os = "macos", test))]
+    fn xml_escape(value: &str) -> String {
+        let mut escaped = String::with_capacity(value.len());
+
+        for character in value.chars() {
+            match character {
+                '&' => escaped.push_str("&amp;"),
+                '<' => escaped.push_str("&lt;"),
+                '>' => escaped.push_str("&gt;"),
+                '"' => escaped.push_str("&quot;"),
+                '\'' => escaped.push_str("&apos;"),
+                _ => escaped.push(character),
+            }
+        }
+
+        escaped
+    }
+
+    /// Escapes a value for a single-quoted PowerShell string.
+    #[cfg(any(target_os = "windows", test))]
+    fn powershell_quote(value: &str) -> String {
+        value.replace('\'', "''")
+    }
+
+    #[cfg(target_os = "linux")]
+    fn entry_path() -> Option<PathBuf> {
+        let base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+
+        Some(base.join("autostart").join("open-translator.desktop"))
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn is_enabled() -> bool {
+        entry_path().map(|path| path.exists()).unwrap_or(false)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn set(enabled: bool) -> Result<(), String> {
+        let path = entry_path().ok_or("cannot determine the config directory")?;
+
+        if !enabled {
+            return match std::fs::remove_file(&path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.to_string()),
+            };
+        }
+
+        let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+        }
+
+        let exec = desktop_exec_quote(&exe.to_string_lossy())?;
+        let contents = format!(
+            "[Desktop Entry]\nType=Application\nName=OpenTranslator\nComment=Local-first AI selection translation\nExec={exec} --autostart\nX-GNOME-Autostart-enabled=true\n"
+        );
+
+        std::fs::write(&path, contents).map_err(|error| error.to_string())
+    }
+
+    #[cfg(target_os = "macos")]
+    const LABEL: &str = "io.github.opentranslator.popup";
+
+    #[cfg(target_os = "macos")]
+    fn entry_path() -> Option<PathBuf> {
+        let home = std::env::var_os("HOME")?;
+        Some(
+            PathBuf::from(home)
+                .join("Library/LaunchAgents")
+                .join(format!("{LABEL}.plist")),
+        )
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn is_enabled() -> bool {
+        entry_path().map(|path| path.exists()).unwrap_or(false)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn set(enabled: bool) -> Result<(), String> {
+        let path = entry_path().ok_or("cannot determine the LaunchAgents directory")?;
+        let uid = unsafe { libc::getuid() };
+        let domain = format!("gui/{uid}");
+        let plist = path.to_string_lossy().to_string();
+
+        if !enabled {
+            let _ = std::process::Command::new("launchctl")
+                .args(["bootout", &domain, &plist])
+                .status();
+
+            return match std::fs::remove_file(&path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.to_string()),
+            };
+        }
+
+        let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+        }
+
+        let contents = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n    <key>Label</key>\n    <string>{LABEL}</string>\n    <key>ProgramArguments</key>\n    <array>\n        <string>{}</string>\n        <string>--autostart</string>\n    </array>\n    <key>RunAtLoad</key>\n    <true/>\n</dict>\n</plist>\n",
+            xml_escape(&exe.to_string_lossy())
+        );
+
+        std::fs::write(&path, contents).map_err(|error| error.to_string())?;
+        let _ = std::process::Command::new("launchctl")
+            .args(["bootstrap", &domain, &plist])
+            .status();
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    fn entry_path() -> Option<PathBuf> {
+        let appdata = std::env::var_os("APPDATA")?;
+        Some(PathBuf::from(appdata).join(
+            "Microsoft\\Windows\\Start Menu\\Programs\\Startup\\OpenTranslator.lnk",
+        ))
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn is_enabled() -> bool {
+        entry_path().map(|path| path.exists()).unwrap_or(false)
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn set(enabled: bool) -> Result<(), String> {
+        let path = entry_path().ok_or("cannot determine the Startup folder")?;
+
+        if !enabled {
+            return match std::fs::remove_file(&path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.to_string()),
+            };
+        }
+
+        let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+        let script = format!(
+            "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{}');$s.TargetPath='{}';$s.Arguments='--autostart';$s.Save()",
+            powershell_quote(&path.to_string_lossy()),
+            powershell_quote(&exe.to_string_lossy())
+        );
+        let status = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .status()
+            .map_err(|error| error.to_string())?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err("failed to create the startup shortcut".to_string())
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    pub fn is_enabled() -> bool {
+        false
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    pub fn set(_enabled: bool) -> Result<(), String> {
+        Err("unsupported platform".to_string())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{desktop_exec_quote, powershell_quote, xml_escape};
+
+        #[test]
+        fn escapes_entry_artifacts() {
+            assert_eq!(
+                desktop_exec_quote("/opt/My App/ot").unwrap(),
+                "\"/opt/My App/ot\""
+            );
+            assert_eq!(desktop_exec_quote("/opt/a'b").unwrap(), "\"/opt/a'b\"");
+            assert_eq!(desktop_exec_quote("/opt/a$b").unwrap(), "\"/opt/a\\$b\"");
+            assert!(desktop_exec_quote("/tmp/a\nb").is_err());
+
+            assert_eq!(xml_escape("A&B<C>\"D'"), "A&amp;B&lt;C&gt;&quot;D&apos;");
+
+            assert_eq!(
+                powershell_quote("C:\\Users\\O'Brien\\a.exe"),
+                "C:\\Users\\O''Brien\\a.exe"
+            );
+        }
+    }
+}
+
+#[tauri::command]
+fn autostart_enabled() -> bool {
+    autostart::is_enabled()
+}
+
+#[tauri::command]
+async fn set_autostart(enabled: bool) -> Result<(), String> {
+    // Creating the entry can spawn PowerShell/launchctl; keep it off the UI
+    // thread.
+    tauri::async_runtime::spawn_blocking(move || autostart::set(enabled))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -3077,6 +3460,25 @@ mod tests {
         assert_eq!(super::spd_language("ja"), Some("ja".to_string()));
         assert_eq!(super::spd_language("auto"), None);
         assert_eq!(super::spd_language(""), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn autostart_toggles_the_desktop_entry() {
+        let dir = std::env::temp_dir().join(format!("ot-autostart-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", &dir);
+        }
+
+        assert!(!super::autostart::is_enabled());
+        super::autostart::set(true).expect("enable autostart");
+        assert!(super::autostart::is_enabled());
+        super::autostart::set(false).expect("disable autostart");
+        assert!(!super::autostart::is_enabled());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(target_os = "linux")]

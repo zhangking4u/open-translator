@@ -1898,6 +1898,15 @@ Released:
 - Verified with a headless-Chrome harness against the real settings page plus a stubbed Tauri bridge (Linux 2-segment and Windows/macOS-style 3-segment layouts, About expand/collapse, right-aligned values, the model button invoking `open_model_location`, no removed elements, no JS errors); release build and tests green
 
 
+## Settings Page: Apple-PM Restructure (2026-10-04)
+
+
+- Landed the prioritised review: (1) 关于 is now its own view (`about-view`) reached from a 版本 nav row, so the settings page keeps a stable height; (2) 划词翻译 became a master switch with a 翻译方式 segmented control (悬浮球翻译/立即翻译) shown only where auto is supported, backed by the new `selection_method` key so the last method survives a switch-off; (3) a 登录时启动 row manages the autostart entry from the client itself (`autostart_enabled`/`set_autostart`: Linux desktop file, macOS LaunchAgent + launchctl, Windows Startup shortcut via PowerShell); (4) copy/status pass: 自动检查更新 in 关于, 浏览器扩展 with a 运行中 · address status, 本地模型 with a 正在使用/未找到 status (`model_exists` in the payload); (5) the tray gained a 划词翻译 submenu with checkmarks that applies the mode and emits `selection-mode`, so an open settings page stays in sync
+- Backend: `apply_selection_mode` is shared by the settings command and the tray; new `save_selection_method`, `autostart_enabled`, `set_autostart` commands and payload fields; `libc` added for the macOS autostart uid
+- Verified: 17 client tests (including a new Linux autostart toggle test), headless-Chrome checks of the settings/关于 flow for both Linux and Windows-style stubs (master switch, conditional method row, About status texts, back navigation, autostart invokes, no JS errors), release build and restart
+- Review fixes on the same batch: autostart artifacts now escape paths per format (Desktop Entry quoting with a line-break guard, XML escaping, PowerShell single-quote doubling; covered by a unit test), `apply_selection_mode` persists `selection_method` and refreshes the tray checkmarks so every entry point stays in sync, the `selection-mode` listener updates from the event payload in every view (About and the waiting hint included), the extension status reports 将在下次启动时运行/已关闭（重启后停止）instead of claiming a live state, `set_autostart` runs on a worker thread, and the dead `.group-title-toggle`/`.selection-number` CSS was removed
+
+
 ---
 
 

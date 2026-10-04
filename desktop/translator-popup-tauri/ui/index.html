@@ -131,12 +131,22 @@
 
         <p class="group-title">翻译</p>
         <div class="group" id="selection-group">
-          <div class="setting-row">
-            <span class="setting-name">选中文字后</span>
+          <label class="setting-row switch-row">
+            <span class="setting-name">划词翻译</span>
+            <input
+              type="checkbox"
+              id="switch-selection"
+              class="switch"
+              role="switch"
+              aria-checked="false"
+              title="开启后，选中文字会出现悬浮球，把鼠标移到小球上悬停即可翻译。"
+            />
+          </label>
+          <div class="setting-row" id="selection-method-row" hidden>
+            <span class="setting-name">翻译方式</span>
             <div class="setting-control">
-              <select id="selection-mode" class="setting-select" title="选中文字后">
-                <option value="off" title="选中文字后不自动翻译；仍可按快捷键翻译。">不自动翻译</option>
-                <option value="ball" title="选中文字后，把鼠标移到悬浮球上悬停即可翻译。">悬浮球翻译</option>
+              <select id="selection-method" class="setting-select" title="翻译方式">
+                <option value="ball" title="选中文字后显示悬浮球，把鼠标移上去悬停即可翻译。">悬浮球翻译</option>
                 <option value="auto" title="选中文字后立即翻译。">立即翻译</option>
               </select>
               <span id="selection-saved" class="ok-text" hidden>已保存</span>
@@ -165,23 +175,13 @@
           </div>
         </div>
 
-        <p class="group-title">常规</p>
+        <p class="group-title">系统</p>
         <div class="group">
           <label class="setting-row switch-row">
-            <span class="setting-name">检查更新</span>
+            <span class="setting-name">登录时启动</span>
             <input
               type="checkbox"
-              id="switch-updates"
-              class="switch"
-              role="switch"
-              aria-checked="false"
-            />
-          </label>
-          <label class="setting-row switch-row">
-            <span class="setting-name">浏览器扩展服务</span>
-            <input
-              type="checkbox"
-              id="switch-extension"
+              id="switch-autostart"
               class="switch"
               role="switch"
               aria-checked="false"
@@ -189,21 +189,41 @@
           </label>
         </div>
 
-        <button
-          id="about-toggle"
-          class="group-title group-title-toggle"
-          type="button"
-          aria-expanded="false"
-          aria-controls="about-version-row about-model-row open-config"
-          title="展开或收起关于信息"
-        >
-          关于
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M4 6.25 8 10.25 12 6.25" />
-          </svg>
-        </button>
-        <div class="group" id="about-group">
-          <div class="setting-row" id="about-version-row" hidden>
+        <p class="group-title">关于</p>
+        <div class="group">
+          <button id="open-about" class="setting-row nav-row" type="button">
+            <span class="setting-name">版本</span>
+            <span class="nav-value">
+              <span id="about-version-label" class="dim-text"></span>
+              <svg
+                class="nav-chevron"
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div id="about-view" hidden>
+        <div class="page-head">
+          <span class="page-title">关于</span>
+          <span class="spacer"></span>
+          <button id="about-back">完成</button>
+        </div>
+
+        <p class="group-title">版本</p>
+        <div class="group">
+          <div class="setting-row">
             <span class="setting-name"><span id="app-version" class="update-version"></span></span>
             <div class="setting-control">
               <button id="update-notes" hidden>更新说明</button>
@@ -213,7 +233,21 @@
           </div>
           <p id="update-status" class="update-status" hidden></p>
           <progress id="update-progress" max="100" value="0" hidden></progress>
-          <div class="setting-row" id="about-model-row" hidden>
+          <label class="setting-row switch-row">
+            <span class="setting-name">自动检查更新</span>
+            <input
+              type="checkbox"
+              id="switch-updates"
+              class="switch"
+              role="switch"
+              aria-checked="false"
+            />
+          </label>
+        </div>
+
+        <p class="group-title">本地模型</p>
+        <div class="group">
+          <div class="setting-row">
             <span class="setting-name">模型文件</span>
             <div class="setting-control">
               <input
@@ -237,7 +271,27 @@
               <span id="model-saved" class="ok-text" hidden>已保存</span>
             </div>
           </div>
-          <button id="open-config" class="setting-row nav-row" type="button" hidden>
+        </div>
+        <p class="group-note" id="model-status"></p>
+
+        <p class="group-title">浏览器扩展</p>
+        <div class="group">
+          <label class="setting-row switch-row">
+            <span class="setting-name">提供扩展接口</span>
+            <input
+              type="checkbox"
+              id="switch-extension"
+              class="switch"
+              role="switch"
+              aria-checked="false"
+            />
+          </label>
+        </div>
+        <p class="group-note" id="extension-status"></p>
+
+        <p class="group-title">诊断</p>
+        <div class="group">
+          <button id="open-config" class="setting-row nav-row" type="button">
             <span class="setting-name">配置目录</span>
             <span class="nav-value">
               <span id="config-path" class="dim-text path-text"></span>

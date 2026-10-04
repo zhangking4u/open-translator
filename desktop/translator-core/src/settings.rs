@@ -17,6 +17,7 @@ pub struct FileConfig {
     pub check_updates: Option<String>,
     pub pinned: Option<String>,
     pub selection_mode: Option<String>,
+    pub selection_method: Option<String>,
     pub selection_delay: Option<String>,
     pub selection_min_length: Option<String>,
     pub ball_visibility: Option<String>,
@@ -77,6 +78,7 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "check_updates" => config.check_updates = Some(value.to_string()),
             "pinned" => config.pinned = Some(value.to_string()),
             "selection_mode" => config.selection_mode = Some(value.to_string()),
+            "selection_method" => config.selection_method = Some(value.to_string()),
             "selection_delay" => config.selection_delay = Some(value.to_string()),
             "selection_min_length" => config.selection_min_length = Some(value.to_string()),
             "ball_visibility" => config.ball_visibility = Some(value.to_string()),
@@ -190,7 +192,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_method = auto\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nunknown = x\n",
         )
         .unwrap();
 
@@ -212,6 +214,7 @@ mod tests {
         assert_eq!(config.auto_download.as_deref(), Some("false"));
         assert_eq!(config.check_updates.as_deref(), Some("false"));
         assert_eq!(config.selection_mode.as_deref(), Some("ball"));
+        assert_eq!(config.selection_method.as_deref(), Some("auto"));
         assert_eq!(config.selection_delay.as_deref(), Some("650"));
         assert_eq!(config.selection_min_length.as_deref(), Some("3"));
         assert_eq!(config.ball_visibility.as_deref(), Some("selection"));

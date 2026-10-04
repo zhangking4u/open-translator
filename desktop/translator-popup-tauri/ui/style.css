@@ -599,37 +599,9 @@ button.icon.active {
   outline-offset: 1px;
 }
 
-/* A section title that doubles as a disclosure toggle (关于). */
-.group-title-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.group-title-toggle:hover {
-  color: var(--ot-label);
-}
-
-.group-title-toggle svg {
-  color: var(--ot-label-3);
-  transition: transform 0.18s ease;
-}
-
-.group-title-toggle[aria-expanded="true"] svg {
-  transform: rotate(180deg);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .segmented-item,
-  .icon-button,
-  .group-title-toggle svg {
+  .icon-button {
     transition: none;
   }
 }
@@ -652,13 +624,6 @@ button.icon.active {
 
 .setting-select:hover {
   background-color: var(--ot-fill-hover);
-}
-
-.selection-number {
-  flex: none;
-  width: 72px;
-  min-width: 0;
-  text-align: right;
 }
 
 .hotkey-recorder {

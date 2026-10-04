@@ -4896,6 +4896,7 @@ dependencies = [
  "core-graphics",
  "enigo",
  "futures-lite",
+ "libc",
  "mac-notification-sys",
  "serde",
  "serde_json",

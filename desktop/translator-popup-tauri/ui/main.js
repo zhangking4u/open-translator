@@ -4,6 +4,7 @@ const { listen } = window.__TAURI__.event;
 const views = {
   translator: document.getElementById("translator-view"),
   settings: document.getElementById("settings-view"),
+  about: document.getElementById("about-view"),
   history: document.getElementById("history-view"),
 };
 
@@ -21,18 +22,21 @@ const speak = document.getElementById("speak");
 const pin = document.getElementById("pin");
 const close = document.getElementById("close");
 const dot = document.getElementById("dot");
-const selectionModeSelect = document.getElementById("selection-mode");
+const switchSelection = document.getElementById("switch-selection");
+const selectionMethodSelect = document.getElementById("selection-method");
+const selectionMethodRow = document.getElementById("selection-method-row");
 const selectionSaved = document.getElementById("selection-saved");
 const selectionGroup = document.getElementById("selection-group");
-const aboutToggle = document.getElementById("about-toggle");
-const aboutRows = [
-  document.getElementById("about-version-row"),
-  document.getElementById("about-model-row"),
-  document.getElementById("open-config"),
-];
-let selectionModeControl = null;
-let aboutExpanded = false;
+const switchAutostart = document.getElementById("switch-autostart");
+const openAbout = document.getElementById("open-about");
+const aboutBack = document.getElementById("about-back");
+const aboutVersionLabel = document.getElementById("about-version-label");
+const modelStatus = document.getElementById("model-status");
+const extensionStatus = document.getElementById("extension-status");
+let selectionMethodControl = null;
 let selectionModeValue = "off";
+let selectionMethodValue = "ball";
+let selectionAutoSupported = false;
 let selectionBallSupported = true;
 
 const SPEECH_LANGS = {
@@ -124,7 +128,7 @@ async function initLanguages() {
   removeUnsupportedSelectionOptions(settings);
 
   if (globalThis.OTSegmented) {
-    selectionModeControl = OTSegmented.enhance(selectionModeSelect, { title: "选中文字后" });
+    selectionMethodControl = OTSegmented.enhance(selectionMethodSelect, { title: "翻译方式" });
   }
 
   applyLanguageState(await invoke("get_language_state"));
@@ -137,21 +141,23 @@ async function initLanguages() {
 }
 
 // "立即翻译" is not offered where the watcher has no mouse-release signal
-// (Linux); the option must go before OTSelect builds its menu items.
+// (Linux); the option must go before the segmented control is built.
 function removeUnsupportedSelectionOptions(settings) {
   if (!settings || settings.selection_auto_supported) {
     return;
   }
 
-  const option = selectionModeSelect.querySelector('option[value="auto"]');
+  const option = selectionMethodSelect.querySelector('option[value="auto"]');
 
   if (option) {
     option.remove();
   }
 
-  if (selectionModeSelect.value === "auto") {
-    selectionModeSelect.value = "ball";
+  if (selectionMethodSelect.value === "auto") {
+    selectionMethodSelect.value = "ball";
   }
+
+  selectionMethodValue = "ball";
 }
 
 sourceSelect.addEventListener("change", () => {
@@ -960,54 +966,50 @@ function flashSelectionSaved() {
   resize();
 }
 
-// The About block is collapsed by default: its rows are status/diagnostics,
-// not decisions.
-function applyAboutState() {
-  aboutToggle.setAttribute("aria-expanded", String(aboutExpanded));
-
-  for (const row of aboutRows) {
-    row.hidden = !aboutExpanded;
-  }
-
-  if (aboutExpanded) {
-    renderUpdate();
-  } else {
-    updateStatus.hidden = true;
-    updateProgress.hidden = true;
-  }
+// The master switch mirrors "selection_mode != off"; the method row only
+// appears when the feature is on and the platform offers a choice.
+function updateSelectionMethodRow() {
+  selectionMethodRow.hidden = !(
+    !selectionGroup.hidden &&
+    selectionAutoSupported &&
+    switchSelection.checked
+  );
 }
-
-function toggleAbout() {
-  aboutExpanded = !aboutExpanded;
-  applyAboutState();
-  resize();
-}
-
-aboutToggle.addEventListener("click", toggleAbout);
 
 function applySelectionSettings(settings) {
   selectionModeValue = settings.selection_supported ? settings.selection_mode : "off";
+  selectionMethodValue = settings.selection_method === "auto" ? "auto" : "ball";
 
   // The backend clamps `auto` to `ball` where it is not supported; guard here
   // too so the select can never hold a value without a matching option.
-  if (!settings.selection_auto_supported && selectionModeValue === "auto") {
-    selectionModeValue = "ball";
+  if (!settings.selection_auto_supported && selectionMethodValue === "auto") {
+    selectionMethodValue = "ball";
   }
 
+  selectionAutoSupported = settings.selection_auto_supported;
   selectionBallSupported = settings.selection_ball_supported;
   removeUnsupportedSelectionOptions(settings);
-  selectionModeSelect.value = selectionModeValue;
   selectionGroup.hidden = !settings.selection_supported;
 
-  if (selectionModeControl) {
-    selectionModeControl.sync();
+  switchSelection.checked = selectionModeValue !== "off";
+  switchSelection.setAttribute("aria-checked", String(switchSelection.checked));
+  selectionMethodSelect.value = selectionMethodValue;
+
+  if (selectionMethodControl) {
+    selectionMethodControl.sync();
   }
+
+  updateSelectionMethodRow();
 }
 
-selectionModeSelect.addEventListener("change", async () => {
-  selectionModeValue = selectionModeSelect.value;
+async function applySelectionMode() {
+  selectionModeValue = switchSelection.checked ? selectionMethodValue : "off";
 
   try {
+    if (switchSelection.checked) {
+      await invoke("save_selection_method", { value: selectionMethodValue });
+    }
+
     await invoke("save_selection_mode", { mode: selectionModeValue });
     flashSelectionSaved();
   } catch (message) {
@@ -1015,14 +1017,80 @@ selectionModeSelect.addEventListener("change", async () => {
     window.setTimeout(() => setStatus(""), 3000);
   }
 
+  updateSelectionMethodRow();
+
   if (view === "translator" && !current && !streaming) {
     showWaiting();
   }
+}
+
+switchSelection.addEventListener("change", () => {
+  switchSelection.setAttribute("aria-checked", String(switchSelection.checked));
+  applySelectionMode();
 });
 
-async function openSettings() {
-  const settings = await invoke("get_settings");
+selectionMethodSelect.addEventListener("change", () => {
+  selectionMethodValue = selectionMethodSelect.value;
+  applySelectionMode();
+});
 
+function updateModelStatus(settings) {
+  const path = settings.model_path || settings.default_model_path;
+  const name = path ? path.split(/[\\/]/).pop() : "";
+
+  if (settings.model_exists) {
+    modelStatus.textContent = "正在使用 · " + name;
+  } else {
+    modelStatus.textContent = settings.auto_download
+      ? "未找到模型文件，启动时会自动下载默认模型。"
+      : "未找到模型文件，请在配置文件中设置 model_path 或开启自动下载。";
+  }
+}
+
+let extensionAddr = "";
+let extensionRunning = false;
+
+// The HTTP server starts once at launch, so the switch only takes effect on
+// the next start; say so instead of claiming a live state.
+function extensionStatusText(enabled) {
+  if (!enabled) {
+    return extensionRunning ? "已关闭（重启后停止）" : "已关闭";
+  }
+
+  return extensionRunning
+    ? "运行中 · " + extensionAddr
+    : "将在下次启动时运行 · " + extensionAddr;
+}
+
+function updateExtensionStatus(settings) {
+  extensionStatus.textContent = extensionStatusText(settings.serve_extension);
+}
+
+document.getElementById("switch-extension").addEventListener("change", (event) => {
+  extensionStatus.textContent = extensionStatusText(event.target.checked);
+});
+
+switchAutostart.addEventListener("change", async () => {
+  switchAutostart.setAttribute("aria-checked", String(switchAutostart.checked));
+
+  try {
+    await invoke("set_autostart", { enabled: switchAutostart.checked });
+  } catch (message) {
+    setStatus(String(message));
+    window.setTimeout(() => setStatus(""), 3000);
+    switchAutostart.checked = !switchAutostart.checked;
+    switchAutostart.setAttribute("aria-checked", String(switchAutostart.checked));
+  }
+});
+
+aboutBack.addEventListener("click", () => {
+  // Refetch so a tray mode change made while 关于 was open cannot leave a
+  // stale switch behind.
+  openSettings();
+});
+openAbout.addEventListener("click", showAbout);
+
+async function applySettingsToUi(settings) {
   hotkeyState.current = settings.hotkey;
   hotkeyState.recording = false;
   hotkeyState.candidate = "";
@@ -1033,11 +1101,16 @@ async function openSettings() {
   savedModelPath = settings.model_path || defaultModelPath;
   modelInput.value = savedModelPath;
   modelReset.hidden = !settings.model_path;
+  extensionAddr = settings.extension_addr || "";
+  extensionRunning = Boolean(settings.extension_running);
   setSwitch("switch-updates", settings.check_updates);
   setSwitch("switch-extension", settings.serve_extension);
   applySelectionSettings(settings);
+  updateModelStatus(settings);
+  updateExtensionStatus(settings);
   document.getElementById("config-path").textContent = settings.config_path ?? "";
   appVersion.textContent = "当前版本 v" + settings.app_version;
+  aboutVersionLabel.textContent = "v" + settings.app_version;
 
   if (updateState.phase === "idle") {
     const state = await invoke("get_update_state");
@@ -1053,8 +1126,24 @@ async function openSettings() {
   }
 
   renderUpdate();
-  applyAboutState();
+}
+
+async function openSettings() {
+  const settings = await invoke("get_settings");
+  await applySettingsToUi(settings);
+
+  const autostart = await invoke("autostart_enabled").catch(() => false);
+  setSwitch("switch-autostart", autostart);
+
   showView("settings");
+  await resize();
+  await invoke("center_window");
+}
+
+async function showAbout() {
+  const settings = await invoke("get_settings");
+  await applySettingsToUi(settings);
+  showView("about");
   await resize();
   await invoke("center_window");
 }
@@ -1214,6 +1303,35 @@ listen("model-error", (event) => {
 
 listen("open-settings", () => {
   openSettings();
+});
+
+listen("selection-mode", (event) => {
+  // The tray submenu changed the mode; update the UI from the payload (no
+  // config refetch) and do it in every view, so the About page and the
+  // waiting hint stay in sync too.
+  const mode = event.payload;
+
+  if (mode === "off" || mode === "ball" || mode === "auto") {
+    selectionModeValue = mode;
+
+    if (mode === "ball" || (mode === "auto" && selectionAutoSupported)) {
+      selectionMethodValue = mode;
+    }
+  }
+
+  switchSelection.checked = selectionModeValue !== "off";
+  switchSelection.setAttribute("aria-checked", String(switchSelection.checked));
+  selectionMethodSelect.value = selectionMethodValue;
+
+  if (selectionMethodControl) {
+    selectionMethodControl.sync();
+  }
+
+  updateSelectionMethodRow();
+
+  if (view === "translator" && !current && !streaming) {
+    showWaiting();
+  }
 });
 
 listen("open-history", () => {
