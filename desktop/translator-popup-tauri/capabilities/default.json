@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Capability for the main translation card",
-  "windows": ["main"],
+  "description": "Capability for the main translation card and the selection ball",
+  "windows": ["main", "ball"],
   "permissions": ["core:default", "core:window:allow-start-dragging"]
 }

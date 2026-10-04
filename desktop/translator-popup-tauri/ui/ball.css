@@ -1,0 +1,49 @@
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: var(--ot-font);
+  user-select: none;
+}
+
+#ball {
+  position: absolute;
+  inset: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--ot-accent);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.25),
+    0 2px 8px rgba(0, 0, 0, 0.28);
+  transition:
+    transform 0.12s ease,
+    background-color 0.12s ease;
+}
+
+#ball:hover {
+  transform: scale(1.08);
+}
+
+#ball:active {
+  transform: scale(0.96);
+}
+
+#ball:focus-visible {
+  outline: 2px solid var(--ot-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ball {
+    transition: none;
+  }
+}

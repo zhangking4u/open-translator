@@ -1825,6 +1825,17 @@ Released:
 - Windows/macOS desktop real-machine visual pass still pending; macOS remains CI-built only
 
 
+## Selection Translation (划词翻译): Plan + Linux Landing (2026-10-04)
+
+
+- New design/plan document `docs/SELECTION_TRANSLATION.md`: three modes (`off`/`ball`/`auto`), config keys (`selection_mode`, `selection_delay`, `selection_min_length`), runtime state, event flow, platform matrix (Linux first; Windows mouse-hook + UI Automation and macOS NSEvent + AX staged) and the privacy rule that no clipboard writes or synthetic keys happen on Linux
+- `translator-core` settings parse the three keys with clamping (`100..3000` ms, `1..50` chars, unknown mode → `off`) plus tests; run: 61 core tests green
+- New `selection_watch.rs` on the client: 400 ms PRIMARY polling (direct X11 read on X11 sessions, `wl-paste` on Wayland), settle delay, minimum length, watcher-local dedupe, guards for pinned cards, our own focused windows and recent hotkey triggers; `ball` degrades to `auto` on native Wayland because there is no global anchor (settings page shows a note)
+- Floating ball: hidden 44×44 transparent always-on-top window (`ui/ball.html`/`ball.css`/`ball.js`), 120 ms hover-intent dwell plus click fallback, positioned with the shared `card_position` clamp from an X11 `XQueryPointer` anchor, auto-hidden after 5 s behind a generation counter; hovering commits the pending selection, records the replace window and opens the card near the cursor
+- Settings/card: new 划词翻译 group (mode through `OTSelect`, minimum length, trigger delay) and a gear button in the card titlebar; the empty-state hint follows the active mode; hotkey now hides the ball and suppresses the watcher for 1.2 s
+- Verified: `cargo test --locked` green in both crates (client 15 tests incl. 4 new watcher/placement tests), `node --check` on the UI scripts, `json.tool` on the capabilities/config, `shared/sync-ui.sh --check`; manual X11 check still pending because the dev machine runs GNOME Wayland (only the direct fallback can be exercised there), Windows/macOS watchers are the next phases
+
+
 ---
 
 

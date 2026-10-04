@@ -240,7 +240,7 @@ Ordinary users on Windows/macOS can download, install and use it without technic
 
 Status:
 
-`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray; `v0.5.0` (2026-10-04) adds the browser extension 边写边译 inline translation (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target) and unifies the extension/desktop UI on shared Apple-style tokens and `OTSelect` dropdowns single-sourced under `shared/ui`.
+`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray; `v0.5.0` (2026-10-04) adds the browser extension 边写边译 inline translation (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target) and unifies the extension/desktop UI on shared Apple-style tokens and `OTSelect` dropdowns single-sourced under `shared/ui`. The desktop 划词翻译 feature landed on Linux 2026-10-04 (floating-ball and direct modes, settings group, card gear button); Windows/macOS watchers are staged in `docs/SELECTION_TRANSLATION.md`.
 
 
 ---
@@ -252,7 +252,9 @@ Status:
 
 2. Code signing / notarization (budget decision); macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
 
-3. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources)
+3. Selection translation follow-ups: manual X11 session check (the dev machine is GNOME Wayland, where only the direct fallback runs), then the Windows watcher (mouse hook + UI Automation) and the macOS watcher (NSEvent + AX) phases from `docs/SELECTION_TRANSLATION.md`
+
+4. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources)
 
 
 ---
@@ -714,3 +716,13 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Tag `v0.5.0` at `c948d99` (CI run 37138675325 green first); release run 37138919115 passed the Linux (~8m0s), macOS (~5m44s), Windows (~11m57s) and browser-extension (~9s) jobs, publishing the same five assets: `OpenTranslator-windows-x64.zip`, `OpenTranslator-macos-arm64.dmg`, `OpenTranslator-linux-x64.deb`, `OpenTranslator-browser-chrome.zip` and `OpenTranslator-browser-firefox.zip`
 - Release notes cover the extension 边写边译 flow (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target), the shared Apple-style tokens and `OTSelect` dropdowns across extension and desktop, viewport-aware menu placement, the translator-view switch on new translations and the single-sourced `shared/ui` copies with the `shared-ui` CI check, plus the usual install/upgrade steps
 - Verified before tagging on the same tree: local Linux deb + installed tray client manual pass, Firefox temporary-extension manual pass and Chrome e2e 36 checks; the CI flake that failed the previous run was fixed first (`test: stabilize the dropdown placement e2e checks`); Windows/macOS real-machine visual pass still pending
+
+
+## Desktop Selection Translation — Linux Landing (2026-10-04)
+
+
+- `docs/SELECTION_TRANSLATION.md` records the design and the staged plan: `selection_mode = off | ball | auto` (`selection_delay` ms, `selection_min_length` chars), a watcher thread with settle/dedupe/self-filter/suppression guards, and the floating-ball window
+- Linux landed: `src/selection_watch.rs` polls the PRIMARY selection (direct X11 read or `wl-paste` on Wayland; no clipboard writes, no synthetic keys), `ui/ball.{html,css,js}` is a 44×44 transparent always-on-top window with a 120 ms hover dwell and click fallback, placed next to the selection and auto-hidden after 5 s
+- Settings: new 划词翻译 group (mode `OTSelect`, minimum length, trigger delay) plus a gear button in the card titlebar; the empty-state hint follows the mode; on native Wayland the ball degrades to direct translation and the settings page says so
+- Hotkey still wins: it hides the ball and suppresses the watcher for 1.2 s, so the same selection is never translated twice
+- Verified: `cargo test` green in `translator-core` (61) and the client (15, incl. 4 new watcher tests), `node --check`, `json.tool`, `shared/sync-ui.sh --check`; Windows/macOS watchers staged (mouse hook + UIA / NSEvent + AX), manual X11 check pending

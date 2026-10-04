@@ -20,6 +20,12 @@
             <path d="M12 7v5l4 2" />
           </svg>
         </button>
+        <button id="open-settings" class="icon" title="设置（Ctrl+,）" aria-label="设置">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
         <button id="pin" class="icon" title="固定窗口（保持最前）" aria-label="固定窗口">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 17v5" />
@@ -122,6 +128,69 @@
           <span class="spacer"></span>
           <button id="settings-back">完成</button>
         </div>
+
+        <p class="group-title">划词翻译</p>
+        <div class="group" id="selection-group">
+          <div class="setting-row">
+            <span class="setting-name">
+              触发方式
+              <span
+                class="info"
+                role="img"
+                title="悬浮球：选中文字后出现小球，鼠标移上去开始翻译；直接翻译：选中文字后立即翻译。快捷键始终可用。"
+                aria-label="悬浮球：选中文字后出现小球，鼠标移上去开始翻译；直接翻译：选中文字后立即翻译。快捷键始终可用。"
+                >i</span
+              >
+            </span>
+            <div class="setting-control">
+              <select id="selection-mode" class="setting-select" title="划词触发方式">
+                <option value="off">关闭</option>
+                <option value="ball">悬浮球</option>
+                <option value="auto">直接翻译</option>
+              </select>
+              <span id="selection-saved" class="ok-text" hidden>已保存</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-name">最小字数</span>
+            <div class="setting-control">
+              <input
+                id="selection-min-length"
+                class="text-input selection-number"
+                type="number"
+                min="1"
+                max="50"
+                step="1"
+                inputmode="numeric"
+              />
+            </div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-name">
+              触发延迟
+              <span
+                class="info"
+                role="img"
+                title="选中后需要保持多久才触发，防止拖动选择时误翻译。"
+                aria-label="选中后需要保持多久才触发，防止拖动选择时误翻译。"
+                >i</span
+              >
+            </span>
+            <div class="setting-control">
+              <input
+                id="selection-delay"
+                class="text-input selection-number"
+                type="number"
+                min="100"
+                max="3000"
+                step="50"
+                inputmode="numeric"
+              />
+              <span class="dim-text">毫秒</span>
+            </div>
+          </div>
+        </div>
+        <p class="group-note" id="selection-note" hidden></p>
 
         <p class="group-title">常规</p>
         <div class="group">

@@ -515,6 +515,33 @@ button.icon.active {
   background: var(--ot-bg);
 }
 
+/* Fallback styling for the selection-mode select; OTSelect replaces it with a
+   chip button at runtime, matching the language dropdowns. */
+.setting-select {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ot-label);
+  background-color: var(--ot-fill);
+  border: none;
+  border-radius: var(--ot-radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.setting-select:hover {
+  background-color: var(--ot-fill-hover);
+}
+
+.selection-number {
+  flex: none;
+  width: 72px;
+  min-width: 0;
+  text-align: right;
+}
+
 .hotkey-recorder {
   flex: 1;
   min-width: 170px;

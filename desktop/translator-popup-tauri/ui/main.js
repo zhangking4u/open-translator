@@ -21,6 +21,14 @@ const speak = document.getElementById("speak");
 const pin = document.getElementById("pin");
 const close = document.getElementById("close");
 const dot = document.getElementById("dot");
+const selectionModeSelect = document.getElementById("selection-mode");
+const selectionMinLength = document.getElementById("selection-min-length");
+const selectionDelay = document.getElementById("selection-delay");
+const selectionSaved = document.getElementById("selection-saved");
+const selectionNote = document.getElementById("selection-note");
+const selectionGroup = document.getElementById("selection-group");
+let selectionModeValue = "off";
+let selectionBallSupported = true;
 
 const SPEECH_LANGS = {
   zh: "zh-CN",
@@ -102,6 +110,7 @@ async function initLanguages() {
     OTSelect.inject();
     OTSelect.enhance(sourceSelect, { title: "源语言" });
     OTSelect.enhance(targetSelect, { title: "目标语言" });
+    OTSelect.enhance(selectionModeSelect, { title: "划词触发方式" });
   }
 
   applyLanguageState(await invoke("get_language_state"));
@@ -241,6 +250,18 @@ function setCopyEnabled(enabled) {
   copy.disabled = !enabled;
 }
 
+function waitingHint() {
+  if (selectionModeValue === "ball" && selectionBallSupported) {
+    return "选中文字后移到小球上开始翻译";
+  }
+
+  if (selectionModeValue !== "off") {
+    return "选中文字即可翻译";
+  }
+
+  return "按 " + hotkeyLabel + " 翻译选中文本";
+}
+
 function showWaiting() {
   current = "";
   lastSource = "";
@@ -260,9 +281,9 @@ function showWaiting() {
       '<path d="m13 11 7 3-3 1-1 3z" />' +
       "</svg>" +
       '<p class="hint">等待划词</p>' +
-      '<p class="sub">按 ' +
-      hotkeyLabel +
-      " 翻译选中文本</p>" +
+      '<p class="sub">' +
+      waitingHint() +
+      "</p>" +
       "</div>"
   );
 }
@@ -391,6 +412,10 @@ close.addEventListener("click", () => {
 
 document.getElementById("open-history").addEventListener("click", () => {
   openHistory();
+});
+
+document.getElementById("open-settings").addEventListener("click", () => {
+  openSettings();
 });
 
 async function togglePin() {
@@ -857,6 +882,70 @@ function setSwitch(id, checked) {
   input.setAttribute("aria-checked", String(checked));
 }
 
+let selectionSavedTimer = null;
+
+function flashSelectionSaved() {
+  selectionSaved.hidden = false;
+  clearTimeout(selectionSavedTimer);
+  selectionSavedTimer = window.setTimeout(() => (selectionSaved.hidden = true), 1500);
+  resize();
+}
+
+function applySelectionSettings(settings) {
+  selectionModeValue = settings.selection_supported ? settings.selection_mode : "off";
+  selectionBallSupported = settings.selection_ball_supported;
+  selectionModeSelect.value = selectionModeValue;
+  selectionMinLength.value = settings.selection_min_length;
+  selectionDelay.value = settings.selection_delay_ms;
+  selectionGroup.hidden = !settings.selection_supported;
+
+  let note = "";
+
+  if (settings.selection_supported && !settings.selection_ball_supported) {
+    note =
+      "当前会话无法获取全局鼠标位置（Wayland）：悬浮球不可用，选择「悬浮球」时会直接翻译。";
+  }
+
+  selectionNote.textContent = note;
+  selectionNote.hidden = note.length === 0;
+
+  if (globalThis.OTSelect) {
+    OTSelect.sync(selectionModeSelect);
+  }
+}
+
+selectionModeSelect.addEventListener("change", async () => {
+  selectionModeValue = selectionModeSelect.value;
+
+  try {
+    await invoke("save_selection_mode", { mode: selectionModeValue });
+    flashSelectionSaved();
+  } catch (message) {
+    setStatus(String(message));
+    window.setTimeout(() => setStatus(""), 3000);
+  }
+
+  if (view === "translator" && !current && !streaming) {
+    showWaiting();
+  }
+});
+
+async function saveSelectionOptions() {
+  const minLength = Number(selectionMinLength.value) || 2;
+  const delayMs = Number(selectionDelay.value) || 400;
+
+  try {
+    await invoke("save_selection_options", { delayMs, minLength });
+    flashSelectionSaved();
+  } catch (message) {
+    setStatus(String(message));
+    window.setTimeout(() => setStatus(""), 3000);
+  }
+}
+
+selectionMinLength.addEventListener("change", saveSelectionOptions);
+selectionDelay.addEventListener("change", saveSelectionOptions);
+
 async function openSettings() {
   const settings = await invoke("get_settings");
 
@@ -871,6 +960,7 @@ async function openSettings() {
   setSwitch("switch-auto", settings.auto_download);
   setSwitch("switch-updates", settings.check_updates);
   setSwitch("switch-extension", settings.serve_extension);
+  applySelectionSettings(settings);
   document.getElementById("config-path").textContent = settings.config_path ?? "";
   appVersion.textContent = "当前版本 v" + settings.app_version;
 
@@ -1116,6 +1206,8 @@ initLanguages();
 
 invoke("get_settings").then((settings) => {
   hotkeyLabel = settings.hotkey || hotkeyLabel;
+  selectionModeValue = settings.selection_supported ? settings.selection_mode : "off";
+  selectionBallSupported = settings.selection_ball_supported;
 
   if (settings.pinned) {
     pinned = true;

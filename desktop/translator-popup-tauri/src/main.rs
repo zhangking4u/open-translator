@@ -2,18 +2,22 @@
 
 mod capture;
 mod notify;
+mod selection_watch;
 mod server;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use translator_core::update::ReleaseInfo;
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use translator_core::history::HistoryEntry;
 use translator_service::domain::prompt::PromptStyle;
@@ -71,11 +75,31 @@ struct AppState {
     /// state; an older timer must not cut a newer pulse short.
     pulse_generation: AtomicU64,
     replace_window: Mutex<Option<isize>>,
+    /// Live 划词 settings; updated by the settings commands and read by the
+    /// watcher on every poll.
+    selection: Mutex<selection_watch::SelectionSettings>,
+    /// A settled selection waiting for the floating ball to be hovered/clicked.
+    pending_selection: Mutex<Option<PendingSelection>>,
+    /// Bumped whenever the ball is shown/hidden so stale auto-hide timers do
+    /// nothing.
+    ball_generation: AtomicU64,
+    /// The watcher ignores selections until this instant after a hotkey
+    /// trigger (the hotkey captures the same selection itself).
+    suppress_until: Mutex<Option<Instant>>,
     /// X11 destroys the selection owner with the last clipboard instance, so
     /// Linux keeps one alive for the app lifetime; Windows/macOS own the
     /// clipboard in the OS and use a short-lived instance per call.
     #[cfg(target_os = "linux")]
     clipboard: Mutex<Option<arboard::Clipboard>>,
+}
+
+/// Text captured by the watcher in `ball` mode, kept until the user moves the
+/// mouse onto the ball (or clicks it).
+#[derive(Clone)]
+struct PendingSelection {
+    text: String,
+    /// Foreground window recorded at selection time, for replace-in-place.
+    window: Option<isize>,
 }
 
 #[derive(Clone)]
@@ -110,6 +134,11 @@ struct SettingsPayload {
     pinned: bool,
     config_path: Option<String>,
     app_version: String,
+    selection_mode: String,
+    selection_delay_ms: u64,
+    selection_min_length: usize,
+    selection_supported: bool,
+    selection_ball_supported: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -264,6 +293,10 @@ fn main() {
             pinned: Mutex::new(start_pinned),
             pulse_generation: AtomicU64::new(0),
             replace_window: Mutex::new(None),
+            selection: Mutex::new(selection_watch::SelectionSettings::from_config(&config)),
+            pending_selection: Mutex::new(None),
+            ball_generation: AtomicU64::new(0),
+            suppress_until: Mutex::new(None),
             #[cfg(target_os = "linux")]
             clipboard: Mutex::new(None),
         })
@@ -303,6 +336,10 @@ fn main() {
             speak_text,
             stop_speaking,
             retranslate,
+            ball_hover,
+            ball_click,
+            save_selection_mode,
+            save_selection_options,
             get_settings,
             save_hotkey,
             save_model_path,
@@ -329,6 +366,12 @@ fn main() {
             let handle = app.handle().clone();
 
             build_tray(&handle, &hotkey_spec)?;
+
+            if let Err(error) = build_ball_window(&handle) {
+                eprintln!("failed to create the selection ball window: {error}");
+            }
+
+            selection_watch::spawn(handle.clone());
 
             if start_pinned {
                 if let Some(window) = app.get_webview_window("main") {
@@ -590,6 +633,11 @@ fn fail_model(app: &AppHandle, message: String) {
 }
 
 fn trigger_translation(app: &AppHandle) {
+    // The hotkey captures the selection itself; drop a pending ball and keep
+    // the watcher quiet so the same selection is not translated twice.
+    hide_ball(app);
+    mark_suppressed(app, Duration::from_millis(1200));
+
     let app = app.clone();
     std::thread::spawn(move || {
         // Capture before showing the window: the synthesized Ctrl+C must go to
@@ -615,6 +663,124 @@ fn trigger_translation(app: &AppHandle) {
             }
         }
     });
+}
+
+/// The ball stays visible for a while after a selection; ignore any timer that
+/// belongs to a superseded show.
+const BALL_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn mark_suppressed(app: &AppHandle, duration: Duration) {
+    *app.state::<AppState>().suppress_until.lock().unwrap() = Some(Instant::now() + duration);
+}
+
+fn hide_ball(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    state.ball_generation.fetch_add(1, Ordering::SeqCst);
+    *state.pending_selection.lock().unwrap() = None;
+
+    if let Some(ball) = app.get_webview_window("ball") {
+        let _ = ball.hide();
+    }
+}
+
+fn show_ball(app: &AppHandle, text: String, anchor: (i32, i32), window: Option<isize>) {
+    let state = app.state::<AppState>();
+    let generation = state.ball_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    *state.pending_selection.lock().unwrap() = Some(PendingSelection { text, window });
+    drop(state);
+
+    place_ball_window(app, anchor);
+
+    if let Some(ball) = app.get_webview_window("ball") {
+        let _ = ball.show();
+    }
+
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(BALL_TIMEOUT);
+
+        let state = handle.state::<AppState>();
+
+        if state.ball_generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
+
+        state.ball_generation.fetch_add(1, Ordering::SeqCst);
+        *state.pending_selection.lock().unwrap() = None;
+
+        if let Some(ball) = handle.get_webview_window("ball") {
+            let _ = ball.hide();
+        }
+    });
+}
+
+/// The user moved onto (or clicked) the ball: this is the commit point, so the
+/// pending selection is translated and the card opens near the cursor (which is
+/// on the ball, i.e. next to the selection).
+fn hover_ball(app: &AppHandle) {
+    let pending = app
+        .state::<AppState>()
+        .pending_selection
+        .lock()
+        .unwrap()
+        .take();
+
+    hide_ball(app);
+
+    let Some(pending) = pending else {
+        return;
+    };
+
+    *app.state::<AppState>().replace_window.lock().unwrap() = pending.window;
+    mark_suppressed(app, Duration::from_millis(1200));
+    show_main(app);
+    translate_text(app, pending.text);
+}
+
+fn place_ball_window(app: &AppHandle, anchor: (i32, i32)) {
+    let Some(ball) = app.get_webview_window("ball") else {
+        return;
+    };
+
+    let Ok(size) = ball.outer_size().or_else(|_| ball.inner_size()) else {
+        return;
+    };
+
+    let Some(monitor) = monitor_at(app, anchor).or_else(|| ball.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+
+    let work = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let margin = (12.0 * scale) as i32;
+    let offset = (14.0 * scale) as i32;
+
+    let (x, y) = card_position(
+        anchor,
+        (size.width as i32, size.height as i32),
+        WorkArea {
+            x: work.position.x,
+            y: work.position.y,
+            width: work.size.width,
+            height: work.size.height,
+        },
+        margin,
+        offset,
+    );
+
+    let _ = ball.set_position(PhysicalPosition::new(x, y));
+}
+
+fn monitor_at(app: &AppHandle, point: (i32, i32)) -> Option<tauri::Monitor> {
+    app.available_monitors().ok()?.into_iter().find(|monitor| {
+        let position = monitor.position();
+        let size = monitor.size();
+        let x = point.0 >= position.x && point.0 < position.x + size.width as i32;
+        let y = point.1 >= position.y && point.1 < position.y + size.height as i32;
+
+        x && y
+    })
 }
 
 fn translate_text(app: &AppHandle, text: String) {
@@ -871,6 +1037,25 @@ fn card_position(
     )
 }
 
+/// The floating ball is a hidden always-on-top window without decorations,
+/// taskbar entry or focus; it is only mapped while a selection is pending.
+fn build_ball_window(app: &AppHandle) -> tauri::Result<()> {
+    WebviewWindowBuilder::new(app, "ball", WebviewUrl::App("ball.html".into()))
+        .title("OpenTranslator")
+        .inner_size(44.0, 44.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .focused(false)
+        .shadow(false)
+        .visible(false)
+        .build()?;
+
+    Ok(())
+}
+
 fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
@@ -958,6 +1143,52 @@ fn hide_window(app: AppHandle, window: WebviewWindow) {
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
+}
+
+/// Called by `ball.js` when the mouse dwells on the ball.
+#[tauri::command]
+fn ball_hover(app: AppHandle) {
+    hover_ball(&app);
+}
+
+/// Called by `ball.js` on a direct click (the dwell timer may not have fired).
+#[tauri::command]
+fn ball_click(app: AppHandle) {
+    hover_ball(&app);
+}
+
+#[tauri::command]
+fn save_selection_mode(app: AppHandle, mode: String) -> Result<(), String> {
+    let parsed = match mode.trim() {
+        "off" => selection_watch::SelectionMode::Off,
+        "ball" => selection_watch::SelectionMode::Ball,
+        "auto" => selection_watch::SelectionMode::Auto,
+        other => return Err(format!("unknown selection mode: {other}")),
+    };
+
+    app.state::<AppState>().selection.lock().unwrap().mode = parsed;
+    translator_core::settings::persist_value("selection_mode", parsed.as_str());
+    hide_ball(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn save_selection_options(app: AppHandle, delay_ms: u64, min_length: usize) {
+    let delay_ms = delay_ms.clamp(
+        selection_watch::MIN_DELAY_MS,
+        selection_watch::MAX_DELAY_MS,
+    );
+    let min_length = min_length.clamp(selection_watch::MIN_LENGTH, selection_watch::MAX_LENGTH);
+
+    {
+        let state = app.state::<AppState>();
+        let mut selection = state.selection.lock().unwrap();
+        selection.delay = Duration::from_millis(delay_ms);
+        selection.min_length = min_length;
+    }
+
+    translator_core::settings::persist_value("selection_delay", &delay_ms.to_string());
+    translator_core::settings::persist_value("selection_min_length", &min_length.to_string());
 }
 
 #[tauri::command]
@@ -1232,6 +1463,7 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
         .unwrap()
         .hotkey_label
         .clone();
+    let selection = *app.state::<AppState>().selection.lock().unwrap();
 
     SettingsPayload {
         hotkey,
@@ -1243,6 +1475,11 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
         config_path: translator_core::paths::config_path()
             .map(|path| path.to_string_lossy().to_string()),
         app_version: translator_core::update::current_version().to_string(),
+        selection_mode: selection.mode.as_str().to_string(),
+        selection_delay_ms: selection.delay_ms(),
+        selection_min_length: selection.min_length,
+        selection_supported: selection_watch::selection_supported(),
+        selection_ball_supported: selection_watch::ball_supported(),
     }
 }
 

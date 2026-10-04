@@ -199,6 +199,15 @@ Translation should work without external services whenever possible.
 Core logic should remain platform independent.
 
 
+## Selection Translation
+
+The desktop client translates the user's selection in three ways: the global hotkey (always available), a floating ball that appears next to the selection and translates on hover/click, and a direct mode that opens the card after the selection settles (`selection_mode = off | ball | auto` in `docs/SELECTION_TRANSLATION.md`).
+
+- The watcher is deliberately local-first and side-effect free: on Linux it only reads the PRIMARY selection (X11 direct or `wl-paste`), never writes the clipboard and never synthesizes keys; Windows/macOS phases use UI Automation / AX reads first and keep the existing capture fallback for drags.
+- The floating ball is its own hidden, undecorated, always-on-top, non-focusable window (`ui/ball.*`) so committing to a translation never steals focus from the source application; the card only opens on the commit.
+- Platform honesty over fake features: native Wayland offers no global pointer coordinates, so `ball` degrades to `auto` there and the settings page says so; the watcher only starts on platforms where it works.
+
+
 ## UI Design Language
 
 All user-facing surfaces (desktop client, browser-extension bubbles and pages) follow one Apple-flavoured visual language, so the product reads as a single native-feeling app on every platform. The tokens below are the contract; components across the repo mirror each other instead of re-inventing local styles.
