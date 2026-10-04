@@ -147,6 +147,7 @@ struct LanguageState {
 struct SettingsPayload {
     hotkey: String,
     model_path: String,
+    default_model_path: String,
     auto_download: bool,
     check_updates: bool,
     serve_extension: bool,
@@ -159,9 +160,6 @@ struct SettingsPayload {
     selection_supported: bool,
     selection_ball_supported: bool,
     selection_auto_supported: bool,
-    ball_docked: bool,
-    ball_visibility: String,
-    ball_custom_position: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -375,16 +373,14 @@ fn main() {
             ball_click,
             card_engaged,
             save_selection_mode,
-            save_selection_options,
-            save_ball_visibility,
             move_ball_by,
             save_ball_position,
-            reset_ball_position,
             get_settings,
             save_hotkey,
             save_model_path,
             save_switch,
             open_config_dir,
+            open_model_location,
             get_history,
             load_history_entry,
             clear_history,
@@ -831,6 +827,30 @@ fn apply_ball_visibility(app: &AppHandle) {
     }
 }
 
+/// Default dock on a given monitor: right edge, vertically centered.
+#[cfg(target_os = "linux")]
+fn default_ball_on(monitor: &tauri::Monitor) -> (i32, i32) {
+    let scale = monitor.scale_factor();
+    let edge = (44.0 * scale).round() as i32;
+    let margin = (8.0 * scale) as i32;
+    let work = monitor.work_area();
+
+    (
+        work.position.x + work.size.width as i32 - edge - margin,
+        work.position.y + (work.size.height as i32 - edge) / 2,
+    )
+}
+
+/// The default dock position: right edge, vertically centered on the primary
+/// monitor. Dragging the ball back near this point resets the custom position.
+#[cfg(target_os = "linux")]
+fn default_ball_position(ball: &WebviewWindow) -> Option<(i32, i32)> {
+    ball.primary_monitor()
+        .ok()
+        .flatten()
+        .map(|monitor| default_ball_on(&monitor))
+}
+
 /// Places the docked ball at its configured (or default) position, clamped to
 /// the monitor work area so a monitor change cannot lose it off-screen. The
 /// ball is a fixed 44-logical-pixel square, so the geometry does not depend on
@@ -852,7 +872,6 @@ fn place_docked_ball(app: &AppHandle) {
 
     let scale = monitor.scale_factor();
     let edge = (44.0 * scale).round() as i32;
-    let margin = (8.0 * scale) as i32;
     let inset = (4.0 * scale) as i32;
     let work = monitor.work_area();
 
@@ -869,10 +888,7 @@ fn place_docked_ball(app: &AppHandle) {
         );
 
     let (mut x, mut y) = custom.unwrap_or_else(|| {
-        (
-            work.position.x + work.size.width as i32 - edge - margin,
-            work.position.y + (work.size.height as i32 - edge) / 2,
-        )
+        default_ball_position(&ball).unwrap_or_else(|| default_ball_on(&monitor))
     });
 
     let min_x = work.position.x + inset;
@@ -1798,17 +1814,6 @@ fn save_selection_mode(app: AppHandle, mode: String) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn save_ball_visibility(app: AppHandle, value: String) -> Result<(), String> {
-    let visibility = selection_watch::BallVisibility::parse(Some(&value))
-        .ok_or_else(|| format!("unknown ball visibility: {value}"))?;
-
-    app.state::<AppState>().selection.lock().unwrap().ball_visibility = visibility;
-    translator_core::settings::persist_value("ball_visibility", visibility.as_str());
-    apply_ball_visibility(&app);
-    Ok(())
-}
-
 /// Live drag of the docked ball (deltas in logical pixels from `ball.js`).
 #[tauri::command]
 fn move_ball_by(app: AppHandle, dx: f64, dy: f64) {
@@ -1845,7 +1850,9 @@ fn move_ball_by(app: AppHandle, dx: f64, dy: f64) {
     let _ = ball.set_position(PhysicalPosition::new(x, y));
 }
 
-/// Persists the docked ball position after a drag.
+/// Persists the docked ball position after a drag. Dropping the ball near its
+/// default dock resets the custom position instead of saving it, so no
+/// "restore default" control is needed in the settings.
 #[tauri::command]
 fn save_ball_position(app: AppHandle) {
     let Some(ball) = app.get_webview_window("ball") else {
@@ -1856,36 +1863,25 @@ fn save_ball_position(app: AppHandle) {
         return;
     };
 
+    #[cfg(target_os = "linux")]
+    {
+        let scale = ball.scale_factor().unwrap_or(1.0);
+        let snap = (48.0 * scale).round() as i32;
+
+        if let Some((default_x, default_y)) = default_ball_position(&ball) {
+            if (position.x - default_x).abs() <= snap && (position.y - default_y).abs() <= snap {
+                translator_core::settings::persist_remove("ball_x");
+                translator_core::settings::persist_remove("ball_y");
+                let _ = ball.set_position(PhysicalPosition::new(default_x, default_y));
+                apply_ball_visibility(&app);
+                return;
+            }
+        }
+    }
+
     translator_core::settings::persist_value("ball_x", &position.x.to_string());
     translator_core::settings::persist_value("ball_y", &position.y.to_string());
     apply_ball_visibility(&app);
-}
-
-/// Returns the docked ball to the default right-edge-center position.
-#[tauri::command]
-fn reset_ball_position(app: AppHandle) {
-    translator_core::settings::persist_remove("ball_x");
-    translator_core::settings::persist_remove("ball_y");
-    apply_ball_visibility(&app);
-}
-
-#[tauri::command]
-fn save_selection_options(app: AppHandle, delay_ms: u64, min_length: usize) {
-    let delay_ms = delay_ms.clamp(
-        selection_watch::MIN_DELAY_MS,
-        selection_watch::MAX_DELAY_MS,
-    );
-    let min_length = min_length.clamp(selection_watch::MIN_LENGTH, selection_watch::MAX_LENGTH);
-
-    {
-        let state = app.state::<AppState>();
-        let mut selection = state.selection.lock().unwrap();
-        selection.delay = Duration::from_millis(delay_ms);
-        selection.min_length = min_length;
-    }
-
-    translator_core::settings::persist_value("selection_delay", &delay_ms.to_string());
-    translator_core::settings::persist_value("selection_min_length", &min_length.to_string());
 }
 
 #[tauri::command]
@@ -2165,6 +2161,9 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
     SettingsPayload {
         hotkey,
         model_path: config.model_path.unwrap_or_default(),
+        default_model_path: translator_core::paths::default_model_path()
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default(),
         auto_download: config.auto_download.as_deref() != Some("false"),
         check_updates: config.check_updates.as_deref() != Some("false"),
         serve_extension: config.serve_extension.as_deref() != Some("false"),
@@ -2178,9 +2177,6 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
         selection_supported: selection_watch::selection_supported(),
         selection_ball_supported: selection_watch::ball_supported(),
         selection_auto_supported: selection_watch::auto_supported(),
-        ball_docked: selection_watch::ball_docked(),
-        ball_visibility: selection.ball_visibility.as_str().to_string(),
-        ball_custom_position: config.ball_x.is_some() || config.ball_y.is_some(),
     }
 }
 
@@ -2236,6 +2232,31 @@ fn open_config_dir() {
     {
         open_path(&dir);
     }
+}
+
+/// Opens the directory that holds the active model file (or the default model
+/// directory when none is configured/downloaded yet).
+#[tauri::command]
+fn open_model_location() {
+    let config = translator_core::settings::load_config();
+    let models_dir = translator_core::paths::models_dir();
+
+    let target = config
+        .model_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.exists())
+        .and_then(|path| path.parent().map(|dir| dir.to_path_buf()))
+        .or_else(|| models_dir.filter(|dir| dir.exists()));
+
+    if let Some(dir) = target {
+        open_path(&dir);
+        return;
+    }
+
+    open_config_dir();
 }
 
 fn open_path(path: &std::path::Path) {
@@ -2510,7 +2531,13 @@ fn resolve_model_path(config: &translator_core::settings::FileConfig) -> Result<
     }
 
     if let Some(value) = &config.model_path {
-        return Ok(PathBuf::from(value));
+        let value = value.trim();
+
+        // Empty means "use the default location" (the settings input clears to
+        // this instead of pinning an empty path, which cannot be loaded).
+        if !value.is_empty() {
+            return Ok(PathBuf::from(value));
+        }
     }
 
     translator_core::paths::default_model_path()

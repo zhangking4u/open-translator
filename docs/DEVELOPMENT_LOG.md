@@ -1885,6 +1885,19 @@ Released:
 - Verified: `cargo test --locked` green in both crates (core 63, client 16), release build clean, manual pass on GNOME Wayland for docked ball + hover + settings + history; Windows/macOS/X11 checks still pending
 
 
+## Settings Page: First-Principles Simplification (2026-10-04)
+
+
+- Rethought the settings page from its purpose: a row exists only when users materially differ and the product cannot infer the answer; everything else is a default (or a config-file key), direct manipulation, or read-only status. The earlier "advanced disclosure" was removed as a patch for wrong defaults
+- 划词翻译 is now two rows: 选中文字后 (不自动翻译/悬浮球翻译/立即翻译, segmented) and 按快捷键翻译 (hotkey). The 悬浮球显示, 最小字数, 触发延迟, 自动下载模型 and ball position/reset rows are gone from the UI — the first three stay config-file keys (`ball_visibility`, `selection_min_length`, `selection_delay`) and the position reset became direct manipulation: dropping the ball within 48 px of its default dock removes `ball_x`/`ball_y`
+- 常规 keeps 检查更新 + 浏览器扩展服务; version/update controls, model path and config directory moved into a collapsed 关于 block (status, not decisions). Removed the now-unused `save_ball_visibility`, `save_selection_options` and `reset_ball_position` commands and the dead settings-payload fields
+- New desktop `ui/segmented.js` renders the short mode select as a segmented control (a hidden native select stays the source of truth)
+- Polish from the same review: all value controls right-align (the hotkey recorder previously stretched with `flex: 1`, so the keys sat next to the label); the model row gained an open-location button (`open_model_location` opens the configured model's directory, falling back to the default models directory or the config directory)
+- Model-path semantics fixed while polishing: the "留空使用默认位置" placeholder was a lie — `resolve_model_path` used a saved empty value as a real (unloadable) path. Blank config values now fall back to the default model, `get_settings` exposes `default_model_path`, and the input always shows the effective path (with a 使用默认 button when a custom path is set); clearing the field or typing the default persists an empty value, so the config keeps falling back
+- Wording pass on the 翻译 group: the mode options are now parallel descriptions of what happens after a selection (不自动翻译/悬浮球翻译/立即翻译) and the hotkey row reads 按快捷键翻译 (tooltip: press it after selecting to translate), aligned with the extension's 划词自动翻译 wording; each segment carries its own hover hint (off: "选中文字后不自动翻译；仍可按快捷键翻译", ball: "选中文字后，把鼠标移到悬浮球上悬停即可翻译", auto: "选中文字后立即翻译"), copied from the option `title` by `ui/segmented.js`
+- Verified with a headless-Chrome harness against the real settings page plus a stubbed Tauri bridge (Linux 2-segment and Windows/macOS-style 3-segment layouts, About expand/collapse, right-aligned values, the model button invoking `open_model_location`, no removed elements, no JS errors); release build and tests green
+
+
 ---
 
 

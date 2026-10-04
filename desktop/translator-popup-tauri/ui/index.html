@@ -129,112 +129,28 @@
           <button id="settings-back">完成</button>
         </div>
 
-        <p class="group-title">划词翻译</p>
+        <p class="group-title">翻译</p>
         <div class="group" id="selection-group">
           <div class="setting-row">
-            <span class="setting-name">
-              触发方式
-              <span
-                class="info"
-                role="img"
-                title="悬浮球：选中文字后出现小球，鼠标移上去开始翻译；直接翻译：选中文字后立即翻译。快捷键始终可用。"
-                aria-label="悬浮球：选中文字后出现小球，鼠标移上去开始翻译；直接翻译：选中文字后立即翻译。快捷键始终可用。"
-                >i</span
-              >
-            </span>
+            <span class="setting-name">选中文字后</span>
             <div class="setting-control">
-              <select id="selection-mode" class="setting-select" title="划词触发方式">
-                <option value="off">关闭</option>
-                <option value="ball">悬浮球</option>
-                <option value="auto">直接翻译</option>
+              <select id="selection-mode" class="setting-select" title="选中文字后">
+                <option value="off" title="选中文字后不自动翻译；仍可按快捷键翻译。">不自动翻译</option>
+                <option value="ball" title="选中文字后，把鼠标移到悬浮球上悬停即可翻译。">悬浮球翻译</option>
+                <option value="auto" title="选中文字后立即翻译。">立即翻译</option>
               </select>
               <span id="selection-saved" class="ok-text" hidden>已保存</span>
             </div>
           </div>
-          <div class="setting-row" id="ball-visibility-row">
-            <span class="setting-name">悬浮球显示</span>
-            <div class="setting-control">
-              <select id="ball-visibility" class="setting-select" title="悬浮球显示方式">
-                <option value="always">一直显示</option>
-                <option value="selection">选中后显示</option>
-              </select>
-            </div>
-          </div>
-          <div class="setting-row" id="ball-position-row">
-            <span class="setting-name">
-              悬浮球位置
-              <span
-                class="info"
-                role="img"
-                title="按住悬浮球拖动即可调整停靠位置，松开后自动保存。"
-                aria-label="按住悬浮球拖动即可调整停靠位置，松开后自动保存。"
-                >i</span
-              >
-            </span>
-            <div class="setting-control">
-              <button id="reset-ball-position">恢复默认</button>
-            </div>
-          </div>
           <div class="setting-row">
-            <span class="setting-name">最小字数</span>
-            <div class="setting-control">
-              <input
-                id="selection-min-length"
-                class="text-input selection-number"
-                type="number"
-                min="1"
-                max="50"
-                step="1"
-                inputmode="numeric"
-              />
-            </div>
-          </div>
-          <div class="setting-row">
-            <span class="setting-name">
-              触发延迟
-              <span
-                class="info"
-                role="img"
-                title="选中后需要保持多久才触发，防止拖动选择时误翻译。"
-                aria-label="选中后需要保持多久才触发，防止拖动选择时误翻译。"
-                >i</span
-              >
-            </span>
-            <div class="setting-control">
-              <input
-                id="selection-delay"
-                class="text-input selection-number"
-                type="number"
-                min="100"
-                max="3000"
-                step="50"
-                inputmode="numeric"
-              />
-              <span class="dim-text">毫秒</span>
-            </div>
-          </div>
-        </div>
-        <p class="group-note" id="selection-note" hidden></p>
-
-        <p class="group-title">常规</p>
-        <div class="group">
-          <div class="setting-row">
-            <span class="setting-name">
-              快捷键
-              <span
-                class="info"
-                role="img"
-                title="点击后按下新组合键并再次确认即可应用，Esc 取消；需要 Ctrl/Alt/Super；被占用时保留原快捷键。"
-                aria-label="点击后按下新组合键并再次确认即可应用，Esc 取消；需要 Ctrl/Alt/Super；被占用时保留原快捷键。"
-                >i</span
-              >
-            </span>
+            <span class="setting-name">按快捷键翻译</span>
             <div class="setting-control">
               <button
                 id="hotkey-recorder"
                 class="hotkey-recorder"
                 type="button"
                 aria-label="录制快捷键"
+                title="选中文字后按下此快捷键即可翻译。点击可重新录制：按下新组合键并再次确认即可应用，Esc 取消；需要 Ctrl/Alt/Super；被占用时保留原快捷键。"
               ></button>
               <button
                 id="hotkey-reset"
@@ -249,46 +165,20 @@
           </div>
         </div>
 
-        <p class="group-title">模型</p>
+        <p class="group-title">常规</p>
         <div class="group">
-          <div class="setting-row">
-            <span class="setting-name">
-              模型路径
-              <span
-                class="info"
-                role="img"
-                title="目标文件不存在且开启自动下载时，会下载默认模型到该路径。"
-                aria-label="目标文件不存在且开启自动下载时，会下载默认模型到该路径。"
-                >i</span
-              >
-            </span>
-            <div class="setting-control">
-              <input
-                id="model-input"
-                class="text-input"
-                placeholder="留空使用默认位置"
-                spellcheck="false"
-              />
-              <span id="model-saved" class="ok-text" hidden>已保存</span>
-            </div>
-          </div>
           <label class="setting-row switch-row">
-            <span class="setting-name">自动下载模型</span>
+            <span class="setting-name">检查更新</span>
             <input
               type="checkbox"
-              id="switch-auto"
+              id="switch-updates"
               class="switch"
               role="switch"
               aria-checked="false"
             />
           </label>
-        </div>
-        <p class="group-note">模型文件（.gguf）的完整路径；留空使用默认位置，修改后下次启动生效。</p>
-
-        <p class="group-title">服务</p>
-        <div class="group">
           <label class="setting-row switch-row">
-            <span class="setting-name">提供浏览器扩展接口</span>
+            <span class="setting-name">浏览器扩展服务</span>
             <input
               type="checkbox"
               id="switch-extension"
@@ -297,7 +187,57 @@
               aria-checked="false"
             />
           </label>
-          <button id="open-config" class="setting-row nav-row" type="button">
+        </div>
+
+        <button
+          id="about-toggle"
+          class="group-title group-title-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="about-version-row about-model-row open-config"
+          title="展开或收起关于信息"
+        >
+          关于
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 6.25 8 10.25 12 6.25" />
+          </svg>
+        </button>
+        <div class="group" id="about-group">
+          <div class="setting-row" id="about-version-row" hidden>
+            <span class="setting-name"><span id="app-version" class="update-version"></span></span>
+            <div class="setting-control">
+              <button id="update-notes" hidden>更新说明</button>
+              <button id="update-check">检查更新</button>
+              <button id="update-action" class="primary" hidden>更新</button>
+            </div>
+          </div>
+          <p id="update-status" class="update-status" hidden></p>
+          <progress id="update-progress" max="100" value="0" hidden></progress>
+          <div class="setting-row" id="about-model-row" hidden>
+            <span class="setting-name">模型文件</span>
+            <div class="setting-control">
+              <input
+                id="model-input"
+                class="text-input"
+                placeholder="本地 .gguf 文件路径"
+                spellcheck="false"
+              />
+              <button
+                id="open-model"
+                class="icon-button"
+                type="button"
+                title="打开模型文件所在位置"
+                aria-label="打开模型文件所在位置"
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2h9A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" />
+                </svg>
+              </button>
+              <button id="model-reset" hidden title="使用默认模型位置">使用默认</button>
+              <span id="model-saved" class="ok-text" hidden>已保存</span>
+            </div>
+          </div>
+          <button id="open-config" class="setting-row nav-row" type="button" hidden>
             <span class="setting-name">配置目录</span>
             <span class="nav-value">
               <span id="config-path" class="dim-text path-text"></span>
@@ -317,30 +257,6 @@
               </svg>
             </span>
           </button>
-        </div>
-
-        <p class="group-title">更新</p>
-        <div class="group">
-          <label class="setting-row switch-row">
-            <span class="setting-name">启动时检查更新</span>
-            <input
-              type="checkbox"
-              id="switch-updates"
-              class="switch"
-              role="switch"
-              aria-checked="false"
-            />
-          </label>
-          <div class="setting-row">
-            <span class="setting-name"><span id="app-version" class="update-version"></span></span>
-            <div class="setting-control">
-              <button id="update-notes" hidden>更新说明</button>
-              <button id="update-check">检查更新</button>
-              <button id="update-action" class="primary" hidden>更新</button>
-            </div>
-          </div>
-          <p id="update-status" class="update-status" hidden></p>
-          <progress id="update-progress" max="100" value="0" hidden></progress>
         </div>
       </div>
 
@@ -400,6 +316,7 @@
       </div>
     </main>
     <script src="dropdown.js"></script>
+    <script src="segmented.js"></script>
     <script src="main.js"></script>
   </body>
 </html>

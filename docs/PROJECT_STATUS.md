@@ -770,3 +770,12 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Root cause of the drag interruption confirmed by A/B testing: the 400 ms `wl-paste` PRIMARY polling. The watcher now uses XFixes selection-owner events (GNOME mirrors every Wayland selection update to X11) and reads PRIMARY exactly once after the selection has been quiet; no X display falls back to slow polling. The docked ball's 200x200 GTK default-size lock was fixed (44x44 enforced before first show), idle ticks no longer touch the ball window, the ball dims again after a translation, a hover commit reads the current selection on the spot, and the card raises itself after every commit
 - AT-SPI typing filter (`atspi` 0.30): focused text objects are checked for a real selection so caret-only updates keep the ball dim where the toolkit exposes text events; Electron/VS Code with accessibility off emits no text events and keeps the fallback (known limitation, documented)
 - Manual pass on GNOME Wayland: docked ball, hover translation, settings and history behave; Windows/macOS/X11 real-machine checks remain pending
+
+
+## Settings Page — First-Principles Simplification (2026-10-04)
+
+
+- The settings page now follows "a row exists only when users materially differ and the product cannot infer the answer": 选中文字后 (segmented: 不自动翻译/悬浮球翻译/立即翻译) + 按快捷键翻译, two system switches, and a collapsed 关于 block (version/update/model/config). `selection_delay`, `selection_min_length` and `ball_visibility` are config-file-only; the ball position resets by dropping the ball near its default dock (48 px snap)
+- Removed the 悬浮球显示/最小字数/触发延迟/自动下载模型/位置 rows and their commands (`save_ball_visibility`, `save_selection_options`, `reset_ball_position`); added `ui/segmented.js` for short mode selects
+- Polish: values right-align in their rows (the hotkey recorder no longer stretches), the model row opens its location in the file manager (`open_model_location`), and the model input shows the effective path (blank config now falls back to the default model; 使用默认 resets a custom path)
+- Verified with a headless-Chrome harness against the real page (both platform layouts, About expand/collapse, no JS errors) plus a green release build

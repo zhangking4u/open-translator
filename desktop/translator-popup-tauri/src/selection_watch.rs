@@ -81,12 +81,6 @@ impl BallVisibility {
         }
     }
 
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Always => "always",
-            Self::Selection => "selection",
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]

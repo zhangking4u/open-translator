@@ -22,15 +22,16 @@ const pin = document.getElementById("pin");
 const close = document.getElementById("close");
 const dot = document.getElementById("dot");
 const selectionModeSelect = document.getElementById("selection-mode");
-const selectionMinLength = document.getElementById("selection-min-length");
-const selectionDelay = document.getElementById("selection-delay");
 const selectionSaved = document.getElementById("selection-saved");
-const selectionNote = document.getElementById("selection-note");
 const selectionGroup = document.getElementById("selection-group");
-const ballVisibilitySelect = document.getElementById("ball-visibility");
-const ballVisibilityRow = document.getElementById("ball-visibility-row");
-const ballPositionRow = document.getElementById("ball-position-row");
-const resetBallPosition = document.getElementById("reset-ball-position");
+const aboutToggle = document.getElementById("about-toggle");
+const aboutRows = [
+  document.getElementById("about-version-row"),
+  document.getElementById("about-model-row"),
+  document.getElementById("open-config"),
+];
+let selectionModeControl = null;
+let aboutExpanded = false;
 let selectionModeValue = "off";
 let selectionBallSupported = true;
 
@@ -114,11 +115,16 @@ async function initLanguages() {
 
   if (globalThis.OTSelect) {
     OTSelect.inject();
-    removeUnsupportedSelectionOptions(settings);
     OTSelect.enhance(sourceSelect, { title: "源语言" });
     OTSelect.enhance(targetSelect, { title: "目标语言" });
-    OTSelect.enhance(selectionModeSelect, { title: "划词触发方式" });
-    OTSelect.enhance(ballVisibilitySelect, { title: "悬浮球显示方式" });
+  }
+
+  // Short mode choices read better as segmented controls than as dropdowns.
+  // The option removal must happen before the segments are built.
+  removeUnsupportedSelectionOptions(settings);
+
+  if (globalThis.OTSegmented) {
+    selectionModeControl = OTSegmented.enhance(selectionModeSelect, { title: "选中文字后" });
   }
 
   applyLanguageState(await invoke("get_language_state"));
@@ -130,7 +136,7 @@ async function initLanguages() {
   resize();
 }
 
-// "直接翻译" is not offered where the watcher has no mouse-release signal
+// "立即翻译" is not offered where the watcher has no mouse-release signal
 // (Linux); the option must go before OTSelect builds its menu items.
 function removeUnsupportedSelectionOptions(settings) {
   if (!settings || settings.selection_auto_supported) {
@@ -706,19 +712,42 @@ document.getElementById("open-config").addEventListener("click", () => {
 });
 
 const modelInput = document.getElementById("model-input");
+const modelReset = document.getElementById("model-reset");
 let savedModelPath = "";
+let defaultModelPath = "";
 
+// The input always shows the effective path. An empty value (or the default
+// path itself) means "use the default location" and is persisted as empty, so
+// the config keeps falling back to the default model.
 async function saveModelPath() {
-  const value = modelInput.value;
-  if (value === savedModelPath) return;
+  const value = modelInput.value.trim();
+  const useDefault = value === "" || value === defaultModelPath;
+  const effective = useDefault ? defaultModelPath : value;
+
+  if (effective === savedModelPath) {
+    modelInput.value = effective;
+    return;
+  }
+
+  await invoke("save_model_path", { value: useDefault ? "" : value });
+  savedModelPath = effective;
+  modelInput.value = effective;
+  modelReset.hidden = useDefault;
 
   const saved = document.getElementById("model-saved");
-  await invoke("save_model_path", { value });
-  savedModelPath = value;
   saved.hidden = false;
   window.setTimeout(() => (saved.hidden = true), 1500);
   resize();
 }
+
+modelReset.addEventListener("click", async () => {
+  modelInput.value = defaultModelPath;
+  await saveModelPath();
+});
+
+document.getElementById("open-model").addEventListener("click", () => {
+  invoke("open_model_location");
+});
 
 modelInput.addEventListener("blur", saveModelPath);
 modelInput.addEventListener("keydown", (event) => {
@@ -907,7 +936,6 @@ hotkeyReset.addEventListener("click", () => {
 });
 
 for (const [id, key] of [
-  ["switch-auto", "auto_download"],
   ["switch-updates", "check_updates"],
   ["switch-extension", "serve_extension"],
 ]) {
@@ -932,30 +960,47 @@ function flashSelectionSaved() {
   resize();
 }
 
+// The About block is collapsed by default: its rows are status/diagnostics,
+// not decisions.
+function applyAboutState() {
+  aboutToggle.setAttribute("aria-expanded", String(aboutExpanded));
+
+  for (const row of aboutRows) {
+    row.hidden = !aboutExpanded;
+  }
+
+  if (aboutExpanded) {
+    renderUpdate();
+  } else {
+    updateStatus.hidden = true;
+    updateProgress.hidden = true;
+  }
+}
+
+function toggleAbout() {
+  aboutExpanded = !aboutExpanded;
+  applyAboutState();
+  resize();
+}
+
+aboutToggle.addEventListener("click", toggleAbout);
+
 function applySelectionSettings(settings) {
   selectionModeValue = settings.selection_supported ? settings.selection_mode : "off";
+
+  // The backend clamps `auto` to `ball` where it is not supported; guard here
+  // too so the select can never hold a value without a matching option.
+  if (!settings.selection_auto_supported && selectionModeValue === "auto") {
+    selectionModeValue = "ball";
+  }
+
   selectionBallSupported = settings.selection_ball_supported;
   removeUnsupportedSelectionOptions(settings);
   selectionModeSelect.value = selectionModeValue;
-  selectionMinLength.value = settings.selection_min_length;
-  selectionDelay.value = settings.selection_delay_ms;
   selectionGroup.hidden = !settings.selection_supported;
 
-  ballVisibilitySelect.value = settings.ball_visibility || "always";
-  const docked = Boolean(settings.selection_supported && settings.ball_docked);
-  ballVisibilityRow.hidden = !docked;
-  ballPositionRow.hidden = !docked;
-
-  const note = docked
-    ? "选中文字后，把鼠标移到悬浮球上悬停即可翻译；按住小球可以拖动位置。"
-    : "";
-
-  selectionNote.textContent = note;
-  selectionNote.hidden = note.length === 0;
-
-  if (globalThis.OTSelect) {
-    OTSelect.sync(selectionModeSelect);
-    OTSelect.sync(ballVisibilitySelect);
+  if (selectionModeControl) {
+    selectionModeControl.sync();
   }
 }
 
@@ -975,42 +1020,6 @@ selectionModeSelect.addEventListener("change", async () => {
   }
 });
 
-async function saveSelectionOptions() {
-  const minLength = Number(selectionMinLength.value) || 2;
-  const delayMs = Number(selectionDelay.value) || 400;
-
-  try {
-    await invoke("save_selection_options", { delayMs, minLength });
-    flashSelectionSaved();
-  } catch (message) {
-    setStatus(String(message));
-    window.setTimeout(() => setStatus(""), 3000);
-  }
-}
-
-selectionMinLength.addEventListener("change", saveSelectionOptions);
-selectionDelay.addEventListener("change", saveSelectionOptions);
-
-ballVisibilitySelect.addEventListener("change", async () => {
-  try {
-    await invoke("save_ball_visibility", { value: ballVisibilitySelect.value });
-    flashSelectionSaved();
-  } catch (message) {
-    setStatus(String(message));
-    window.setTimeout(() => setStatus(""), 3000);
-  }
-});
-
-resetBallPosition.addEventListener("click", async () => {
-  try {
-    await invoke("reset_ball_position");
-    flashSelectionSaved();
-  } catch (message) {
-    setStatus(String(message));
-    window.setTimeout(() => setStatus(""), 3000);
-  }
-});
-
 async function openSettings() {
   const settings = await invoke("get_settings");
 
@@ -1020,9 +1029,10 @@ async function openSettings() {
   hotkeyError.hidden = true;
   hotkeySaved.hidden = true;
   renderHotkey();
-  modelInput.value = settings.model_path;
-  savedModelPath = settings.model_path;
-  setSwitch("switch-auto", settings.auto_download);
+  defaultModelPath = settings.default_model_path || "";
+  savedModelPath = settings.model_path || defaultModelPath;
+  modelInput.value = savedModelPath;
+  modelReset.hidden = !settings.model_path;
   setSwitch("switch-updates", settings.check_updates);
   setSwitch("switch-extension", settings.serve_extension);
   applySelectionSettings(settings);
@@ -1043,6 +1053,7 @@ async function openSettings() {
   }
 
   renderUpdate();
+  applyAboutState();
   showView("settings");
   await resize();
   await invoke("center_window");

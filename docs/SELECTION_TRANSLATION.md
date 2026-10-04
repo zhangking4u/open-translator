@@ -39,10 +39,13 @@ a fixed dock instead of beside the selection.
 - **Dock**: right edge, vertically centered on the primary monitor by default,
   inset 8 px. The ball is draggable (`ball.js` reports deltas via
   `move_ball_by`, `save_ball_position` persists them); the position is clamped
-  to the work area on every placement and after monitor changes.
-- **Visibility** (`ball_visibility`): `always` (default) keeps the ball visible
-  and dim while nothing is selected; `selection` shows it only once a selection
-  is armed.
+  to the work area on every placement and after monitor changes. Dropping the
+  ball within ~48 px of its default dock resets the custom position
+  (the `ball_x`/`ball_y` keys are removed), so no "restore default" control is
+  needed in the settings.
+- **Visibility** (`ball_visibility`, config file only): `always` (default)
+  keeps the ball visible and dim while nothing is selected; `selection` shows
+  it only once a selection is armed.
 - **States** (`ball-state` event consumed by `ball.js`): `idle` (dim), `armed`
   (accent, a settled selection is ready), `busy` (pulse while translating).
 - **Confirm**: hover only, 150 ms dwell; leaving cancels. A drag never counts
@@ -112,6 +115,11 @@ queued follow-up, so bursts cannot interleave streams or stack engine work.
 | `ball_visibility` | `always`, `selection` | `always` |
 | `ball_x`, `ball_y` | custom dock position (physical px) | right-edge center |
 
+The settings UI intentionally exposes only `selection_mode` and the hotkey;
+the other keys are defaults for almost everyone and are edited in the config
+file by power users. The settings page structure (minimal rows plus a collapsed
+关于 block) is described in docs/ARCHITECTURE.md → UI Design Language.
+
 
 ## 6. Flow (Linux docked ball)
 
@@ -154,9 +162,11 @@ stateDiagram-v2
   `desktop/translator-popup-tauri`.
 - `node --check ui/main.js ui/ball.js ui/dropdown.js`; `python3 -m json.tool`
   for the capabilities/config; `bash shared/sync-ui.sh --check`.
-- Manual (Linux): enable 悬浮球, confirm the ball appears at the right edge and
-  is dim; select text → it lights up; move onto it → after ~150 ms the card
-  opens beside it with the translation; hovering again re-shows the card
-  without retranslating; drag the ball and reload to confirm the position
-  persists; switch 悬浮球显示 to 选中后显示 and confirm it hides while idle;
-  check that selecting text is never interrupted.
+- Manual (Linux): choose 悬浮球翻译 in 选中文字后, confirm the ball appears at
+  the right edge and is dim; select text → it lights up; move onto it → after
+  ~150 ms the card opens beside it with the translation; hovering again
+  re-shows the card without retranslating; drag the ball somewhere else and
+  reload to confirm the position persists, then drop it back near the default
+  dock and reload to confirm it reset; check that selecting text is never
+  interrupted, and that typing in an input only lights the ball in apps without
+  AT-SPI text events (e.g. VS Code with accessibility off).
