@@ -1907,6 +1907,13 @@ Released:
 - Review fixes on the same batch: autostart artifacts now escape paths per format (Desktop Entry quoting with a line-break guard, XML escaping, PowerShell single-quote doubling; covered by a unit test), `apply_selection_mode` persists `selection_method` and refreshes the tray checkmarks so every entry point stays in sync, the `selection-mode` listener updates from the event payload in every view (About and the waiting hint included), the extension status reports 将在下次启动时运行/已关闭（重启后停止）instead of claiming a live state, `set_autostart` runs on a worker thread, and the dead `.group-title-toggle`/`.selection-number` CSS was removed
 
 
+## Windows Real-Machine Verification (2026-10-04)
+
+
+- Closed the pending Windows real-machine checks: the redesigned desktop UI (card/settings/history) and the selection-translation flow (selection-following ball / 立即翻译) are verified on hardware
+- macOS cannot be real-machine-verified (no Mac hardware) and stays CI-built plus cross-target compile-checked; its watcher ships as experimental. The X11-session manual check is still pending (the dev machine is GNOME Wayland)
+
+
 ---
 
 
@@ -1944,9 +1951,9 @@ Released: `v0.4.1` (2026-10-03, Linux copy/replace/read-aloud/one-click update +
 
 Planned:
 
-1. Real-machine visual pass of the redesigned desktop UI on Windows/macOS (card, settings, history)
+1. X11-session manual check of the selection-translation flow (the dev machine is GNOME Wayland)
 
-2. macOS real-machine verification deferred (no Mac hardware); code signing / notarization (budget decision)
+2. macOS real-machine verification is not possible (no Mac hardware); code signing / notarization (budget decision)
 
 
 Completed sprints:
@@ -1969,7 +1976,7 @@ Completed sprints:
 
 ## Distribution
 
-v0.5.0 released (2026-10-04) with the extension 边写边译 inline translation and the unified extension/desktop UI on shared sources. Remaining: real-machine visual verification on Windows/macOS, code signing/notarization.
+v0.5.0 released (2026-10-04) with the extension 边写边译 inline translation and the unified extension/desktop UI on shared sources. Windows real-machine verification passed 2026-10-04; remaining: X11-session check, code signing/notarization, and macOS verification (not possible without Mac hardware).
 
 
 ## Sprint 5

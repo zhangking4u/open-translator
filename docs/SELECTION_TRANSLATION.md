@@ -1,8 +1,9 @@
 # Selection Translation (划词翻译) — Design & Landing
 
 Status: Linux uses the docked confirm ball (Wayland and X11); Windows/macOS use
-the selection-following ball and keep direct translation. Real-machine checks
-on X11/Windows/macOS are still pending.
+the selection-following ball and keep direct translation. Windows real-machine
+checks passed 2026-10-04; the X11-session check is still pending; macOS cannot
+be real-machine-verified (no Mac hardware) and ships as an experimental watcher.
 
 
 ## 1. Goal
@@ -141,10 +142,10 @@ stateDiagram-v2
 
 | platform | sensor | confirm UI | state |
 | --- | --- | --- | --- |
-| Linux/Wayland | XFixes events + one X11 read after quiet (AT-SPI typing filter) | docked ball | landed, manual pass in progress |
-| Linux/X11 | PRIMARY via X11 | docked ball | landed, manual pass pending |
-| Windows | WH_MOUSE_LL + UIA | selection-following ball / auto | landed, cross-compile-checked, real-machine pending |
-| macOS | CGEventTap + AX | selection-following ball / auto | landed, cross-compile-checked, real-machine pending |
+| Linux/Wayland | XFixes events + one X11 read after quiet (AT-SPI typing filter) | docked ball | landed, GNOME Wayland manual pass passed 2026-10-04 |
+| Linux/X11 | PRIMARY via X11 | docked ball | landed, X11-session manual pass pending |
+| Windows | WH_MOUSE_LL + UIA | selection-following ball / auto | landed, real-machine verified 2026-10-04 |
+| macOS | CGEventTap + AX | selection-following ball / auto | landed, cross-target compile-checked only (no Mac hardware to verify), experimental watcher |
 
 
 ## 8. Files

@@ -239,7 +239,7 @@ Completed:
 
 In Progress:
 
-- Distribution: tag `v0.1.0`, real-machine verification, code signing/notarization
+- Distribution: `v0.5.0` released; Windows and Linux real-machine checks passed (macOS is CI-built plus cross-target compile-checked only — no Mac hardware, unsigned arm64 dmg); code signing/notarization still a budget decision
 
 
 Next:

@@ -240,7 +240,7 @@ Ordinary users on Windows/macOS can download, install and use it without technic
 
 Status:
 
-`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray; `v0.5.0` (2026-10-04) adds the browser extension 边写边译 inline translation (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target) and unifies the extension/desktop UI on shared Apple-style tokens and `OTSelect` dropdowns single-sourced under `shared/ui`. The desktop 划词翻译 feature landed on Linux, Windows and macOS (cross-target compile-checked) 2026-10-04 (floating-ball and direct modes, settings group, card gear button); real-machine checks on Windows/macOS/X11 are pending.
+`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray; `v0.5.0` (2026-10-04) adds the browser extension 边写边译 inline translation (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target) and unifies the extension/desktop UI on shared Apple-style tokens and `OTSelect` dropdowns single-sourced under `shared/ui`. The desktop 划词翻译 feature landed on Linux, Windows and macOS (cross-target compile-checked) 2026-10-04 (floating-ball and direct modes, settings group, card gear button); Windows real-machine verification passed 2026-10-04; macOS cannot be verified on hardware (no Mac; CI-built and cross-target compile-checked only) and the X11-session check is pending.
 
 
 ---
@@ -248,11 +248,11 @@ Status:
 ## 9. Next Steps
 
 
-1. Real-machine visual pass of the redesigned desktop UI (card/settings/history, v0.4.0–v0.5.0) on Windows/macOS
+1. Windows real-machine verification completed 2026-10-04: the redesigned desktop UI (card/settings/history, v0.4.0–v0.5.0) and the selection-translation flow are verified on hardware; macOS real-machine verification is not possible (no Mac hardware; dmg is arm64-only and unsigned), so macOS stays CI-built plus cross-target compile-checked
 
-2. Code signing / notarization (budget decision); macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
+2. Code signing / notarization (budget decision); AppImage deferred
 
-3. Selection translation follow-ups: manual X11, Windows and macOS real-machine checks (the dev machine is GNOME Wayland, where only the direct fallback runs; the macOS watcher is cross-target compile-checked only), per `docs/SELECTION_TRANSLATION.md`
+3. Selection translation follow-ups: X11-session manual check pending (the dev machine is GNOME Wayland), per `docs/SELECTION_TRANSLATION.md`
 
 4. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources)
 
@@ -786,3 +786,10 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - 关于 became a separate view reached from a 版本 nav row (stable settings height); 划词翻译 became a master switch + a 翻译方式 choice only where 立即翻译 exists (new `selection_method` key remembers the choice); 登录时启动 is managed by the client (`autostart_enabled`/`set_autostart` on all three platforms); 自动检查更新 moved next to the version, 浏览器扩展 and 本地模型 gained status lines; the tray gained a 划词翻译 submenu with checkmarks that syncs the settings switch
 - Verified with 17 client tests (new autostart toggle test) and headless-Chrome checks of the settings/关于 flow on Linux and Windows-style stubs; release build and restart clean
 - Verified with a headless-Chrome harness against the real page (both platform layouts, About expand/collapse, no JS errors) plus a green release build
+
+
+## Windows Real-Machine Verification (2026-10-04)
+
+
+- Closed the pending Windows checks: the redesigned desktop UI (card/settings/history) and the selection-translation flow (selection-following ball / 立即翻译) are verified on hardware
+- macOS cannot be real-machine-verified (no Mac hardware): the dmg stays arm64-only and unsigned, macOS is CI-built plus cross-target compile-checked, and its watcher ships as experimental; the X11-session manual check remains pending

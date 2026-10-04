@@ -132,7 +132,7 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 |---|---|---|---|
 | 核心服务 | ✅ | ✅（CI `windows-latest` 每提交测试） | 理论可用，未验证 |
 | 浏览器扩展 | ✅ | ✅ | ✅ |
-| 桌面划词 | ✅ Tauri（deb；Wayland 会话走 XWayland） | ✅ Tauri（zip/install.ps1，CI 构建） | ✅ Tauri（dmg，CI 构建，未真机验证） |
+| 桌面划词 | ✅ Tauri（deb；Wayland 会话走 XWayland） | ✅ Tauri（zip/install.ps1，真机验证通过） | ✅ Tauri（dmg，CI 构建，未真机验证） |
 
 - Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 构建**内嵌模型推理**的 Tauri 客户端（`translator-popup-tauri.exe`）并加入开机启动；把 GGUF 放到 `%LOCALAPPDATA%\open-translator\models\hy-mt1.5-1.8b-q4_k_m.gguf`（或配置 `model_path`）。选中文字按 `Ctrl+Alt+T`（模拟 `Ctrl+C` + 剪贴板取词）；托盘菜单提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。运行期间在 `127.0.0.1:17890` 提供 HTTP 供浏览器扩展；客户端内「立即更新」会下载 `OpenTranslator-windows-x64.zip`、解压并运行其中的 `install.ps1`（会先关闭运行中的旧版）。
 - macOS 桌面划词：发布包为 dmg（把 `OpenTranslator.app` 拖入「应用程序」）；源码安装 `./desktop/install-macos.sh` 构建内嵌推理的 Tauri 客户端到 `~/Applications/OpenTranslator.app` 并注册 LaunchAgent 开机启动。模型放到 `~/Library/Application Support/open-translator/models/`（或配置 `model_path`）。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」允许 OpenTranslator（模拟 `Cmd+C` 取词所需）；菜单栏图标提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出（更新在浏览器打开 release 页）。
