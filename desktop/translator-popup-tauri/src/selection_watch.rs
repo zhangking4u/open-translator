@@ -1024,8 +1024,6 @@ mod macos {
             attribute: CFStringRef,
             value: *mut CFTypeRef,
         ) -> i32;
-        static kAXFocusedUIElementAttribute: CFStringRef;
-        static kAXSelectedTextAttribute: CFStringRef;
     }
 
     static MOUSE_EVENTS: OnceLock<Sender<MouseUp>> = OnceLock::new();
@@ -1119,9 +1117,15 @@ mod macos {
                 return None;
             }
 
+            let focused_attribute = CFString::new("AXFocusedUIElement");
+            let selected_text_attribute = CFString::new("AXSelectedText");
+
             let mut focused: CFTypeRef = std::ptr::null();
-            let focused_status =
-                AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute, &mut focused);
+            let focused_status = AXUIElementCopyAttributeValue(
+                system,
+                focused_attribute.as_concrete_TypeRef(),
+                &mut focused,
+            );
             CFRelease(system);
 
             if focused_status != 0 || focused.is_null() {
@@ -1129,8 +1133,11 @@ mod macos {
             }
 
             let mut value: CFTypeRef = std::ptr::null();
-            let value_status =
-                AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute, &mut value);
+            let value_status = AXUIElementCopyAttributeValue(
+                focused,
+                selected_text_attribute.as_concrete_TypeRef(),
+                &mut value,
+            );
             CFRelease(focused);
 
             if value_status != 0 || value.is_null() {
