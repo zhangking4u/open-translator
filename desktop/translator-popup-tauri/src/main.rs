@@ -1049,6 +1049,11 @@ fn show_ball(app: &AppHandle, text: String, anchor: (i32, i32), window: Option<i
 
     place_ball_window(app, anchor);
 
+    // The selection-following platforms never dock the ball in an idle state:
+    // whenever it is mapped, a selection is ready, so it renders armed (accent
+    // colour, full opacity) instead of the faint grey idle look.
+    let _ = app.emit_to("ball", "ball-state", "armed");
+
     if let Some(ball) = app.get_webview_window("ball") {
         let _ = ball.show();
     }
@@ -1395,10 +1400,11 @@ fn show_main_in_place(app: &AppHandle) {
     show_main_with(app, false, true);
 }
 
-/// Selection-watcher card: it must not steal focus or pulse above other
-/// windows (that interrupts the user's drag and causes GNOME activation
-/// flicker), and it must not jump to a new spot on every refresh while it is
-/// already visible — only the content updates then.
+/// Selection-watcher card: it must not steal focus (the source application
+/// must keep the selection and the drag) and it must not jump to a new spot on
+/// every refresh while it is already visible — only the content updates then.
+/// It does pulse above other windows, so the card is not left behind the app
+/// the user just selected text in.
 #[cfg(not(target_os = "linux"))]
 fn show_main_popup(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -1418,6 +1424,8 @@ fn show_main_popup(app: &AppHandle) {
         } else {
             let _ = window.show();
         }
+
+        pulse_above(app, &window);
     }
 }
 
@@ -1669,10 +1677,10 @@ fn build_ball_window(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
 
-    // No `resizable(false)` here: on Linux GTK applies it before the size
-    // request is realized, which locks an undecorated window at its 200x200
-    // default and turns the ball into a 200x200 click-blocking window.
-    let ball = WebviewWindowBuilder::new(app, "ball", WebviewUrl::App("ball.html".into()))
+    // Linux: no `resizable(false)` at build time — GTK applies it before the
+    // size request is realized, which locks an undecorated window at its
+    // 200x200 default and turns the ball into a 200x200 click-blocking window.
+    let builder = WebviewWindowBuilder::new(app, "ball", WebviewUrl::App("ball.html".into()))
         .title("OpenTranslator")
         .inner_size(44.0, 44.0)
         .decorations(false)
@@ -1681,8 +1689,30 @@ fn build_ball_window(app: &AppHandle) -> tauri::Result<()> {
         .skip_taskbar(true)
         .focused(false)
         .shadow(false)
-        .visible(false)
-        .build()?;
+        .visible(false);
+
+    // Windows/macOS: a decorated-style window carries the OS minimum tracking
+    // size (136 px wide at 100%), which inflates the ball into a wide pill.
+    // Pinning min and max inner size makes the size constraint override it;
+    // Linux sets the constraints right before the first show instead, because
+    // GTK applies build-time constraints before the size request is realized.
+    #[cfg(not(target_os = "linux"))]
+    let builder = builder
+        .resizable(false)
+        .min_inner_size(44.0, 44.0)
+        .max_inner_size(44.0, 44.0);
+
+    let ball = builder.build()?;
+
+    // The first `WM_GETMINMAXINFO` of a window arrives during `CreateWindowEx`,
+    // before tao attaches its window proc, so Windows clamps the requested
+    // 44 px width to the caption minimum (136 px at 100%) and tao does not
+    // re-apply `inner_size` afterwards. Resize once the size constraints are
+    // active, so the ball is a square.
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = ball.set_size(tauri::LogicalSize::new(44.0, 44.0));
+    }
 
     // The ball is dragged and hovered, never typed into: keeping it
     // non-focusable means interacting with it cannot steal the selection from
