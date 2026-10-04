@@ -371,7 +371,7 @@ fn main() {
                 eprintln!("failed to create the selection ball window: {error}");
             }
 
-            selection_watch::spawn(handle.clone());
+            selection_watch::ensure(handle.clone());
 
             if start_pinned {
                 if let Some(window) = app.get_webview_window("main") {
@@ -742,36 +742,64 @@ fn place_ball_window(app: &AppHandle, anchor: (i32, i32)) {
         return;
     };
 
-    let Ok(size) = ball.outer_size().or_else(|_| ball.inner_size()) else {
-        return;
-    };
+    // CGEvent locations are global points, which is exactly what
+    // `LogicalPosition` expects on macOS; Windows/Linux anchors are physical
+    // screen pixels. Monitor geometry is physical, so the macOS path converts
+    // the ball size and the work area to points before clamping.
+    #[cfg(target_os = "macos")]
+    {
+        let scale = ball.scale_factor().unwrap_or(1.0);
+        let Ok(size) = ball.outer_size().or_else(|_| ball.inner_size()) else {
+            return;
+        };
+        let size = (
+            (size.width as f64 / scale).round() as i32,
+            (size.height as f64 / scale).round() as i32,
+        );
 
-    let Some(monitor) = monitor_at(app, anchor).or_else(|| ball.primary_monitor().ok().flatten())
-    else {
-        return;
-    };
+        let (x, y) = match monitor_work_area_logical(app, anchor) {
+            Some(work) => card_position(anchor, size, work, 12, 14),
+            None => (anchor.0 + 14, anchor.1 + 14),
+        };
 
-    let work = monitor.work_area();
-    let scale = monitor.scale_factor();
-    let margin = (12.0 * scale) as i32;
-    let offset = (14.0 * scale) as i32;
+        let _ = ball.set_position(tauri::LogicalPosition::new(x as f64, y as f64));
+    }
 
-    let (x, y) = card_position(
-        anchor,
-        (size.width as i32, size.height as i32),
-        WorkArea {
-            x: work.position.x,
-            y: work.position.y,
-            width: work.size.width,
-            height: work.size.height,
-        },
-        margin,
-        offset,
-    );
+    #[cfg(not(target_os = "macos"))]
+    {
+        let Ok(size) = ball.outer_size().or_else(|_| ball.inner_size()) else {
+            return;
+        };
 
-    let _ = ball.set_position(PhysicalPosition::new(x, y));
+        let Some(monitor) =
+            monitor_at(app, anchor).or_else(|| ball.primary_monitor().ok().flatten())
+        else {
+            return;
+        };
+
+        let work = monitor.work_area();
+        let scale = monitor.scale_factor();
+        let margin = (12.0 * scale) as i32;
+        let offset = (14.0 * scale) as i32;
+
+        let (x, y) = card_position(
+            anchor,
+            (size.width as i32, size.height as i32),
+            WorkArea {
+                x: work.position.x,
+                y: work.position.y,
+                width: work.size.width,
+                height: work.size.height,
+            },
+            margin,
+            offset,
+        );
+
+        let _ = ball.set_position(PhysicalPosition::new(x, y));
+    }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn monitor_at(app: &AppHandle, point: (i32, i32)) -> Option<tauri::Monitor> {
     app.available_monitors().ok()?.into_iter().find(|monitor| {
         let position = monitor.position();
@@ -780,6 +808,34 @@ fn monitor_at(app: &AppHandle, point: (i32, i32)) -> Option<tauri::Monitor> {
         let y = point.1 >= position.y && point.1 < position.y + size.height as i32;
 
         x && y
+    })
+}
+
+/// Monitor work area in logical points for the macOS ball placement.
+#[cfg(target_os = "macos")]
+fn monitor_work_area_logical(app: &AppHandle, point: (i32, i32)) -> Option<WorkArea> {
+    app.available_monitors().ok()?.into_iter().find_map(|monitor| {
+        let position = monitor.position();
+        let size = monitor.size();
+        let scale = monitor.scale_factor();
+
+        let x = (position.x as f64 / scale).round() as i32;
+        let y = (position.y as f64 / scale).round() as i32;
+        let width = (size.width as f64 / scale).round() as i32;
+        let height = (size.height as f64 / scale).round() as i32;
+
+        if point.0 < x || point.0 >= x + width || point.1 < y || point.1 >= y + height {
+            return None;
+        }
+
+        let work = monitor.work_area();
+
+        Some(WorkArea {
+            x: (work.position.x as f64 / scale).round() as i32,
+            y: (work.position.y as f64 / scale).round() as i32,
+            width: (work.size.width as f64 / scale).round() as u32,
+            height: (work.size.height as f64 / scale).round() as u32,
+        })
     })
 }
 
@@ -1169,6 +1225,7 @@ fn save_selection_mode(app: AppHandle, mode: String) -> Result<(), String> {
     app.state::<AppState>().selection.lock().unwrap().mode = parsed;
     translator_core::settings::persist_value("selection_mode", parsed.as_str());
     hide_ball(&app);
+    selection_watch::ensure(app);
     Ok(())
 }
 

@@ -1833,7 +1833,25 @@ Released:
 - New `selection_watch.rs` on the client: 400 ms PRIMARY polling (direct X11 read on X11 sessions, `wl-paste` on Wayland), settle delay, minimum length, watcher-local dedupe, guards for pinned cards, our own focused windows and recent hotkey triggers; `ball` degrades to `auto` on native Wayland because there is no global anchor (settings page shows a note)
 - Floating ball: hidden 44×44 transparent always-on-top window (`ui/ball.html`/`ball.css`/`ball.js`), 120 ms hover-intent dwell plus click fallback, positioned with the shared `card_position` clamp from an X11 `XQueryPointer` anchor, auto-hidden after 5 s behind a generation counter; hovering commits the pending selection, records the replace window and opens the card near the cursor
 - Settings/card: new 划词翻译 group (mode through `OTSelect`, minimum length, trigger delay) and a gear button in the card titlebar; the empty-state hint follows the active mode; hotkey now hides the ball and suppresses the watcher for 1.2 s
-- Verified: `cargo test --locked` green in both crates (client 15 tests incl. 4 new watcher/placement tests), `node --check` on the UI scripts, `json.tool` on the capabilities/config, `shared/sync-ui.sh --check`; manual X11 check still pending because the dev machine runs GNOME Wayland (only the direct fallback can be exercised there), Windows/macOS watchers are the next phases
+- Verified: `cargo test --locked` green in both crates (client 15 tests incl. 4 new watcher/placement tests), `node --check` on the UI scripts, `json.tool` on the capabilities/config, `shared/sync-ui.sh --check`; manual X11 check still pending because the dev machine runs GNOME Wayland (only the direct fallback can be exercised there); committed as `5eb520c`
+
+
+## Selection Translation: Windows Watcher (2026-10-04)
+
+
+- Windows watcher added to `selection_watch.rs`: a `WH_MOUSE_LL` hook on its own thread with a message pump records down/up positions (drag threshold 4 px) and forwards mouse-up events through a channel; the worker settles until the mouse has been quiet for `selection_delay`, applies the shared guards and anchors the ball at the mouse-up point
+- Selection text comes from UI Automation (`TextPattern.GetSelection()` on the focused element, password fields skipped via `CurrentIsPassword`); only a detected drag outside a known terminal class falls back to the synthetic Ctrl+C capture, so a plain click never touches the clipboard and a terminal can never receive SIGINT by accident
+- Added the `windows` 0.61 dependency for UIA (plus `Win32_System_LibraryLoader` for `windows-sys`); `Cargo.lock` only gained the direct edge
+- Verification without a Windows machine: the module was prototyped and `cargo check --target x86_64-pc-windows-msvc` in a scratch crate until clean, then integrated; `cargo test --locked` on Linux still green (15 tests). Real-machine check on Windows is still pending
+
+
+## Selection Translation: macOS Watcher (2026-10-04)
+
+
+- macOS watcher added to `selection_watch.rs`: a listen-only session `CGEventTap` (core-graphics) runs on its own thread's run loop, records left-button down/up positions (drag threshold 4 px) and forwards mouse-up events; the worker settles until the mouse has been quiet for `selection_delay`, applies the shared guards and anchors the ball with `LogicalPosition` (CGEvent coordinates are global points)
+- Selection text comes from the AX API (`AXUIElementCopyAttributeValue` on the system-wide focused element, gated by `AXIsProcessTrusted`, using the accessibility permission the capture path already needs); drags without AX text fall back to `capture_selection` (Cmd+C is a plain copy, safe without a selection)
+- Added direct macOS deps `core-foundation` 0.10 / `core-graphics` 0.25 (already transitive); `cargo check --target aarch64-apple-darwin` in a scratch crate was clean before integration, and `cargo test --locked` on Linux stays green (15 tests)
+- `selection_supported()` now covers Linux/Windows/macOS; macOS behavior is compile-checked but not real-machine-verified (no Mac hardware), so it ships as an experimental watcher. Manual X11/Windows/macOS checks remain on the follow-up list
 
 
 ---

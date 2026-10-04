@@ -1,6 +1,6 @@
 # Selection Translation (划词翻译) — Design & Landing Plan
 
-Status: Phase 1–3 landed (Linux), Windows/macOS staged (see §7).
+Status: Phase 1–5 landed (Linux, Windows, macOS cross-target compile-checked); real-machine checks pending on X11/Windows/macOS (see §7).
 
 
 ## 1. Goal
@@ -134,9 +134,10 @@ Linux specifics:
   reading entirely.
 
 No clipboard access and no synthesized keystrokes happen on Linux, so selection
-translation is side-effect free there (PRIMARY is read only). On future
-Windows/macOS phases the native selection APIs come first and the existing
-capture fallback only runs after a detected drag (see §7).
+translation is side-effect free there (PRIMARY is read only). On Windows the
+UI Automation read comes first and the existing capture fallback only runs after
+a detected drag outside known terminal windows, where Ctrl+C would be SIGINT
+(see §7).
 
 
 ## 6. Files
@@ -164,13 +165,12 @@ capture fallback only runs after a detected drag (see §7).
 | 1 | translator-core | config keys + parsing | landed |
 | 2 | Linux | PRIMARY polling + settle/guards | landed |
 | 3 | Linux/X11 | ball window + hover flow + settings UI | landed |
-| 4 | Windows | `WH_MOUSE_LL` hook thread (mouse-up), UI Automation `TextPattern.GetSelection()` for text and `GetBoundingRectangles()` for the anchor, enigo Ctrl+C fallback only after a detected drag with clipboard restore; ball window with `WS_EX_NOACTIVATE`-style behavior via Tauri `focused(false)`; terminals excluded from the fallback because Ctrl+C is SIGINT there | pending |
-| 5 | macOS | `NSEvent.addGlobalMonitorForEvents` mouse-up + AX `kAXSelectedTextAttribute`/bounds for text and anchor (accessibility permission is already required by the capture path); Cmd+C fallback is safe even without a selection; ball window as a non-activating panel | pending |
+| 4 | Windows | `WH_MOUSE_LL` hook thread (mouse-up, drag detected by distance, settle wait), UI Automation `TextPattern.GetSelection()` for text, cursor position as the anchor, enigo Ctrl+C fallback only after a detected drag, with clipboard restore and a terminal-class blocklist (Ctrl+C is SIGINT there); password fields are skipped through `CurrentIsPassword` | landed (cross-target compile-checked; real-machine check pending) |
+| 5 | macOS | Listen-only session `CGEventTap` (core-graphics) for mouse down/up, cursor point as the anchor (`LogicalPosition`), raw `AXUIElementCopyAttributeValue` reads for the selected text (accessibility permission is already required by the capture path); for drags without AX text, the existing Cmd+C capture (a plain copy, safe without a selection); password/secure fields expose no AX text | landed (cross-target compile-checked; real-machine check pending) |
 
-Until phases 4–5 land, `selection_supported()` is false on Windows/macOS, so
-the settings group is hidden and no watcher starts. The shared plumbing
-(commands, state, ball window) is platform-neutral and already in place, so the
-follow-ups only add the platform watcher and the anchor conversion.
+All three desktop targets now report `selection_supported()`; `ball_supported()`
+is still false on native Wayland, where the ball degrades to direct translation
+and the settings page says so.
 
 
 ## 8. Verification

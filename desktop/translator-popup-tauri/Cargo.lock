@@ -4835,6 +4835,8 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "axum",
+ "core-foundation",
+ "core-graphics",
  "enigo",
  "mac-notification-sys",
  "serde",
@@ -4847,6 +4849,7 @@ dependencies = [
  "tokio",
  "translator-core",
  "translator-service",
+ "windows 0.61.3",
  "windows-sys 0.59.0",
  "x11rb",
 ]

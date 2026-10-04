@@ -240,7 +240,7 @@ Ordinary users on Windows/macOS can download, install and use it without technic
 
 Status:
 
-`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray; `v0.5.0` (2026-10-04) adds the browser extension 边写边译 inline translation (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target) and unifies the extension/desktop UI on shared Apple-style tokens and `OTSelect` dropdowns single-sourced under `shared/ui`. The desktop 划词翻译 feature landed on Linux 2026-10-04 (floating-ball and direct modes, settings group, card gear button); Windows/macOS watchers are staged in `docs/SELECTION_TRANSLATION.md`.
+`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray; `v0.5.0` (2026-10-04) adds the browser extension 边写边译 inline translation (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target) and unifies the extension/desktop UI on shared Apple-style tokens and `OTSelect` dropdowns single-sourced under `shared/ui`. The desktop 划词翻译 feature landed on Linux, Windows and macOS (cross-target compile-checked) 2026-10-04 (floating-ball and direct modes, settings group, card gear button); real-machine checks on Windows/macOS/X11 are pending.
 
 
 ---
@@ -252,7 +252,7 @@ Status:
 
 2. Code signing / notarization (budget decision); macOS real-machine verification deferred (no Mac hardware; dmg is arm64-only); AppImage deferred
 
-3. Selection translation follow-ups: manual X11 session check (the dev machine is GNOME Wayland, where only the direct fallback runs), then the Windows watcher (mouse hook + UI Automation) and the macOS watcher (NSEvent + AX) phases from `docs/SELECTION_TRANSLATION.md`
+3. Selection translation follow-ups: manual X11, Windows and macOS real-machine checks (the dev machine is GNOME Wayland, where only the direct fallback runs; the macOS watcher is cross-target compile-checked only), per `docs/SELECTION_TRANSLATION.md`
 
 4. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources)
 
@@ -725,4 +725,22 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Linux landed: `src/selection_watch.rs` polls the PRIMARY selection (direct X11 read or `wl-paste` on Wayland; no clipboard writes, no synthetic keys), `ui/ball.{html,css,js}` is a 44×44 transparent always-on-top window with a 120 ms hover dwell and click fallback, placed next to the selection and auto-hidden after 5 s
 - Settings: new 划词翻译 group (mode `OTSelect`, minimum length, trigger delay) plus a gear button in the card titlebar; the empty-state hint follows the mode; on native Wayland the ball degrades to direct translation and the settings page says so
 - Hotkey still wins: it hides the ball and suppresses the watcher for 1.2 s, so the same selection is never translated twice
-- Verified: `cargo test` green in `translator-core` (61) and the client (15, incl. 4 new watcher tests), `node --check`, `json.tool`, `shared/sync-ui.sh --check`; Windows/macOS watchers staged (mouse hook + UIA / NSEvent + AX), manual X11 check pending
+- Verified: `cargo test` green in `translator-core` (61) and the client (15, incl. 4 new watcher tests), `node --check`, `json.tool`, `shared/sync-ui.sh --check`; manual X11 check pending
+
+
+## Selection Translation — Windows Landing (2026-10-04)
+
+
+- `selection_watch.rs` gained the Windows watcher: a `WH_MOUSE_LL` hook thread with its own message pump records left-button down/up (drag = >4 px) and hands events to a worker; the worker settles for `selection_delay`, honours the same guards (mode/length/pinned/self-focus/hotkey suppression) and anchors the ball at the mouse-up point
+- Text read order: UI Automation `TextPattern.GetSelection()` on the focused element (password fields skipped via `CurrentIsPassword`) → for drags only, the existing `capture::capture_selection` Ctrl+C fallback with clipboard restore; known terminal window classes are excluded so a stray Ctrl+C can never become SIGINT
+- New Windows-only dependency: `windows` 0.61 for UI Automation (`windows-sys` gained `Win32_System_LibraryLoader`); the module was cross-compile-checked with `cargo check --target x86_64-pc-windows-msvc` in a scratch crate before integration, and the client still passes `cargo test --locked` on Linux (15 tests)
+- The plan doc's phase table now marks phase 4 landed; macOS followed in phase 5 (see below)
+
+
+## Selection Translation — macOS Landing (2026-10-04)
+
+
+- `selection_watch.rs` gained the macOS watcher: a listen-only session `CGEventTap` (`core-graphics`) on its own run-loop thread records left-button down/up (drag = >4 px) and sends mouse-up events to the worker; the worker settles for `selection_delay`, applies the shared guards and anchors the ball at the cursor point (`LogicalPosition`, CGEvent coordinates are points)
+- Text read order: raw AX `AXUIElementCopyAttributeValue` for the focused element's selected text, gated by `AXIsProcessTrusted` (the accessibility permission the capture path already needs); for drags without AX text, the existing `capture::capture_selection` Cmd+C fallback, which is a plain copy on macOS and safe even without a selection
+- New macOS-only direct deps `core-foundation` 0.10 and `core-graphics` 0.25 (both already transitive); the module was cross-compile-checked with `cargo check --target aarch64-apple-darwin` in a scratch crate before integration, and `cargo test --locked` on Linux stays green (15 tests)
+- `selection_supported()` is now true on all three desktop targets; macOS real-machine verification is still pending (no Mac hardware), so the first macOS release should be treated as an experimental watcher
