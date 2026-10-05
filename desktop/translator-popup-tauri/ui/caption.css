@@ -1,0 +1,80 @@
+/* Live caption overlay: transparent, frameless, click-through. */
+html,
+body {
+  background: transparent;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  font-family: var(--ot-font-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+#caption {
+  width: 94%;
+  max-width: 940px;
+  margin-bottom: 10px;
+  padding: 9px 22px 12px;
+  border-radius: 16px;
+  background: rgba(16, 16, 18, 0.74);
+  color: #fff;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+  pointer-events: none;
+}
+
+body[data-state="visible"] #caption,
+body[data-state="error"] #caption {
+  opacity: 1;
+  transform: none;
+}
+
+#prev {
+  font-size: 16px;
+  line-height: 1.4;
+  opacity: 0.6;
+}
+
+#prev:empty {
+  display: none;
+}
+
+#line {
+  font-size: 24px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+#hint {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  opacity: 0.78;
+}
+
+#hint:empty {
+  display: none;
+}
+
+body[data-state="error"] #line {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #caption {
+    transition: none;
+  }
+}

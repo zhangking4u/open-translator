@@ -79,6 +79,10 @@ pub fn state_dir() -> PathBuf {
 
 pub const DEFAULT_MODEL_FILE: &str = "hy-mt1.5-1.8b-q4_k_m.gguf";
 
+/// Directory (under `models_dir`) that holds the SenseVoice ASR model, the
+/// Silero VAD model and `tokens.txt`.
+pub const DEFAULT_ASR_DIR: &str = "sense-voice";
+
 #[cfg(target_os = "windows")]
 pub fn models_dir() -> Option<PathBuf> {
     env::var_os("LOCALAPPDATA")
@@ -116,6 +120,10 @@ pub fn models_dir() -> Option<PathBuf> {
 
 pub fn default_model_path() -> Option<PathBuf> {
     Some(models_dir()?.join(DEFAULT_MODEL_FILE))
+}
+
+pub fn default_asr_model_dir() -> Option<PathBuf> {
+    Some(models_dir()?.join(DEFAULT_ASR_DIR))
 }
 
 pub fn log_path(name: &str) -> PathBuf {
@@ -203,6 +211,16 @@ mod tests {
         assert_eq!(
             path.file_name().unwrap().to_string_lossy(),
             DEFAULT_MODEL_FILE
+        );
+    }
+
+    #[test]
+    fn default_asr_model_dir_ends_with_asr_dir() {
+        let path = default_asr_model_dir().unwrap();
+
+        assert_eq!(
+            path.file_name().unwrap().to_string_lossy(),
+            DEFAULT_ASR_DIR
         );
     }
 }

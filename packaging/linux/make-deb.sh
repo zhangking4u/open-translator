@@ -52,6 +52,19 @@ chmod 755 "$STAGE"
 
 install -Dm755 "$POPUP_BIN" "$STAGE/usr/lib/open-translator/translator-popup"
 
+# `translator-asr` links sherpa-onnx/onnxruntime as shared libraries (the
+# static build corrupts the heap when combined with the other static runtimes
+# in this binary). The $ORIGIN runpath expects them next to the binary.
+POPUP_DIR="$(dirname "$POPUP_BIN")"
+for lib in "$POPUP_DIR"/libonnxruntime.so "$POPUP_DIR"/libsherpa-onnx-c-api.so "$POPUP_DIR"/libsherpa-onnx-cxx-api.so; do
+    if [ ! -f "$lib" ]; then
+        echo "missing shared library: $lib (build with the sherpa-onnx shared feature)" >&2
+        exit 1
+    fi
+
+    install -Dm755 "$lib" "$STAGE/usr/lib/open-translator/$(basename "$lib")"
+done
+
 mkdir -p "$STAGE/usr/bin"
 ln -s /usr/lib/open-translator/translator-popup "$STAGE/usr/bin/translator-popup"
 
@@ -76,13 +89,16 @@ Section: utils
 Priority: optional
 Homepage: https://github.com/zhangking4u/open-translator
 Installed-Size: $INSTALLED_SIZE
-Depends: libc6 (>= 2.39), libwebkit2gtk-4.1-0, libgtk-3-0t64 | libgtk-3-0, libayatana-appindicator3-1, wl-clipboard, libnotify-bin, libgomp1
+Depends: libc6 (>= 2.39), libwebkit2gtk-4.1-0, libgtk-3-0t64 | libgtk-3-0, libayatana-appindicator3-1, wl-clipboard, libnotify-bin, libgomp1, pipewire-bin
 Recommends: gnome-shell, speech-dispatcher, pkexec
 Description: Local-first AI selection translation
  Select text anywhere, press a global shortcut, and get an AI translation
  from a model running fully on your machine (llama.cpp, HY-MT 1.8B).
  .
-  The model (~1.1 GB) is downloaded from ModelScope on first use.
+ Live captions (实时字幕) capture the system audio output, transcribe it
+ with the local SenseVoice model and show the text in an overlay window.
+ .
+  The translation model (~1.1 GB) is downloaded from ModelScope on first use.
   Run "open-translator-setup" once to bind the global shortcut and enable
   the login autostart entry (the client lives in the tray).
 EOF

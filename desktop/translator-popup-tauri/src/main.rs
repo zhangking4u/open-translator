@@ -1,5 +1,6 @@
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 
+mod caption;
 mod capture;
 mod notify;
 mod selection_watch;
@@ -106,6 +107,9 @@ struct AppState {
     last_translated: Mutex<Option<String>>,
     /// Docked ball presentation state (see `BALL_*`).
     ball_state: AtomicU64,
+    /// Live caption capture task (Linux) and its tray check item.
+    caption: caption::CaptionRuntime,
+    caption_menu: Mutex<Option<CheckMenuItem<tauri::Wry>>>,
     /// X11 destroys the selection owner with the last clipboard instance, so
     /// Linux keeps one alive for the app lifetime; Windows/macOS own the
     /// clipboard in the OS and use a short-lived instance per call.
@@ -282,6 +286,8 @@ fn main() {
         None => false,
     };
 
+    let start_caption = config.caption_enabled.as_deref() == Some("true");
+
     if args.print {
         run_print(&args, &model_path, prompt_style);
         return;
@@ -357,6 +363,8 @@ fn main() {
             popup: AtomicBool::new(false),
             last_translated: Mutex::new(None),
             ball_state: AtomicU64::new(BALL_IDLE),
+            caption: caption::CaptionRuntime::default(),
+            caption_menu: Mutex::new(None),
             #[cfg(target_os = "linux")]
             clipboard: Mutex::new(None),
         })
@@ -435,6 +443,14 @@ fn main() {
 
             if let Err(error) = build_ball_window(&handle) {
                 eprintln!("failed to create the selection ball window: {error}");
+            }
+
+            if let Err(error) = build_caption_window(&handle) {
+                eprintln!("failed to create the caption window: {error}");
+            }
+
+            if start_caption {
+                set_caption_enabled(&handle, true);
             }
 
             selection_watch::ensure(handle.clone());
@@ -1729,11 +1745,152 @@ fn build_ball_window(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+const CAPTION_WIDTH: f64 = 860.0;
+const CAPTION_HEIGHT: f64 = 150.0;
+
+/// The caption overlay is a frameless, click-through, always-on-top window at
+/// the bottom center of the primary monitor (or its persisted position).
+fn build_caption_window(app: &AppHandle) -> tauri::Result<()> {
+    let builder = WebviewWindowBuilder::new(app, "caption", WebviewUrl::App("caption.html".into()))
+        .title("OpenTranslator")
+        .inner_size(CAPTION_WIDTH, CAPTION_HEIGHT)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .shadow(false)
+        .visible(false);
+
+    let window = builder.build()?;
+
+    // Captions are read, never clicked: the overlay must not steal focus or
+    // swallow clicks from the application underneath. Click-through is applied
+    // in `set_caption_enabled` after `show()`: tao panics if the GTK widget is
+    // not realized yet (a hidden window has no GdkWindow).
+    let _ = window.set_focusable(false);
+
+    position_caption_window(&window);
+    Ok(())
+}
+
+fn position_caption_window(window: &WebviewWindow) {
+    let Some(monitor) = window
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.current_monitor().ok().flatten())
+    else {
+        return;
+    };
+
+    let scale = monitor.scale_factor();
+    let width = (CAPTION_WIDTH * scale).round() as i32;
+    let height = (CAPTION_HEIGHT * scale).round() as i32;
+    let work = monitor.work_area();
+
+    let config = translator_core::settings::load_config();
+    let custom = config
+        .caption_x
+        .as_deref()
+        .and_then(|value| value.trim().parse::<i32>().ok())
+        .zip(
+            config
+                .caption_y
+                .as_deref()
+                .and_then(|value| value.trim().parse::<i32>().ok()),
+        );
+
+    let margin = (16.0 * scale) as i32;
+    let bottom_offset = (72.0 * scale) as i32;
+
+    let (mut x, mut y) = custom.unwrap_or_else(|| {
+        (
+            work.position.x + (work.size.width as i32 - width) / 2,
+            work.position.y + work.size.height as i32 - height - bottom_offset,
+        )
+    });
+
+    let min_x = work.position.x + margin;
+    let min_y = work.position.y + margin;
+    let max_x = work.position.x + work.size.width as i32 - width - margin;
+    let max_y = work.position.y + work.size.height as i32 - height - margin;
+
+    x = x.clamp(min_x, max_x.max(min_x));
+    y = y.clamp(min_y, max_y.max(min_y));
+
+    let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+/// Tray entry point for 实时字幕: flips the capture runtime.
+fn toggle_caption(app: &AppHandle) {
+    let enabled = !app.state::<AppState>().caption.is_active();
+    set_caption_enabled(app, enabled);
+}
+
+/// Starts/stops live caption capture, syncs the caption window and the tray
+/// checkmark, and persists the switch.
+fn set_caption_enabled(app: &AppHandle, enabled: bool) {
+    let state = app.state::<AppState>();
+
+    if enabled {
+        if let Err(error) = state.caption.start(app) {
+            notify::show("OpenTranslator", &format!("实时字幕启动失败：{error}"));
+            translator_core::settings::persist_value("caption_enabled", "false");
+
+            if let Some(item) = state.caption_menu.lock().unwrap().as_ref() {
+                let _ = item.set_checked(false);
+            }
+
+            return;
+        }
+
+        if let Some(window) = app.get_webview_window("caption") {
+            let _ = window.show();
+
+            // Only valid once the GTK widget is realized (see build_caption_window).
+            if let Err(error) = window.set_ignore_cursor_events(true) {
+                eprintln!("caption: click-through is unavailable: {error}");
+            }
+
+            // Toggling forces GNOME to restack the XWayland window above the
+            // active native window on first map.
+            let _ = window.set_always_on_top(false);
+            let _ = window.set_always_on_top(true);
+        }
+    } else {
+        state.caption.stop();
+
+        if let Some(window) = app.get_webview_window("caption") {
+            let _ = window.hide();
+        }
+    }
+
+    translator_core::settings::persist_value(
+        "caption_enabled",
+        if enabled { "true" } else { "false" },
+    );
+
+    if let Some(item) = state.caption_menu.lock().unwrap().as_ref() {
+        let _ = item.set_checked(enabled);
+    }
+}
+
 fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
     let update_item = MenuItem::with_id(app, "update", "正在检查更新…", false, None::<&str>)?;
+    // 实时字幕 is Linux-only for now; the item stays visible but disabled
+    // elsewhere so the feature is discoverable.
+    let caption_item = CheckMenuItem::with_id(
+        app,
+        "caption-toggle",
+        "实时字幕",
+        cfg!(target_os = "linux"),
+        app.state::<AppState>().caption.is_active(),
+        None::<&str>,
+    )?;
     let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
     // Quick mode switch without opening the card; the settings switch stays in
@@ -1781,6 +1938,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             &history_item,
             &settings_item,
             &selection_menu,
+            &caption_item,
             &update_item,
             &PredefinedMenuItem::separator(app)?,
             &quit_item,
@@ -1793,6 +1951,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         ball: selection_ball,
         auto: selection_auto,
     });
+    *app.state::<AppState>().caption_menu.lock().unwrap() = Some(caption_item);
 
     let tray = TrayIconBuilder::with_id("main")
         .icon(Image::new_owned(make_icon_rgba(), 32, 32))
@@ -1829,6 +1988,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             "selection-auto" => {
                 set_selection_mode_from_menu(app, selection_watch::SelectionMode::Auto)
             }
+            "caption-toggle" => toggle_caption(app),
             "quit" => app.exit(0),
             _ => {}
         });
