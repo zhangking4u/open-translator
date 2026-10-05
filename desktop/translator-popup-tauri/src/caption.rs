@@ -17,8 +17,10 @@ pub const EVENT_SEGMENT: &str = "caption-segment";
 pub const EVENT_TRANSLATION: &str = "caption-translation";
 pub const EVENT_STATUS: &str = "caption-status";
 pub const EVENT_CONFIG: &str = "caption-config";
+pub const EVENT_EDITING: &str = "caption-editing";
 const WINDOW: &str = "caption";
 const MAX_GLOSSARY_TERMS: usize = 50;
+const EDITING_SECONDS: u64 = 30;
 
 #[derive(Clone, serde::Serialize)]
 struct SegmentPayload {
@@ -41,6 +43,15 @@ struct StatusPayload {
 struct ConfigPayload {
     layout: String,
 }
+
+#[derive(Clone, serde::Serialize)]
+struct EditingPayload {
+    active: bool,
+}
+
+/// True while the user repositions the overlay (`caption-editing`); window
+/// moves are persisted only in that mode.
+static EDITING: AtomicBool = AtomicBool::new(false);
 
 /// Owns the running capture task. Cloned handles live in `AppState`; the task
 /// itself is aborted (and the `pw-record` child killed) by [`Self::stop`].
@@ -136,6 +147,47 @@ fn raise_caption(app: &AppHandle) {
 
     let _ = window.set_always_on_top(false);
     let _ = window.set_always_on_top(true);
+}
+
+/// Makes the overlay interactive so the user can drag it; click-through is
+/// restored after [`EDITING_SECONDS`] or when the drag finishes. The overlay
+/// is shown even when capture is off, so the position can be set early.
+pub fn start_move(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(WINDOW) else {
+        return;
+    };
+
+    EDITING.store(true, Ordering::SeqCst);
+    let _ = window.show();
+    let _ = window.set_ignore_cursor_events(false);
+    // Force a restack so the overlay is actually visible while editing.
+    let _ = window.set_always_on_top(false);
+    let _ = window.set_always_on_top(true);
+    let _ = app.emit_to(WINDOW, EVENT_EDITING, EditingPayload { active: true });
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(EDITING_SECONDS)).await;
+        finish_move(&app);
+    });
+}
+
+/// Ends the interactive repositioning mode; safe to call more than once.
+pub fn finish_move(app: &AppHandle) {
+    if !EDITING.swap(false, Ordering::SeqCst) {
+        return;
+    }
+
+    let Some(window) = app.get_webview_window(WINDOW) else {
+        return;
+    };
+
+    let _ = window.set_ignore_cursor_events(true);
+    let _ = app.emit_to(WINDOW, EVENT_EDITING, EditingPayload { active: false });
+
+    if !app.state::<crate::AppState>().caption.is_active() {
+        let _ = window.hide();
+    }
 }
 
 /// A background failure (model download or load) stops capture, hides the

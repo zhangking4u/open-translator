@@ -421,6 +421,9 @@ fn main() {
             set_autostart,
             move_ball_by,
             save_ball_position,
+            move_caption_by,
+            save_caption_position,
+            finish_caption_move,
             get_settings,
             save_hotkey,
             save_model_path,
@@ -1948,6 +1951,18 @@ fn open_in_default_app(path: &std::path::Path) {
     }
 }
 
+/// Puts the caption overlay back at its bottom-center default.
+fn reset_caption_position(app: &AppHandle) {
+    translator_core::settings::persist_remove("caption_x");
+    translator_core::settings::persist_remove("caption_y");
+
+    if let Some(window) = app.get_webview_window("caption") {
+        position_caption_window(&window);
+    }
+
+    notify::show("OpenTranslator", "字幕位置已重置到底部居中");
+}
+
 fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
@@ -2003,6 +2018,20 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         cfg!(target_os = "linux"),
         None::<&str>,
     )?;
+    let caption_move_item = MenuItem::with_id(
+        app,
+        "caption-move",
+        "移动字幕条…",
+        cfg!(target_os = "linux"),
+        None::<&str>,
+    )?;
+    let caption_reset_item = MenuItem::with_id(
+        app,
+        "caption-reset",
+        "重置字幕位置",
+        cfg!(target_os = "linux"),
+        None::<&str>,
+    )?;
     let caption_menu = Submenu::with_items(
         app,
         "实时字幕",
@@ -2015,6 +2044,8 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &caption_glossary_item,
             &caption_transcripts_item,
+            &caption_move_item,
+            &caption_reset_item,
         ],
     )?;
     let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -2125,6 +2156,8 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             "caption-layout-source" => set_caption_layout(app, "source"),
             "caption-glossary" => open_glossary_file(),
             "caption-transcripts" => open_captions_dir(),
+            "caption-move" => caption::start_move(app),
+            "caption-reset" => reset_caption_position(app),
             "quit" => app.exit(0),
             _ => {}
         });
@@ -2334,6 +2367,64 @@ fn save_ball_position(app: AppHandle) {
     translator_core::settings::persist_value("ball_x", &position.x.to_string());
     translator_core::settings::persist_value("ball_y", &position.y.to_string());
     apply_ball_visibility(&app);
+}
+
+/// Live drag of the caption overlay (deltas in logical pixels from
+/// `caption.js`), clamped to the current monitor's work area.
+#[tauri::command]
+fn move_caption_by(app: AppHandle, dx: f64, dy: f64) {
+    let Some(caption) = app.get_webview_window("caption") else {
+        return;
+    };
+
+    let Ok(position) = caption.outer_position() else {
+        return;
+    };
+
+    let scale = caption.scale_factor().unwrap_or(1.0);
+    let mut x = position.x + (dx * scale).round() as i32;
+    let mut y = position.y + (dy * scale).round() as i32;
+
+    if let Some(monitor) = caption
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| caption.primary_monitor().ok().flatten())
+    {
+        let work = monitor.work_area();
+        let Ok(size) = caption.outer_size().or_else(|_| caption.inner_size()) else {
+            return;
+        };
+        let margin = (4.0 * monitor.scale_factor()) as i32;
+        let max_x = work.position.x + work.size.width as i32 - size.width as i32 - margin;
+        let max_y = work.position.y + work.size.height as i32 - size.height as i32 - margin;
+
+        x = x.clamp(work.position.x + margin, max_x.max(work.position.x + margin));
+        y = y.clamp(work.position.y + margin, max_y.max(work.position.y + margin));
+    }
+
+    let _ = caption.set_position(PhysicalPosition::new(x, y));
+}
+
+/// Persists the caption overlay position after a drag.
+#[tauri::command]
+fn save_caption_position(app: AppHandle) {
+    let Some(caption) = app.get_webview_window("caption") else {
+        return;
+    };
+
+    let Ok(position) = caption.outer_position() else {
+        return;
+    };
+
+    translator_core::settings::persist_value("caption_x", &position.x.to_string());
+    translator_core::settings::persist_value("caption_y", &position.y.to_string());
+}
+
+/// Ends the interactive repositioning mode immediately (mouse released).
+#[tauri::command]
+fn finish_caption_move(app: AppHandle) {
+    caption::finish_move(&app);
 }
 
 #[tauri::command]

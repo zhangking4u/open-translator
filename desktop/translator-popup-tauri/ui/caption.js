@@ -4,7 +4,9 @@
 // backend via `caption-config`.
 
 const { listen } = window.__TAURI__.event;
+const { invoke } = window.__TAURI__.core;
 
+const caption = document.getElementById("caption");
 const source = document.getElementById("source");
 const translation = document.getElementById("translation");
 const hint = document.getElementById("hint");
@@ -82,3 +84,64 @@ listen("caption-status", (event) => {
 
   hint.textContent = "";
 });
+
+// Repositioning mode: the backend turns off click-through for 30 seconds (or
+// until the drag ends) so the overlay can receive mouse events.
+listen("caption-editing", (event) => {
+  const active = !!(event.payload && event.payload.active);
+  document.body.dataset.editing = active ? "true" : "false";
+
+  if (active) {
+    clearTimeout(hideTimer);
+    hint.textContent = "拖动字幕条调整位置，松开后自动恢复点击穿透";
+    document.body.dataset.state = "visible";
+  } else {
+    hint.textContent = "";
+    scheduleHide();
+  }
+});
+
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+
+caption.addEventListener("pointerdown", (event) => {
+  if (document.body.dataset.editing !== "true" || event.button !== 0) return;
+
+  dragging = true;
+  lastX = event.screenX;
+  lastY = event.screenY;
+
+  try {
+    // Keep receiving moves even when the pointer leaves the overlay.
+    caption.setPointerCapture(event.pointerId);
+  } catch (error) {
+    // pointer capture is best-effort
+  }
+
+  event.preventDefault();
+});
+
+caption.addEventListener("pointermove", (event) => {
+  if (!dragging) return;
+
+  const dx = event.screenX - lastX;
+  const dy = event.screenY - lastY;
+
+  if (dx === 0 && dy === 0) return;
+
+  lastX = event.screenX;
+  lastY = event.screenY;
+  invoke("move_caption_by", { dx, dy });
+});
+
+function endDrag() {
+  if (!dragging) return;
+
+  dragging = false;
+  invoke("save_caption_position");
+  invoke("finish_caption_move");
+}
+
+caption.addEventListener("pointerup", endDrag);
+caption.addEventListener("pointercancel", endDrag);
