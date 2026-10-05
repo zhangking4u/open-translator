@@ -52,6 +52,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: core/asr
+      - name: Heal an incomplete sherpa-onnx prebuilt cache
+        run: |
+          if ! ls target/sherpa-onnx-prebuilt/*/lib/libsherpa-onnx-c-api.so >/dev/null 2>&1; then
+            rm -rf target/sherpa-onnx-prebuilt
+          fi
       - run: cargo test
 
   core-windows:
@@ -104,6 +109,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/translator-popup-tauri
+      - name: Heal an incomplete sherpa-onnx prebuilt cache
+        if: runner.os == 'Linux'
+        run: |
+          if ! ls target/sherpa-onnx-prebuilt/*/lib/libsherpa-onnx-c-api.so >/dev/null 2>&1; then
+            rm -rf target/sherpa-onnx-prebuilt
+          fi
       - run: cargo test --release
 
   tauri-frontend:

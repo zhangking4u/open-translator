@@ -58,6 +58,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/translator-popup-tauri
+      - name: Heal an incomplete sherpa-onnx prebuilt cache
+        run: |
+          if ! ls desktop/translator-popup-tauri/target/sherpa-onnx-prebuilt/*/lib/libsherpa-onnx-c-api.so >/dev/null 2>&1; then
+            rm -rf desktop/translator-popup-tauri/target/sherpa-onnx-prebuilt
+          fi
       - name: Build
         env:
           OPEN_TRANSLATOR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
