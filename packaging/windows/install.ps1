@@ -54,6 +54,11 @@ if (Test-Path $LegacyExe) {
     Remove-Item $LegacyExe -Force -ErrorAction SilentlyContinue
 }
 
+# Live captions need the sherpa-onnx/onnxruntime DLLs next to the exe; newer
+# packages carry them, older ones simply have nothing to copy.
+Get-ChildItem -Path $PSScriptRoot -Filter *.dll -File |
+    ForEach-Object { Copy-Item $_.FullName (Join-Path $InstallDir $_.Name) -Force }
+
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($Startup)
 $shortcut.TargetPath = $Exe

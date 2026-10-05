@@ -63,6 +63,27 @@ jobs:
           rm -rf target/sherpa-onnx-prebuilt
       - run: cargo test
 
+  asr-windows:
+    name: ASR crate (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: core/asr
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/asr
+      - name: Rebuild the sherpa-onnx prebuilt libraries
+        # See the ASR crate job above.
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/*/build/sherpa-onnx-sys-* -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force target/*/.fingerprint/sherpa-onnx-sys-* -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force target/sherpa-onnx-prebuilt -ErrorAction SilentlyContinue
+      - run: cargo test
+
   core-windows:
     name: Core service tests (Windows)
     runs-on: windows-latest
@@ -113,13 +134,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/translator-popup-tauri
-      - name: Rebuild the sherpa-onnx prebuilt libraries
+      - name: Rebuild the sherpa-onnx prebuilt libraries (Linux)
         if: runner.os == 'Linux'
         # See the ASR crate job.
         run: |
           rm -rf target/*/build/sherpa-onnx-sys-*
           rm -rf target/*/.fingerprint/sherpa-onnx-sys-*
           rm -rf target/sherpa-onnx-prebuilt
+      - name: Rebuild the sherpa-onnx prebuilt libraries (Windows)
+        if: runner.os == 'Windows'
+        # See the ASR crate job.
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/*/build/sherpa-onnx-sys-* -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force target/*/.fingerprint/sherpa-onnx-sys-* -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force target/sherpa-onnx-prebuilt -ErrorAction SilentlyContinue
       - run: cargo test --release
 
   tauri-frontend:
