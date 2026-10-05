@@ -2134,6 +2134,10 @@ reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
   (byte-identical, SHA-256 verified) is now tried first in `ASR_MODEL_FILES`,
   then GitHub, then gh-proxy. Empty-cache re-run: 240 MB downloaded and
   captions `listening` in 74 s (the VAD mirror took under a second).
+- v0.8.0 released 2026-10-05 (tag `cb4d18d`, release run 37273967262): first
+  real run of the DLL packaging — the Windows package job took 5m13s, the zip
+  (15.4 MB) carries the four runtime DLLs, and five assets landed; v0.7.0
+  users can one-click update because the updater runs the new installer.
 
 
 ## Sprint 6
