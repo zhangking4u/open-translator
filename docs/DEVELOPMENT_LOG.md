@@ -2081,8 +2081,12 @@ reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
   (drag, click-through restoration, position restored after restart, reset).
 - 30-minute soak (2026-10-05, real video, ran 37 min): 432 segments, 432/432
   translated, 0 gaps > 60 s, flat density across 5-minute buckets, no crash;
-  spot-check quality good with the expected local-model misses. The
-  maintainer's subjective impressions are pending.
+  spot-check quality good with the expected local-model misses. The maintainer
+  reported no subjective issues, so the soak is fully accepted.
+- Release packaging verified 2026-10-05 with a `workflow_dispatch` run
+  (`Release`, run 37263196039): Windows/macOS/browser/Linux all built; the deb
+  carries the binary + `libsherpa-onnx-{c-api,cxx-api}.so` + `libonnxruntime.so`
+  and depends on `pipewire-bin`. Tagging `v0.7.0` is deferred by the maintainer.
 
 
 ## Sprint 6

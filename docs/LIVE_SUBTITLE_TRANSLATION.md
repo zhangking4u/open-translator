@@ -476,8 +476,12 @@ skipped or failed translations), 0 gaps longer than 60 s and a flat segment
 density across every 5-minute bucket (53–63 segments); the client and the
 `pw-record` child stayed alive throughout. Spot checks were mostly good, with
 the expected local-model misses ("first class baggage" → "一流的产品",
-"upper East Side" → "东区的上游地区"). The maintainer's subjective
-impressions are the remaining part of this acceptance.
+"upper East Side" → "东区的上游地区"). The maintainer reported no issues in
+the subjective pass (stable latency, no flicker, no focus or click-through
+problems), completing the M3 acceptance. Release packaging was verified with
+a `workflow_dispatch` run (all four packages built; the deb carries the shared
+sherpa/onnxruntime libraries and `pipewire-bin`); the release itself is
+deferred.
 
 
 ## 8. Risks
