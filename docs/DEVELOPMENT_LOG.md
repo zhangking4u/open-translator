@@ -2060,6 +2060,17 @@ reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
   `models/sense-voice`, enabled captions — 240 MB downloaded at ~7.7 MB/s,
   checksums verified, then captions and translations ran (first token
   442–453 ms). `auto_download = false` keeps manual placement.
+- M3 (trust, 2026-10-05) landed: the caption overlay marks provisional vs
+  final text (`···` while waiting, dimmed translation while streaming, solid
+  after `done`); the tray 实时字幕 submenu gained 编辑术语表… (creates a
+  template `glossary.txt` on first use and opens it; edits apply to the next
+  segment) and 打开字幕记录 (opens `captions/`). Every finalized pair is
+  appended to `~/.local/share/open-translator/captions/captions-<epoch>.txt`
+  with relative `HH:MM:SS` timestamps (`format_timestamp` / `transcript_entry`,
+  unit-tested).
+- M3 real-machine checks passed (pending dots, provisional → final, glossary
+  editor, transcript folder); the 30-minute experiential acceptance stays a
+  daily-use check.
 
 
 ## Sprint 6

@@ -408,7 +408,7 @@ impl VoiceSegmenter {
 | M0 smoke — **done 2026-10-04** | `pw-record` → energy VAD → SenseVoice → local MT → terminal output, no UI | 31-minute real video run: 494 segments, 0 dropped, 0 MT failures; end of speech → first translated token p50 0.82 s / p95 0.99 s / max 1.19 s; → full translation p50 1.20 s / p95 1.66 s / max 2.17 s; ASR RTF 0.022; CPU recorded |
 | M1 captions — **done 2026-10-05** | Subtitle window showing source-language captions | Real-machine verified: captions render, click-through works, no focus steal, tray toggle works. Position is bottom-center (config override, no drag UI yet); the 30-minute soak remains part of normal daily use |
 | M2 translation — **done 2026-10-05** | Second line via HY-MT streaming | Real-machine verified: translation line streams, bilingual/translation-only/source layouts switch from the tray, and `glossary.txt` terms reach the request. Measured 411–606 ms to first translated token and 1.16–2.49 s per segment (from ASR completion) |
-| M3 trust | Provisional/final states, user corrections, personal glossary, history export | **A 30-minute session used to the end without switching it off or looking for the original text** |
+| M3 trust — **done 2026-10-05** | Provisional/final states, user corrections, personal glossary, history export | Real-machine verified: `···` placeholder while waiting, dimmed streaming → solid final translation, tray 编辑术语表… (creates/opens `glossary.txt`, applied live), tray 打开字幕记录 (per-session transcript under `~/.local/share/open-translator/captions/`). The 30-minute experiential soak continues as daily use |
 
 M0 result (2026-10-04, Linux dev machine, spike scripts in `/tmp/kilo`): a
 real-speech clip produced two VAD segments with 384 ms endpointing, 415–446 ms
@@ -457,6 +457,19 @@ keeps the "place the files yourself" behaviour. Real-machine check: deleted the
 model directory, enabled captions, and download → capture → translation came up
 without any manual step.
 
+M3 result (2026-10-05): trust features landed. The overlay distinguishes
+provisional from final text — a `···` placeholder while a segment waits for the
+first translated token, a dimmed translation while tokens stream, and full
+opacity once `done` arrives. Corrections flow through the personal glossary:
+the tray 编辑术语表… item creates `glossary.txt` from a template on first use
+and opens it, and edits apply to the next segment because the file is re-read
+on every translation. Every finalized pair is appended to a per-session
+transcript (`~/.local/share/open-translator/captions/captions-<epoch>.txt`,
+relative `HH:MM:SS` stamps, source and translation lines) and the tray
+打开字幕记录 item opens the folder. Real-machine checks passed on all four
+points; the experiential acceptance (a 30-minute session used to the end)
+remains a daily-use check rather than an automated one.
+
 
 ## 8. Risks
 
@@ -482,8 +495,9 @@ without any manual step.
    for `caption_x`/`caption_y`.
 3. Source language: `caption_language` defaults to `auto`; evaluate `auto` vs a
    fixed language for accuracy and latency now that the pipeline runs in-app.
-4. Glossary: the basic `source=target` file landed in M2; per-language
-   termbases, priorities and a correction flow remain (M3).
+4. Glossary: `source=target` files landed in M2 and the edit-from-tray flow in
+   M3; per-language termbases, priorities and an in-overlay correction UI
+   remain open (the overlay is click-through by design).
 5. Per-app capture timing (capture only the meeting app's stream) — later than
    default-sink capture, but more precise.
 6. Layouts landed as bilingual/translation/source; the default stays bilingual
