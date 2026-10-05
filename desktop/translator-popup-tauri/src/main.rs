@@ -107,9 +107,9 @@ struct AppState {
     last_translated: Mutex<Option<String>>,
     /// Docked ball presentation state (see `BALL_*`).
     ball_state: AtomicU64,
-    /// Live caption capture task (Linux) and its tray check item.
+    /// Live caption capture task (Linux) and its tray items.
     caption: caption::CaptionRuntime,
-    caption_menu: Mutex<Option<CheckMenuItem<tauri::Wry>>>,
+    caption_menu: Mutex<Option<CaptionMenu>>,
     /// X11 destroys the selection owner with the last clipboard instance, so
     /// Linux keeps one alive for the app lifetime; Windows/macOS own the
     /// clipboard in the OS and use a short-lived instance per call.
@@ -132,6 +132,14 @@ struct SelectionMenu {
     off: CheckMenuItem<tauri::Wry>,
     ball: CheckMenuItem<tauri::Wry>,
     auto: CheckMenuItem<tauri::Wry>,
+}
+
+/// 实时字幕 tray submenu: the capture switch and the three layouts.
+struct CaptionMenu {
+    toggle: CheckMenuItem<tauri::Wry>,
+    bilingual: CheckMenuItem<tauri::Wry>,
+    translation: CheckMenuItem<tauri::Wry>,
+    source: CheckMenuItem<tauri::Wry>,
 }
 
 /// Docked ball states: dim when nothing is selected, lit when text is ready,
@@ -567,6 +575,7 @@ fn run_print(args: &translator_core::args::Args, model_path: &PathBuf, prompt_st
         text,
         source: args.source.clone(),
         target: args.target.clone(),
+        glossary: Vec::new(),
     };
 
     match engine.translate_blocking(&request) {
@@ -1338,6 +1347,7 @@ fn start_translation(app: &AppHandle, text: String) {
             text: text.clone(),
             source: effective_source,
             target,
+            glossary: Vec::new(),
         };
 
         let delta_app = app.clone();
@@ -1838,8 +1848,8 @@ fn set_caption_enabled(app: &AppHandle, enabled: bool) {
             notify::show("OpenTranslator", &format!("实时字幕启动失败：{error}"));
             translator_core::settings::persist_value("caption_enabled", "false");
 
-            if let Some(item) = state.caption_menu.lock().unwrap().as_ref() {
-                let _ = item.set_checked(false);
+            if let Some(menu) = state.caption_menu.lock().unwrap().as_ref() {
+                let _ = menu.toggle.set_checked(false);
             }
 
             return;
@@ -1871,8 +1881,22 @@ fn set_caption_enabled(app: &AppHandle, enabled: bool) {
         if enabled { "true" } else { "false" },
     );
 
-    if let Some(item) = state.caption_menu.lock().unwrap().as_ref() {
-        let _ = item.set_checked(enabled);
+    if let Some(menu) = state.caption_menu.lock().unwrap().as_ref() {
+        let _ = menu.toggle.set_checked(enabled);
+    }
+}
+
+/// Switches the caption layout, persists it and syncs the tray checkmarks.
+fn set_caption_layout(app: &AppHandle, layout: &str) {
+    translator_core::settings::persist_value("caption_layout", layout);
+    caption::emit_config(app);
+
+    let state = app.state::<AppState>();
+
+    if let Some(menu) = state.caption_menu.lock().unwrap().as_ref() {
+        let _ = menu.bilingual.set_checked(layout == "bilingual");
+        let _ = menu.translation.set_checked(layout == "translation");
+        let _ = menu.source.set_checked(layout == "source");
     }
 }
 
@@ -1881,15 +1905,52 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
     let update_item = MenuItem::with_id(app, "update", "正在检查更新…", false, None::<&str>)?;
-    // 实时字幕 is Linux-only for now; the item stays visible but disabled
+    // 实时字幕 is Linux-only for now; the items stay visible but disabled
     // elsewhere so the feature is discoverable.
-    let caption_item = CheckMenuItem::with_id(
+    let caption_on = app.state::<AppState>().caption.is_active();
+    let caption_layout = caption::layout();
+    let caption_toggle = CheckMenuItem::with_id(
         app,
         "caption-toggle",
-        "实时字幕",
+        "开启实时字幕",
         cfg!(target_os = "linux"),
-        app.state::<AppState>().caption.is_active(),
+        caption_on,
         None::<&str>,
+    )?;
+    let caption_bilingual = CheckMenuItem::with_id(
+        app,
+        "caption-layout-bilingual",
+        "双语字幕",
+        true,
+        caption_layout == "bilingual",
+        None::<&str>,
+    )?;
+    let caption_translation = CheckMenuItem::with_id(
+        app,
+        "caption-layout-translation",
+        "仅译文",
+        true,
+        caption_layout == "translation",
+        None::<&str>,
+    )?;
+    let caption_source = CheckMenuItem::with_id(
+        app,
+        "caption-layout-source",
+        "仅原文",
+        true,
+        caption_layout == "source",
+        None::<&str>,
+    )?;
+    let caption_menu = Submenu::with_items(
+        app,
+        "实时字幕",
+        true,
+        &[
+            &caption_toggle,
+            &caption_bilingual,
+            &caption_translation,
+            &caption_source,
+        ],
     )?;
     let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
@@ -1938,7 +1999,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             &history_item,
             &settings_item,
             &selection_menu,
-            &caption_item,
+            &caption_menu,
             &update_item,
             &PredefinedMenuItem::separator(app)?,
             &quit_item,
@@ -1951,7 +2012,12 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         ball: selection_ball,
         auto: selection_auto,
     });
-    *app.state::<AppState>().caption_menu.lock().unwrap() = Some(caption_item);
+    *app.state::<AppState>().caption_menu.lock().unwrap() = Some(CaptionMenu {
+        toggle: caption_toggle,
+        bilingual: caption_bilingual,
+        translation: caption_translation,
+        source: caption_source,
+    });
 
     let tray = TrayIconBuilder::with_id("main")
         .icon(Image::new_owned(make_icon_rgba(), 32, 32))
@@ -1989,6 +2055,9 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
                 set_selection_mode_from_menu(app, selection_watch::SelectionMode::Auto)
             }
             "caption-toggle" => toggle_caption(app),
+            "caption-layout-bilingual" => set_caption_layout(app, "bilingual"),
+            "caption-layout-translation" => set_caption_layout(app, "translation"),
+            "caption-layout-source" => set_caption_layout(app, "source"),
             "quit" => app.exit(0),
             _ => {}
         });

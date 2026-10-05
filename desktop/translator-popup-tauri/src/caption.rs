@@ -6,18 +6,29 @@
 //! Linux-only for now: PipeWire monitor capture is the M1 target. Other
 //! platforms keep a compiling stub so the tray item can report unavailability.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager};
+use translator_service::domain::translation::{GlossaryTerm, TranslationRequest};
 
 pub const EVENT_SEGMENT: &str = "caption-segment";
+pub const EVENT_TRANSLATION: &str = "caption-translation";
 pub const EVENT_STATUS: &str = "caption-status";
+pub const EVENT_CONFIG: &str = "caption-config";
 const WINDOW: &str = "caption";
+const MAX_GLOSSARY_TERMS: usize = 50;
 
 #[derive(Clone, serde::Serialize)]
 struct SegmentPayload {
     text: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct TranslationPayload {
+    text: String,
+    done: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -26,12 +37,19 @@ struct StatusPayload {
     message: Option<String>,
 }
 
+#[derive(Clone, serde::Serialize)]
+struct ConfigPayload {
+    layout: String,
+}
+
 /// Owns the running capture task. Cloned handles live in `AppState`; the task
 /// itself is aborted (and the `pw-record` child killed) by [`Self::stop`].
 #[derive(Default)]
 pub struct CaptionRuntime {
     task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     active: AtomicBool,
+    translating: AtomicBool,
+    queued: Mutex<Option<String>>,
 }
 
 impl CaptionRuntime {
@@ -90,6 +108,10 @@ fn emit_segment(app: &AppHandle, text: String) {
     }
 
     raise_caption(app);
+    // Re-send the layout with every segment: it arrives in order before the
+    // text, so the overlay never renders with a stale layout even if the
+    // initial `caption-config` raced the webview load.
+    emit_config(app);
 
     if let Err(error) = app.emit_to(WINDOW, EVENT_SEGMENT, SegmentPayload { text }) {
         if caption_debug() {
@@ -108,6 +130,209 @@ fn raise_caption(app: &AppHandle) {
 
     let _ = window.set_always_on_top(false);
     let _ = window.set_always_on_top(true);
+}
+
+/// Caption layout: `bilingual` (source + translation), `translation`
+/// (translation only) or `source` (no translation).
+pub fn layout() -> String {
+    let config = translator_core::settings::load_config();
+
+    match config
+        .caption_layout
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase()
+        .as_str()
+    {
+        "translation" => "translation".to_string(),
+        "source" => "source".to_string(),
+        _ => "bilingual".to_string(),
+    }
+}
+
+/// Pushes the current layout to the overlay (on start and on every change).
+pub fn emit_config(app: &AppHandle) {
+    let _ = app.emit_to(
+        WINDOW,
+        EVENT_CONFIG,
+        ConfigPayload {
+            layout: layout(),
+        },
+    );
+}
+
+/// Queues a finished segment for translation. Single-flight: while one
+/// translation runs, only the newest follow-up text is kept.
+fn translate_segment(app: &AppHandle, text: String) {
+    if layout() == "source" || text.trim().is_empty() {
+        return;
+    }
+
+    let runtime = &app.state::<crate::AppState>().caption;
+
+    if runtime.translating.swap(true, Ordering::SeqCst) {
+        *runtime.queued.lock().unwrap() = Some(text);
+        return;
+    }
+
+    let app = app.clone();
+    std::thread::spawn(move || run_caption_translation(&app, text));
+}
+
+fn run_caption_translation(app: &AppHandle, text: String) {
+    let engine = app.state::<crate::AppState>().engine.lock().unwrap().clone();
+
+    let Some(engine) = engine else {
+        // The translation model is not ready yet; keep showing the source line.
+        finish_caption_translation(app);
+        return;
+    };
+
+    let target = app
+        .state::<Mutex<crate::TranslateConfig>>()
+        .lock()
+        .unwrap()
+        .target
+        .clone();
+    let configured_source = translator_core::settings::load_config()
+        .caption_language
+        .unwrap_or_default();
+
+    let request = TranslationRequest {
+        text,
+        source: if configured_source.trim().is_empty() {
+            "auto".to_string()
+        } else {
+            configured_source
+        },
+        target,
+        glossary: load_glossary(),
+    };
+
+    if caption_debug() {
+        eprintln!(
+            "CAPDBG translation glossary={} source={}",
+            request.glossary.len(),
+            request.source
+        );
+    }
+
+    let started = std::time::Instant::now();
+    let mut first_logged = false;
+
+    let result = engine.translate_blocking_streaming(&request, {
+        let app = app.clone();
+
+        move |piece| {
+            if !first_logged {
+                first_logged = true;
+
+                if caption_debug() {
+                    eprintln!(
+                        "CAPDBG translation first_ms={}",
+                        started.elapsed().as_millis()
+                    );
+                }
+            }
+
+            let _ = app.emit_to(
+                WINDOW,
+                EVENT_TRANSLATION,
+                TranslationPayload {
+                    text: piece.to_string(),
+                    done: false,
+                },
+            );
+        }
+    });
+
+    match result {
+        Ok(result) => {
+            let _ = app.emit_to(
+                WINDOW,
+                EVENT_TRANSLATION,
+                TranslationPayload {
+                    text: result.translated_text,
+                    done: true,
+                },
+            );
+
+            if caption_debug() {
+                eprintln!("CAPDBG translation done_ms={}", started.elapsed().as_millis());
+            }
+        }
+        Err(error) => {
+            if caption_debug() {
+                eprintln!("CAPDBG translation failed: {error}");
+            }
+        }
+    }
+
+    finish_caption_translation(app);
+}
+
+fn finish_caption_translation(app: &AppHandle) {
+    let runtime = &app.state::<crate::AppState>().caption;
+
+    loop {
+        let next = runtime.queued.lock().unwrap().take();
+
+        if let Some(next) = next {
+            let app = app.clone();
+            std::thread::spawn(move || run_caption_translation(&app, next));
+            return;
+        }
+
+        runtime.translating.store(false, Ordering::SeqCst);
+
+        // A segment that arrived between the take and the store may have seen
+        // `translating == true`; pick it up instead of losing it.
+        if runtime.queued.lock().unwrap().is_some() {
+            if runtime.translating.swap(true, Ordering::SeqCst) {
+                return;
+            }
+
+            continue;
+        }
+
+        return;
+    }
+}
+
+/// `source=target` per line (comments start with `#`), capped so a runaway
+/// file cannot blow up the prompt. Reads the configured path or
+/// `glossary.txt` next to the config.
+fn load_glossary() -> Vec<GlossaryTerm> {
+    let config = translator_core::settings::load_config();
+    let path = config
+        .caption_glossary
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(translator_core::paths::glossary_path);
+    let Some(path) = path else {
+        return Vec::new();
+    };
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+
+            let (source, target) = line.split_once('=')?;
+            let source = source.trim().to_string();
+            let target = target.trim().to_string();
+
+            (!source.is_empty() && !target.is_empty()).then_some(GlossaryTerm { source, target })
+        })
+        .take(MAX_GLOSSARY_TERMS)
+        .collect()
 }
 
 #[cfg(target_os = "linux")]
@@ -144,6 +369,7 @@ mod linux {
 
         Ok(tauri::async_runtime::spawn(async move {
             emit_status(&app, "starting", None);
+            super::emit_config(&app);
 
             let loaded = {
                 let model = model.clone();
@@ -221,7 +447,8 @@ mod linux {
 
                     match result {
                         Ok(Ok(transcript)) if !transcript.text.is_empty() => {
-                            emit_segment(&worker_app, transcript.text);
+                            emit_segment(&worker_app, transcript.text.clone());
+                            super::translate_segment(&worker_app, transcript.text);
                         }
                         Ok(Ok(_)) => {}
                         Ok(Err(error)) => eprintln!("caption: transcription failed: {error}"),

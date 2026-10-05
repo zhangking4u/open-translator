@@ -28,6 +28,8 @@ pub struct FileConfig {
     pub caption_language: Option<String>,
     pub caption_x: Option<String>,
     pub caption_y: Option<String>,
+    pub caption_layout: Option<String>,
+    pub caption_glossary: Option<String>,
 }
 
 pub fn load_config() -> FileConfig {
@@ -94,6 +96,8 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "caption_language" => config.caption_language = Some(value.to_string()),
             "caption_x" => config.caption_x = Some(value.to_string()),
             "caption_y" => config.caption_y = Some(value.to_string()),
+            "caption_layout" => config.caption_layout = Some(value.to_string()),
+            "caption_glossary" => config.caption_glossary = Some(value.to_string()),
             _ => {}
         }
     }
@@ -202,7 +206,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_method = auto\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nasr_model_dir = /models/sense-voice\ncaption_enabled = true\ncaption_language = auto\ncaption_x = 640\ncaption_y = 960\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_method = auto\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nasr_model_dir = /models/sense-voice\ncaption_enabled = true\ncaption_language = auto\ncaption_x = 640\ncaption_y = 960\ncaption_layout = translation\ncaption_glossary = /config/glossary.txt\nunknown = x\n",
         )
         .unwrap();
 
@@ -235,6 +239,11 @@ mod tests {
         assert_eq!(config.caption_language.as_deref(), Some("auto"));
         assert_eq!(config.caption_x.as_deref(), Some("640"));
         assert_eq!(config.caption_y.as_deref(), Some("960"));
+        assert_eq!(config.caption_layout.as_deref(), Some("translation"));
+        assert_eq!(
+            config.caption_glossary.as_deref(),
+            Some("/config/glossary.txt")
+        );
     }
 
     #[test]

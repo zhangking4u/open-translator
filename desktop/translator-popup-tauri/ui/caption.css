@@ -39,22 +39,31 @@ body[data-state="error"] #caption {
   transform: none;
 }
 
-#prev {
+#source {
   font-size: 16px;
   line-height: 1.4;
-  opacity: 0.6;
+  opacity: 0.62;
 }
 
-#prev:empty {
-  display: none;
-}
-
-#line {
-  font-size: 24px;
+#translation {
+  font-size: 26px;
   line-height: 1.4;
   font-weight: 600;
   letter-spacing: 0.01em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+#source:empty,
+#translation:empty {
+  display: none;
+}
+
+body[data-layout="translation"] #source {
+  display: none;
+}
+
+body[data-layout="source"] #translation {
+  display: none;
 }
 
 #hint {
@@ -68,9 +77,14 @@ body[data-state="error"] #caption {
   display: none;
 }
 
-body[data-state="error"] #line {
+body[data-state="error"] #source {
+  opacity: 1;
   font-size: 16px;
   font-weight: 500;
+}
+
+body[data-state="error"] #translation {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

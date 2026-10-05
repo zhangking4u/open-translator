@@ -83,6 +83,10 @@ pub const DEFAULT_MODEL_FILE: &str = "hy-mt1.5-1.8b-q4_k_m.gguf";
 /// Silero VAD model and `tokens.txt`.
 pub const DEFAULT_ASR_DIR: &str = "sense-voice";
 
+/// Glossary file (source=target lines) next to the config, used by live
+/// captions and available to other callers.
+pub const DEFAULT_GLOSSARY_FILE: &str = "glossary.txt";
+
 #[cfg(target_os = "windows")]
 pub fn models_dir() -> Option<PathBuf> {
     env::var_os("LOCALAPPDATA")
@@ -124,6 +128,12 @@ pub fn default_model_path() -> Option<PathBuf> {
 
 pub fn default_asr_model_dir() -> Option<PathBuf> {
     Some(models_dir()?.join(DEFAULT_ASR_DIR))
+}
+
+pub fn glossary_path() -> Option<PathBuf> {
+    let config = config_path()?;
+
+    Some(config.parent()?.join(DEFAULT_GLOSSARY_FILE))
 }
 
 pub fn log_path(name: &str) -> PathBuf {
@@ -221,6 +231,16 @@ mod tests {
         assert_eq!(
             path.file_name().unwrap().to_string_lossy(),
             DEFAULT_ASR_DIR
+        );
+    }
+
+    #[test]
+    fn glossary_path_sits_next_to_the_config() {
+        let path = glossary_path().unwrap();
+
+        assert_eq!(
+            path.file_name().unwrap().to_string_lossy(),
+            DEFAULT_GLOSSARY_FILE
         );
     }
 }
