@@ -254,7 +254,9 @@ Status:
 
 3. Selection translation follow-ups: X11-session manual check pending (the dev machine is GNOME Wayland), per `docs/SELECTION_TRANSLATION.md`
 
-4. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources)
+4. Live subtitle translation (实时字幕翻译): research and design intent documented in `docs/LIVE_SUBTITLE_TRANSLATION.md`; scope decided 2026-10-04 (single-direction comprehension, overlay captions, strictly local, Linux first). M0 measurement spike passed 2026-10-04, including a 31-minute video run (494 segments, 0 dropped, end of speech → first translated token p50 0.82 s / p95 0.99 s; ASR RTF ~0.022; MT dominates CPU); product implementation has not started (M1 next)
+
+5. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources)
 
 
 ---

@@ -1981,7 +1981,39 @@ v0.5.0 released (2026-10-04) with the extension 边写边译 inline translation 
 
 ## Sprint 5
 
-Meeting translation (parked).
+Meeting translation. Product work is parked, but the M0 measurement spike ran
+on 2026-10-04 (Linux dev machine) and passed its latency gate; the design
+reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
+
+- Capture: `pw-record --target @DEFAULT_AUDIO_SINK@` links to the default
+  sink's monitor ports and captures playback (PipeWire 1.6.2; no `parec`/
+  `pactl` installed). `pw-record -n <samples>` exits 1 after writing the
+  requested samples — rc=1 with a complete file is success.
+- ASR: SenseVoice int8 (`model.int8.onnx` + `tokens.txt` via `hf-mirror.com`
+  with `HF_HUB_DISABLE_XET=1`; ModelScope API 404s for this mirror) decodes
+  real speech at RTF ~0.022 on CPU (7.15 s clip in 161 ms; ~0.09 CPU-seconds
+  per audio-second). Real-speech en/zh test clips are accurate (one word off
+  on the en clip); espeak-ng synthetic speech is recognized poorly, so WER
+  must be judged on real meeting audio.
+- MT: the running desktop client's in-process llama.cpp engine
+  (`hy-mt1.5-1.8b-q4_k_m.gguf`) gives 240–255 ms to first token and 490–680 ms
+  per short request. CPU is the hot spot: ~3.3 CPU-seconds per ~100-character
+  request.
+- End to end (monitor capture → energy VAD → SenseVoice → local MT), real
+  speech: 384 ms endpointing, 415–446 ms segment close → first translated
+  token, 665–721 ms → done; ~0.83 s from end of speech to first translated
+  token and ~1.1 s to a finished segment.
+- 31-minute run (English lecture video → zh, 1860 s window): 494 segments,
+  0 dropped, 0 MT failures, 1501 s of speech; end of speech → first translated
+  token p50 823 ms / p95 990 ms / max 1192 ms; → full translation p50 1199 ms /
+  p95 1658 ms / max 2172 ms; no drift over time (Q1 848 ms → Q4 804 ms). Spot
+  checks showed good translation quality; observed failure modes are
+  word-level MT glitches and proper-noun ASR errors, supporting the
+  glossary-first plan. Caveat: clean video speech, not an interactive meeting.
+- M0 acceptance is complete. The `asr_ms` field of that run's JSONL is invalid
+  (time-base bug, fixed for future runs); ASR timing stands on the separate
+  RTF measurement. No product code was written; spike scripts live in
+  `/tmp/kilo` (`m0_run.py`, `analyze_run.py`).
 
 
 ## Sprint 6
