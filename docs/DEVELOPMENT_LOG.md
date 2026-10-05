@@ -2050,6 +2050,16 @@ reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
   Real-machine checks passed (translation line, layout switching,
   click-through and focus unchanged). Follow-ups: ASR model download (release
   blocker) and overlay placement UI.
+- ASR model download (2026-10-05): `translator-core::models` gained
+  `ModelFile` / `ASR_MODEL_FILES` / `download_model_file` (tries URLs in
+  order, verifies SHA-256, skips valid files, resumes partials) with the
+  SenseVoice files on `hf-mirror.com` and Silero VAD on the sherpa-onnx GitHub
+  release plus a gh-proxy fallback. Caption start downloads missing files and
+  reports `caption-status` state `downloading` with percentage; failures notify
+  and switch the tray back off. Real-machine check: deleted
+  `models/sense-voice`, enabled captions — 240 MB downloaded at ~7.7 MB/s,
+  checksums verified, then captions and translations ran (first token
+  442–453 ms). `auto_download = false` keeps manual placement.
 
 
 ## Sprint 6

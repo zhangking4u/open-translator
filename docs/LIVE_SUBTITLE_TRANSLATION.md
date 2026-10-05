@@ -259,7 +259,9 @@ the GTK widget is not realized yet.
   Caption translation runs in the same module: a single-flight worker streams
   `caption-translation` deltas from the embedded llama.cpp engine (newest text
   wins) and `caption-config` carries the layout; the glossary file
-  (`caption_glossary` or `glossary.txt`) is read on every translation.
+  (`caption_glossary` or `glossary.txt`) is read on every translation. Missing
+  ASR/VAD files are downloaded before capture starts (progress through
+  `caption-status` state `downloading`; `auto_download = false` disables it).
 - Do not add audio to `translator-service` until a second consumer exists
   (the browser extension's tab audio is the natural candidate, through
   `src/server.rs`).
@@ -447,6 +449,14 @@ translated token 411–606 ms, full segment 1.16–2.49 s (English → Korean wi
 glossary term, `auto` source). Real-machine checks passed: translation line,
 layout switching, no focus/click-through regressions.
 
+M2 follow-up (2026-10-05): missing SenseVoice/VAD files are now downloaded on
+first caption start (`translator-core::models::ASR_MODEL_FILES`; SHA-256
+verified, resume and skip-if-valid supported, progress shown in the overlay).
+Measured 240 MB at ~7.7 MB/s through `hf-mirror.com`; `auto_download = false`
+keeps the "place the files yourself" behaviour. Real-machine check: deleted the
+model directory, enabled captions, and download → capture → translation came up
+without any manual step.
+
 
 ## 8. Risks
 
@@ -462,11 +472,11 @@ layout switching, no focus/click-through regressions.
 
 ## 9. Open questions
 
-1. ASR model distribution: the app must download `model.int8.onnx`,
-   `tokens.txt` and `silero_vad.onnx` (currently placed by hand) through
-   `translator-core::models`; the working route is `hf-mirror.com` with
-   `HF_HUB_DISABLE_XET=1` (ModelScope has no reachable sherpa mirror for this
-   model). Main release blocker.
+1. ASR model distribution — **done 2026-10-05**: `translator-core::models`
+   carries `ASR_MODEL_FILES` (SenseVoice int8 + `tokens.txt` from
+   `hf-mirror.com`, Silero VAD from the sherpa-onnx GitHub release with a
+   gh-proxy fallback) with SHA-256 verification, resume and skip-if-valid; the
+   caption start downloads missing files and streams progress to the overlay.
 2. Overlay placement: a click-through window cannot be dragged — decide
    between drag support (temporarily re-enabling input) and a settings control
    for `caption_x`/`caption_y`.
