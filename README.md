@@ -101,9 +101,9 @@ target = zh
 
 弹窗内可用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语；⇄ 互换语言对，`Ctrl+1/2/3` 切换最近使用的目标语言。译文流式显示并同步显示已接收字数。卡片提供 复制译文 / 替换原文（Windows 与 Linux/X11）/ 朗读（Windows/macOS 用系统语音，Linux 经 speech-dispatcher，按目标语言选择语音，无对应语音时不显示）/ 重新翻译 / 固定，`Ctrl+Enter` 重译、`Ctrl+Shift+C` 复制；托盘菜单提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。
 
-### 2.1 实时字幕（Linux）
+### 2.1 实时字幕（Linux / Windows）
 
-托盘菜单「实时字幕」→「开启实时字幕」后，客户端采集系统默认输出设备的回环音频，用本地 SenseVoice 模型出字幕，再用本地模型流式翻译成目标语言；字幕条置顶、点击穿透、不抢焦点，静音数秒后自动淡出，子菜单可切换「双语字幕 / 仅译文 / 仅原文」。首次开启会自动下载语音模型（约 240MB，来自 hf-mirror，带 SHA-256 校验与断点续传，进度显示在字幕条上）；`auto_download = false` 时需自行把 `model.int8.onnx`、`tokens.txt`、`silero_vad.onnx` 放到 `~/.local/share/open-translator/models/sense-voice/`。术语表是 `~/.config/open-translator/glossary.txt`（每行 `源词=译词`，最多 50 条，`#` 注释），想让字幕固定使用某个译法时写进去即可；子菜单里还有「编辑术语表…」（首次创建并打开该文件，保存后下一句即生效）、「打开字幕记录」（每次开启会话都会在 `~/.local/share/open-translator/captions/` 生成一份带时间戳的双语文本）、「移动字幕条…」（字幕条暂时变为可拖动，30 秒后或松开鼠标自动恢复点击穿透，位置会被记住）和「重置字幕位置」（回到屏幕底部居中）。译文等待时显示「···」，流式期间半透明、完成后变清晰。相关配置：`caption_enabled`、`caption_language`（默认 `auto`）、`caption_layout`、`caption_glossary`、`caption_x`/`caption_y`。目前仅 Linux 支持；Windows/macOS 上托盘项为灰色。
+托盘菜单「实时字幕」→「开启实时字幕」后，客户端采集系统默认输出设备的回环音频（Linux 用 PipeWire monitor，Windows 用 WASAPI 回环），用本地 SenseVoice 模型出字幕，再用本地模型流式翻译成目标语言；字幕条置顶、点击穿透、不抢焦点，静音数秒后自动淡出，子菜单可切换「双语字幕 / 仅译文 / 仅原文」。首次开启会自动下载语音模型（约 240MB，来自 hf-mirror，带 SHA-256 校验与断点续传，进度显示在字幕条上）；`auto_download = false` 时需自行把 `model.int8.onnx`、`tokens.txt`、`silero_vad.onnx` 放到模型目录（Linux `~/.local/share/open-translator/models/sense-voice/`，Windows `%LOCALAPPDATA%\open-translator\models\sense-voice\`）。术语表是 `glossary.txt`（每行 `源词=译词`，最多 50 条，`#` 注释；Linux 在 `~/.config/open-translator/`，Windows 在 `%APPDATA%\open-translator\`），想让字幕固定使用某个译法时写进去即可；子菜单里还有「编辑术语表…」（首次创建并打开该文件，保存后下一句即生效）、「打开字幕记录」（每次开启会话都会在 captions 目录生成一份带时间戳的双语文本，Windows 在 `%LOCALAPPDATA%\open-translator\captions\`）、「移动字幕条…」（字幕条暂时变为可拖动，30 秒后或松开鼠标自动恢复点击穿透，位置会被记住）和「重置字幕位置」（回到屏幕底部居中）。译文等待时显示「···」，流式期间半透明、完成后变清晰。相关配置：`caption_enabled`、`caption_language`（默认 `auto`）、`caption_layout`、`caption_glossary`、`caption_x`/`caption_y`。目前支持 Linux 与 Windows；macOS 上托盘项为灰色。
 
 ### 3. 浏览器扩展（Edge / Chrome / Firefox）
 
@@ -146,7 +146,7 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 
 ## 常见问题
 
-- **网络**：`ollama.com` 与 HuggingFace 不可达（`hf-mirror.com` 可替代，Xet 仓库需 `HF_HUB_DISABLE_XET=1`）；翻译模型从 ModelScope 下载，语音模型从 hf-mirror 下载，Silero VAD 走 GitHub release（可加 `https://gh-proxy.com/` 前缀兜底）。
+- **网络**：`ollama.com` 与 HuggingFace 不可达（`hf-mirror.com` 可替代，Xet 仓库需 `HF_HUB_DISABLE_XET=1`）；翻译模型从 ModelScope 下载，语音模型从 hf-mirror 下载，Silero VAD 优先走 hf-mirror 镜像（与官方 release 字节一致，仍有 SHA-256 校验），失败再回退 GitHub release 与 `https://gh-proxy.com/` 兜底。
 - **浏览器扩展连不上服务**：确认核心服务在运行；扩展权限的 match pattern 不能带端口（已用 `http://127.0.0.1/*`）；若 Firefox 配置了代理，确保 localhost 直连。
 - **GNOME Wayland 限制**：原生 Wayland 不支持置顶（keep-above），托盘点击也没有激活令牌、GNOME 不允许后台窗口置顶/聚焦；Tauri 客户端因此在 Wayland 会话下默认走 XWayland（`GDK_BACKEND=wayland` 可退回原生 Wayland，此时「固定」仅阻止隐藏）。系统不提供 data-control 协议，选区读取依赖 `wl-paste`（`wl-clipboard` 包）。
 - **日志**：服务日志 `~/.local/state/open-translator/{ollama,translator-service}.log`；服务运行日志用 `RUST_LOG` 控制。

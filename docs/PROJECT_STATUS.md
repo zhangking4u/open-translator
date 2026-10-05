@@ -220,7 +220,7 @@ main
 
 Latest commit:
 
-v0.5.0 tagged at c948d99 (test: stabilize the dropdown placement e2e checks); release run 37138919115 published five assets
+v0.7.0 tagged at bc49d71 (ci: drop sherpa-onnx-sys build outputs before testing); release run 37266548836 published five assets
 
 
 ---
@@ -240,7 +240,7 @@ Ordinary users on Windows/macOS can download, install and use it without technic
 
 Status:
 
-`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray; `v0.5.0` (2026-10-04) adds the browser extension 边写边译 inline translation (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target) and unifies the extension/desktop UI on shared Apple-style tokens and `OTSelect` dropdowns single-sourced under `shared/ui`. The desktop 划词翻译 feature landed on Linux, Windows and macOS (cross-target compile-checked) 2026-10-04 (floating-ball and direct modes, settings group, card gear button); Windows real-machine verification passed 2026-10-04; macOS cannot be verified on hardware (no Mac; CI-built and cross-target compile-checked only) and the X11-session check is pending.
+`v0.3.0` published 2026-10-02 with the Tauri client on Windows/macOS/Linux (https://github.com/zhangking4u/open-translator/releases/tag/v0.3.0); `v0.3.1` followed 2026-10-03; `v0.4.0` (2026-10-03) shipped the desktop redesign (card/settings/history) and the browser extension overhaul (streaming bubble, toolbar popup) plus the extension zips as release assets; `v0.4.1` (2026-10-03) closes the Linux gaps (copy/replace/read-aloud/one-click deb update) and fixes the card surfacing above fullscreen windows from the tray; `v0.5.0` (2026-10-04) adds the browser extension 边写边译 inline translation (caret bubble, `Tab` commit, target-language chip, `Alt+Shift+L` cycle-target) and unifies the extension/desktop UI on shared Apple-style tokens and `OTSelect` dropdowns single-sourced under `shared/ui`. The desktop 划词翻译 feature landed on Linux, Windows and macOS (cross-target compile-checked) 2026-10-04 (floating-ball and direct modes, settings group, card gear button); Windows real-machine verification passed 2026-10-04; macOS cannot be verified on hardware (no Mac; CI-built and cross-target compile-checked only) and the X11-session check is pending. `v0.6.0` (2026-10-04) shipped the selection-translation hardening; `v0.7.0` (2026-10-05) adds live captions (PipeWire monitor capture, SenseVoice, streamed translation, glossary, per-session transcripts, overlay drag) and a Windows port of the same pipeline (WASAPI loopback, W0–W3, real-machine verified; the Windows zip now ships the sherpa-onnx/onnxruntime DLLs).
 
 
 ---
@@ -254,9 +254,9 @@ Status:
 
 3. Selection translation follow-ups: X11-session manual check pending (the dev machine is GNOME Wayland), per `docs/SELECTION_TRANSLATION.md`
 
-4. Live subtitle translation (实时字幕翻译): research, design and M0–M3 results in `docs/LIVE_SUBTITLE_TRANSLATION.md`. Scope: single-direction comprehension, overlay captions, strictly local, Linux first. M0 passed 2026-10-04 (31-minute run: end of speech → first translated token p50 0.82 s; ASR RTF ~0.022). M1 (capture + source captions) and M2 (streamed translation line, bilingual/仅译文/仅原文 tray switch, `glossary.txt` terms in the prompt) passed real-machine checks 2026-10-05; measured 411–606 ms to first translated token from ASR completion. ASR/VAD model auto-download landed 2026-10-05. M3 (provisional/final styling, tray glossary editor, per-session transcripts) and the overlay drag/reset position UI passed real-machine checks 2026-10-05. The 37-minute soak passed objectively (432 segments, 432/432 translated, 0 gaps > 60 s, no crash) and subjectively (maintainer reported no issues), so M0–M3 are fully accepted. Release packaging verified 2026-10-05 via `workflow_dispatch` (all four packages; deb carries the sherpa/onnxruntime shared libs), while tagging v0.7.0 is deferred
+4. Live subtitle translation (实时字幕翻译): research, design and M0–M3 results in `docs/LIVE_SUBTITLE_TRANSLATION.md`. Scope: single-direction comprehension, overlay captions, strictly local, Linux first. M0 passed 2026-10-04 (31-minute run: end of speech → first translated token p50 0.82 s; ASR RTF ~0.022). M1 (capture + source captions) and M2 (streamed translation line, bilingual/仅译文/仅原文 tray switch, `glossary.txt` terms in the prompt) passed real-machine checks 2026-10-05; measured 411–606 ms to first translated token from ASR completion. ASR/VAD model auto-download landed 2026-10-05. M3 (provisional/final styling, tray glossary editor, per-session transcripts) and the overlay drag/reset position UI passed real-machine checks 2026-10-05. The 37-minute soak passed objectively (432 segments, 432/432 translated, 0 gaps > 60 s, no crash) and subjectively (maintainer reported no issues), so M0–M3 are fully accepted. Release packaging verified 2026-10-05 via `workflow_dispatch` (all four packages; deb carries the sherpa/onnxruntime shared libs); v0.7.0 was released 2026-10-05 (tag `bc49d71`, release run 37266548836, five assets). The Windows port (W0–W3) landed 2026-10-05: WASAPI loopback capture with the same pipeline, real-machine verified on Windows 11, DLLs now shipped in the Windows zip
 
-5. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources)
+5. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources), v0.6.0 (selection-translation hardening), v0.7.0 (live captions on Linux + Windows)
 
 
 ---
@@ -795,3 +795,12 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 
 - Closed the pending Windows checks: the redesigned desktop UI (card/settings/history) and the selection-translation flow (selection-following ball / 立即翻译) are verified on hardware
 - macOS cannot be real-machine-verified (no Mac hardware): the dmg stays arm64-only and unsigned, macOS is CI-built plus cross-target compile-checked, and its watcher ships as experimental; the X11-session manual check remains pending
+
+
+## Windows Live Captions Landing — W0–W3 (2026-10-05)
+
+
+- W0 spike proved on hardware that `AUDCLNT_STREAMFLAGS_LOOPBACK` + `AUTOCONVERTPCM` on the default render endpoint delivers exactly 16 kHz mono f32; sherpa's Silero VAD hard-exits on any other rate, idle endpoints deliver no packets, and the `wasapi` client types are `!Send` (setup/capture/teardown share one thread)
+- W1: `translator-asr` is now target-gated for Linux and Windows and `wasapi` 0.25 (MIT) was added; `src/caption.rs` gained `mod windows` (single-thread WASAPI lifecycle, device-mix-format fallback with an in-repo box-filter/linear resampler, session rebuild after a device switch, shared model/worker helpers extracted from the Linux module, whose `pw-record` path is unchanged); the tray 实时字幕 items are enabled on Windows
+- W3: the Windows release zip ships `sherpa-onnx-c-api.dll`/`sherpa-onnx-cxx-api.dll`/`onnxruntime.dll`/`onnxruntime_providers_shared.dll` and `install.ps1` copies them next to the exe (one-click updates carry them too); CI gained an `asr-windows` job and the Windows Tauri/release jobs got the sherpa cache workaround
+- Real-machine verified on Windows 11: source captions, translation line/layouts, overlay drag; one bug found and fixed — 编辑术语表…/打开字幕记录 used the Linux-only `open_in_default_app` helper (a no-op outside Linux) and now reuse `open_path`; client `cargo test --release` 17/17
