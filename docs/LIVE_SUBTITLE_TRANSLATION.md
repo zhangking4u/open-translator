@@ -515,8 +515,11 @@ impressions are the remaining part of this acceptance.
    default-sink capture, but more precise.
 6. Layouts landed as bilingual/translation/source; the default stays bilingual
    — revisit after real usage by someone who cannot read the source.
-7. Model licensing and redistribution checks for SenseVoice/Silero before
-   packaging.
+7. Model licensing — **done 2026-10-05**: Silero VAD is MIT; SenseVoiceSmall
+   is under the FunASR model license (free use/modify/share, attribution of
+   source, author and model name required); sherpa-onnx is Apache-2.0 and
+   onnxruntime MIT. The weights are downloaded at runtime and not
+   redistributed; README carries the attribution table.
 8. Whether the browser extension should capture tab audio directly (second
    consumer) instead of relying on system loopback.
 

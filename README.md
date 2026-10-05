@@ -151,11 +151,26 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 - **GNOME Wayland 限制**：原生 Wayland 不支持置顶（keep-above），托盘点击也没有激活令牌、GNOME 不允许后台窗口置顶/聚焦；Tauri 客户端因此在 Wayland 会话下默认走 XWayland（`GDK_BACKEND=wayland` 可退回原生 Wayland，此时「固定」仅阻止隐藏）。系统不提供 data-control 协议，选区读取依赖 `wl-paste`（`wl-clipboard` 包）。
 - **日志**：服务日志 `~/.local/state/open-translator/{ollama,translator-service}.log`；服务运行日志用 `RUST_LOG` 控制。
 
+## 第三方模型与许可
+
+本项目自身代码为 MIT。运行时下载或链接的第三方组件：
+
+| 组件 | 用途 | 许可 |
+| --- | --- | --- |
+| HY-MT1.5-1.8B（腾讯混元） | 文本翻译模型（从 ModelScope 下载） | 遵循模型仓库的 Hunyuan 社区许可 |
+| **SenseVoiceSmall**（FunASR，阿里巴巴通义实验室） | 实时字幕的语音识别（从 hf-mirror 下载） | [FunASR Model License](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE)：可免费使用/修改/分享，需注明出处与模型名称 |
+| Silero VAD（Silero Team） | 语音端点检测 | MIT |
+| sherpa-onnx / onnxruntime | 语音识别运行时 | Apache-2.0 / MIT |
+| llama.cpp | 本地推理运行时 | MIT |
+
+语音识别基于 FunASR 的 **SenseVoiceSmall** 模型，经 sherpa-onnx 项目转换为 ONNX 格式；模型权重不随安装包分发，由客户端首次使用时下载。
+
 ## 仓库结构
 
 ```
 core/translator-service/          核心服务（Rust）
 core/inference/                   进程内 llama.cpp 推理（Rust）
+core/asr/                         本地语音识别（SenseVoice + Silero VAD，sherpa-onnx）
 desktop/translator-popup-tauri/   桌面客户端（Tauri v2，Windows/macOS/Linux 发布包）
 desktop/install-windows.ps1       Windows 源码安装（Tauri）
 desktop/install-macos.sh          macOS 源码安装（Tauri）
@@ -170,6 +185,7 @@ docs/                             架构、状态、开发日志
 ```bash
 cd core/translator-service && cargo test    # 核心服务
 cd core/inference && cargo test             # 进程内推理（构建 llama.cpp 需 cmake + clang/libclang）
+cd core/asr && cargo test                   # 本地语音识别（构建时下载 sherpa-onnx 预编译共享库）
 cd desktop/translator-core && cargo test    # 桌面共享库（跨平台：参数/配置/翻译调用/服务自启）
 cd desktop/translator-popup-tauri && cargo test  # 桌面客户端（Tauri；Linux 需 webkit2gtk-4.1 等构建依赖）
 ./browser/test.sh                           # Chrome MV3 端到端（服务未运行会自启 mock 引擎）
