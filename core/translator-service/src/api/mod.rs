@@ -14,7 +14,7 @@ use axum::{
 use futures_util::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::translation::{TranslationError, TranslationRequest};
+use crate::domain::translation::{GlossaryTerm, TranslationError, TranslationRequest};
 use crate::engine::EngineRef;
 
 #[derive(Clone)]
@@ -71,6 +71,8 @@ struct TranslateRequest {
     text: String,
     source: String,
     target: String,
+    #[serde(default)]
+    glossary: Vec<GlossaryTerm>,
 }
 
 #[derive(Serialize)]
@@ -111,6 +113,7 @@ async fn translate(
             text: payload.text,
             source: source.clone(),
             target: target.clone(),
+            glossary: payload.glossary,
         })
         .await;
 
@@ -172,6 +175,7 @@ async fn translate_stream(
                     text: payload.text,
                     source: source.clone(),
                     target: target.clone(),
+                    glossary: payload.glossary,
                 },
                 Box::new(move |delta| {
                     let _ = callback_sender.send(StreamEvent::Delta {

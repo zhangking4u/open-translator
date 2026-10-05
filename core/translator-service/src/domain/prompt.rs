@@ -86,19 +86,21 @@ pub fn translation_prompt(
 
 fn generic_auto_prompt(request: &TranslationRequest, target: &str) -> String {
     format!(
-        "Translate the following text into {} ({target}).\n\
+        "Translate the following text into {} ({target}).{}\n\
          Return only the translation without explanations.\n\n{}",
         display_name(target),
+        glossary_hint(request, false),
         request.text
     )
 }
 
 fn generic_prompt(request: &TranslationRequest, source: &str, target: &str) -> String {
     format!(
-        "Translate the following text from {} ({source}) to {} ({target}).\n\
+        "Translate the following text from {} ({source}) to {} ({target}).{}\n\
          Return only the translation without explanations.\n\n{}",
         display_name(source),
         display_name(target),
+        glossary_hint(request, false),
         request.text
     )
 }
@@ -112,8 +114,9 @@ fn translategemma_prompt(request: &TranslationRequest, source: &str, target: &st
          Your goal is to accurately convey the meaning and nuances of the original \
          {source_name} text while adhering to {target_name} grammar, vocabulary, and \
          cultural sensitivities.\nProduce only the {target_name} translation, without any \
-         additional explanations or commentary. Please translate the following {source_name} \
+         additional explanations or commentary.{}\nPlease translate the following {source_name} \
          text into {target_name}:\n\n\n{}",
+        glossary_hint(request, false),
         request.text
     )
 }
@@ -125,29 +128,59 @@ fn translategemma_auto_prompt(request: &TranslationRequest, target: &str) -> Str
         "You are a professional translator. Your goal is to accurately convey the meaning \
          and nuances of the original text while adhering to {target_name} grammar, vocabulary, \
          and cultural sensitivities.\nProduce only the {target_name} translation, without any \
-         additional explanations or commentary. Translate the following text into {target_name} \
+         additional explanations or commentary.{}\nTranslate the following text into {target_name} \
          ({target}):\n\n\n{}",
+        glossary_hint(request, false),
         request.text
     )
 }
 
 fn hunyuan_mt_prompt(request: &TranslationRequest, target: &str) -> String {
     format!(
-        "将以下文本翻译为{}，注意只需要输出翻译后的结果，不要额外解释：\n\n{}",
+        "将以下文本翻译为{}，注意只需要输出翻译后的结果，不要额外解释：{}\n\n{}",
         display_name_zh(target),
+        glossary_hint(request, true),
         request.text
     )
+}
+
+/// Renders the glossary as a prompt suffix; empty when there are no usable terms.
+fn glossary_hint(request: &TranslationRequest, chinese: bool) -> String {
+    let terms: Vec<String> = request
+        .glossary
+        .iter()
+        .filter_map(|term| {
+            let source = term.source.trim();
+            let target = term.target.trim();
+            (!source.is_empty() && !target.is_empty()).then(|| format!("{source}={target}"))
+        })
+        .collect();
+
+    if terms.is_empty() {
+        return String::new();
+    }
+
+    if chinese {
+        format!("\n术语表（必须使用以下译法）：{}", terms.join("；"))
+    } else {
+        format!(
+            "\nTerminology (use these translations exactly): {}",
+            terms.join("; ")
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::translation::GlossaryTerm;
 
     fn request(text: &str, source: &str, target: &str) -> TranslationRequest {
         TranslationRequest {
             text: text.to_string(),
             source: source.to_string(),
             target: target.to_string(),
+            glossary: Vec::new(),
         }
     }
 
@@ -238,5 +271,42 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(error, TranslationError::InvalidRequest(_)));
+    }
+
+    #[test]
+    fn injects_the_glossary_into_prompts() {
+        let request = TranslationRequest {
+            text: "Open the settings page".to_string(),
+            source: "en".to_string(),
+            target: "zh".to_string(),
+            glossary: vec![
+                GlossaryTerm {
+                    source: "settings".to_string(),
+                    target: "设置".to_string(),
+                },
+                GlossaryTerm {
+                    source: "   ".to_string(),
+                    target: "ignored".to_string(),
+                },
+            ],
+        };
+
+        let hymt = translation_prompt(PromptStyle::HunYuanMt, &request).unwrap();
+        assert!(hymt.contains("术语表（必须使用以下译法）：settings=设置"));
+        assert!(!hymt.contains("ignored"));
+
+        let generic = translation_prompt(PromptStyle::Generic, &request).unwrap();
+        assert!(generic.contains("Terminology (use these translations exactly): settings=设置"));
+    }
+
+    #[test]
+    fn empty_glossary_adds_nothing() {
+        let generic =
+            translation_prompt(PromptStyle::Generic, &request("hello", "en", "zh")).unwrap();
+        let hymt = translation_prompt(PromptStyle::HunYuanMt, &request("hello", "en", "zh"))
+            .unwrap();
+
+        assert!(!generic.contains("Terminology"));
+        assert!(!hymt.contains("术语表"));
     }
 }

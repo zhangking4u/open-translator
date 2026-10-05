@@ -23,6 +23,7 @@ async fn translates_with_env_model() {
             text: "kernel panic".to_string(),
             source: "en".to_string(),
             target: "zh".to_string(),
+            glossary: Vec::new(),
         })
         .await
         .unwrap();

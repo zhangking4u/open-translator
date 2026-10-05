@@ -97,6 +97,33 @@ async fn translate_returns_mock_translation() {
 }
 
 #[tokio::test]
+async fn translate_accepts_a_glossary() {
+    let response = app()
+        .oneshot(translate_request(
+            r#"{"text":"kernel panic","source":"en","target":"zh","glossary":[{"source":"kernel","target":"内核"}]}"#,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = body_json(response).await;
+    assert_eq!(json["translation"], "[Mock Translation] kernel panic");
+}
+
+#[tokio::test]
+async fn malformed_glossary_is_rejected() {
+    let response = app()
+        .oneshot(translate_request(
+            r#"{"text":"hello","source":"en","target":"zh","glossary":[{"source":"kernel"}]}"#,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
 async fn empty_text_is_rejected() {
     let response = app()
         .oneshot(translate_request(

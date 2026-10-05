@@ -89,6 +89,7 @@ mod tests {
             text: "hi".to_string(),
             source: "en".to_string(),
             target: "zh".to_string(),
+            glossary: Vec::new(),
         }
     }
 

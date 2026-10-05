@@ -90,6 +90,7 @@ pub async fn warmup(engine: &EngineRef) {
         text: "hello".to_string(),
         source: "en".to_string(),
         target: "zh".to_string(),
+        glossary: Vec::new(),
     };
 
     match engine.translate(request).await {

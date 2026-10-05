@@ -1,8 +1,17 @@
+/// One source→target term pair. The prompt asks the model to use `target`
+/// whenever `source` appears in the input.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GlossaryTerm {
+    pub source: String,
+    pub target: String,
+}
+
 #[derive(Debug)]
 pub struct TranslationRequest {
     pub text: String,
     pub source: String,
     pub target: String,
+    pub glossary: Vec<GlossaryTerm>,
 }
 
 #[derive(Debug)]
