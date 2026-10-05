@@ -256,6 +256,10 @@ the GTK widget is not realized yet.
   events; `ui/caption.{html,css,js}` renders them. New window labels must be
   added to `capabilities/default.json` or their `listen()` calls are rejected
   by the Tauri ACL — this was the M1 bug that made events invisible.
+  Caption translation runs in the same module: a single-flight worker streams
+  `caption-translation` deltas from the embedded llama.cpp engine (newest text
+  wins) and `caption-config` carries the layout; the glossary file
+  (`caption_glossary` or `glossary.txt`) is read on every translation.
 - Do not add audio to `translator-service` until a second consumer exists
   (the browser extension's tab audio is the natural candidate, through
   `src/server.rs`).
@@ -401,7 +405,7 @@ impl VoiceSegmenter {
 | --- | --- | --- |
 | M0 smoke — **done 2026-10-04** | `pw-record` → energy VAD → SenseVoice → local MT → terminal output, no UI | 31-minute real video run: 494 segments, 0 dropped, 0 MT failures; end of speech → first translated token p50 0.82 s / p95 0.99 s / max 1.19 s; → full translation p50 1.20 s / p95 1.66 s / max 2.17 s; ASR RTF 0.022; CPU recorded |
 | M1 captions — **done 2026-10-05** | Subtitle window showing source-language captions | Real-machine verified: captions render, click-through works, no focus steal, tray toggle works. Position is bottom-center (config override, no drag UI yet); the 30-minute soak remains part of normal daily use |
-| M2 translation | Second line via HY-MT streaming | First token p95 ≤ 1.2 s, segment ≤ 3 s; bilingual/translation-only switch; simple glossary file |
+| M2 translation — **done 2026-10-05** | Second line via HY-MT streaming | Real-machine verified: translation line streams, bilingual/translation-only/source layouts switch from the tray, and `glossary.txt` terms reach the request. Measured 411–606 ms to first translated token and 1.16–2.49 s per segment (from ASR completion) |
 | M3 trust | Provisional/final states, user corrections, personal glossary, history export | **A 30-minute session used to the end without switching it off or looking for the original text** |
 
 M0 result (2026-10-04, Linux dev machine, spike scripts in `/tmp/kilo`): a
@@ -432,6 +436,17 @@ shared sherpa/onnxruntime libraries next to the binary and relies on the
 (models were placed manually for M1), and the overlay has no drag UI —
 position comes from `caption_x`/`caption_y` or the bottom-center default.
 
+M2 result (2026-10-05): finished segments now run through the embedded
+llama.cpp engine and stream into the second line (`caption-translation`
+events; `caption-config` carries the layout). The tray 实时字幕 submenu holds
+开启实时字幕 + 双语字幕/仅译文/仅原文, persisted as `caption_layout`. A simple
+glossary (`caption_glossary` or `glossary.txt` next to the config, `source=target`
+per line, max 50 terms) is appended to the prompt of every style; the runtime
+log confirmed terms reach the request. Measured from ASR completion: first
+translated token 411–606 ms, full segment 1.16–2.49 s (English → Korean with a
+glossary term, `auto` source). Real-machine checks passed: translation line,
+layout switching, no focus/click-through regressions.
+
 
 ## 8. Risks
 
@@ -457,13 +472,12 @@ position comes from `caption_x`/`caption_y` or the bottom-center default.
    for `caption_x`/`caption_y`.
 3. Source language: `caption_language` defaults to `auto`; evaluate `auto` vs a
    fixed language for accuracy and latency now that the pipeline runs in-app.
-4. Glossary format and scope: plain text pairs, per-language, or a small
-   termbase with priorities? (M2)
+4. Glossary: the basic `source=target` file landed in M2; per-language
+   termbases, priorities and a correction flow remain (M3).
 5. Per-app capture timing (capture only the meeting app's stream) — later than
    default-sink capture, but more precise.
-6. Whether the subtitle window should support translation-only, source-only and
-   bilingual layouts, and which is the default for a user who cannot read the
-   source language. (M2)
+6. Layouts landed as bilingual/translation/source; the default stays bilingual
+   — revisit after real usage by someone who cannot read the source.
 7. Model licensing and redistribution checks for SenseVoice/Silero before
    packaging.
 8. Whether the browser extension should capture tab audio directly (second

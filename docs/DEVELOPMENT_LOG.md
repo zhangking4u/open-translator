@@ -2037,6 +2037,19 @@ reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
   focus steal, tray toggle); the ASR models live in
   `~/.local/share/open-translator/models/sense-voice/` and are not downloaded
   by the app yet (next task).
+- M2 (translation line, 2026-10-05) landed: finished segments run through the
+  embedded llama.cpp engine with a single-flight newest-wins worker and stream
+  `caption-translation` deltas into the overlay's second line; the tray
+  实时字幕 submenu switches 开启/双语/仅译文/仅原文 (`caption_layout`), and a
+  simple glossary (`source=target` per line, max 50, `caption_glossary` or
+  `glossary.txt`) is appended to every prompt style. `TranslationRequest`
+  gained an optional `glossary` field (also accepted by `/translate` and
+  `/translate/stream`).
+- M2 measured (from ASR completion, English → Korean, auto source, one
+  glossary term): first translated token 411–606 ms, full segment 1.16–2.49 s.
+  Real-machine checks passed (translation line, layout switching,
+  click-through and focus unchanged). Follow-ups: ASR model download (release
+  blocker) and overlay placement UI.
 
 
 ## Sprint 6
