@@ -1,17 +1,19 @@
-//! Live captions (实时字幕): capture the default output monitor with
-//! `pw-record`, segment speech with Silero VAD (via `translator-asr`),
-//! transcribe with SenseVoice and push the text to the caption overlay window
-//! (`caption.html`).
+//! Live captions (实时字幕): capture the default output device in loopback
+//! (PipeWire monitor on Linux, WASAPI on Windows), segment speech with Silero
+//! VAD (via `translator-asr`), transcribe with SenseVoice and push the text to
+//! the caption overlay window (`caption.html`).
 //!
-//! Linux-only for now: PipeWire monitor capture is the M1 target. Other
-//! platforms keep a compiling stub so the tray item can report unavailability.
+//! macOS keeps a compiling stub so the tray item can report unavailability.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager};
 use translator_service::domain::translation::{GlossaryTerm, TranslationRequest};
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use translator_asr::{SenseVoiceEngine, SpeechEngine};
 
 pub const EVENT_SEGMENT: &str = "caption-segment";
 pub const EVENT_TRANSLATION: &str = "caption-translation";
@@ -55,9 +57,12 @@ static EDITING: AtomicBool = AtomicBool::new(false);
 
 /// Owns the running capture task. Cloned handles live in `AppState`; the task
 /// itself is aborted (and the `pw-record` child killed) by [`Self::stop`].
+/// `stop` also carries the cooperative flag read by capture loops that cannot
+/// be cancelled by aborting the task (WASAPI).
 #[derive(Default)]
 pub struct CaptionRuntime {
     task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    stop: Mutex<Option<Arc<AtomicBool>>>,
     active: AtomicBool,
     translating: AtomicBool,
     queued: Mutex<Option<String>>,
@@ -75,23 +80,36 @@ impl CaptionRuntime {
             return Ok(());
         }
 
+        let stop = Arc::new(AtomicBool::new(false));
+
         #[cfg(target_os = "linux")]
+        let task = linux::spawn(app)?;
+
+        #[cfg(target_os = "windows")]
+        let task = windows::spawn(app, Arc::clone(&stop))?;
+
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         {
-            let task = linux::spawn(app)?;
+            *self.stop.lock().unwrap() = Some(stop);
             self.active.store(true, Ordering::SeqCst);
             *self.task.lock().unwrap() = Some(task);
             Ok(())
         }
 
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         {
-            let _ = app;
-            Err("实时字幕目前仅支持 Linux".to_string())
+            let _ = (app, stop);
+            Err("实时字幕目前仅支持 Linux/Windows".to_string())
         }
     }
 
     pub fn stop(&self) {
         self.active.store(false, Ordering::SeqCst);
+
+        // Cooperative stop for capture loops that survive task abort.
+        if let Some(stop) = self.stop.lock().unwrap().take() {
+            stop.store(true, Ordering::SeqCst);
+        }
 
         if let Some(task) = self.task.lock().unwrap().take() {
             task.abort();
@@ -206,6 +224,15 @@ fn stop_after_failure(app: &AppHandle, message: &str) {
     }
 
     crate::notify::show("OpenTranslator", message);
+}
+
+/// Reports a fatal caption startup failure (model download/load) through the
+/// overlay and the tray, then stops capture.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn caption_failure(app: &AppHandle, error: String) {
+    let message = format!("实时字幕已停止：{error}");
+    emit_status(app, "error", Some(message.clone()));
+    stop_after_failure(app, &message);
 }
 
 /// Caption layout: `bilingual` (source + translation), `translation`
@@ -489,87 +516,208 @@ fn append_transcript(app: &AppHandle, source: &str, translation: &str) {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+const SAMPLE_RATE: i32 = 16_000;
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+const FRAME_SAMPLES: usize = 1_600; // 100 ms at 16 kHz
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+const QUEUE: usize = 8;
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+const MIN_SEGMENT_SAMPLES: usize = (SAMPLE_RATE as usize) / 4; // 250 ms
+
+/// Fast synchronous model check run by `spawn` before any capture starts, so a
+/// missing model fails `start()` with an actionable message. Returns the model
+/// directory and the SenseVoice language tag.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn check_models() -> Result<(PathBuf, String), String> {
+    let model_dir = resolve_model_dir()?;
+    let missing: Vec<&str> = translator_core::models::ASR_MODEL_FILES
+        .iter()
+        .map(|file| file.name)
+        .filter(|name| !model_dir.join(name).is_file())
+        .collect();
+
+    if !missing.is_empty() && !auto_download_enabled() {
+        return Err(format!(
+            "缺少语音模型文件：{}（可开启 auto_download 自动下载）",
+            model_dir.join(missing[0]).display()
+        ));
+    }
+
+    Ok((model_dir, resolve_language()))
+}
+
+/// Downloads any missing ASR/VAD file (existing files are verified and
+/// reused); progress is reported through `caption-status` with state
+/// `downloading`.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+async fn ensure_models(app: &AppHandle, model_dir: &std::path::Path) -> Result<(), String> {
+    let client = translator_core::models::download_client()
+        .map_err(|error| format!("下载初始化失败：{error}"))?;
+    let total = translator_core::models::asr_model_total_size().max(1);
+    let mut done_before = 0u64;
+
+    for file in &translator_core::models::ASR_MODEL_FILES {
+        let dest = model_dir.join(file.name);
+
+        if dest.is_file()
+            && translator_core::models::verify_sha256(&dest, file.sha256).unwrap_or(false)
+        {
+            done_before += file.size;
+            continue;
+        }
+
+        let mut last_percent = u64::MAX;
+
+        let result = translator_core::models::download_model_file(
+            &client,
+            file,
+            model_dir,
+            |downloaded, _| {
+                let overall = done_before + downloaded;
+                let percent = overall * 100 / total;
+
+                if percent != last_percent {
+                    last_percent = percent;
+                    emit_status(
+                        app,
+                        "downloading",
+                        Some(format!(
+                            "正在下载语音模型：{percent}%（{}/{} MB）",
+                            overall / 1_000_000,
+                            total / 1_000_000
+                        )),
+                    );
+                }
+            },
+        )
+        .await;
+
+        result.map_err(|error| format!("{}: {error}", file.name))?;
+        done_before += file.size;
+    }
+
+    Ok(())
+}
+
+/// Ensures the models are present, then loads the recognizer and the VAD on a
+/// blocking thread. Shared by the Linux and Windows capture modules.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+async fn prepare_engine(
+    app: &AppHandle,
+    model_dir: &std::path::Path,
+    language: &str,
+) -> Result<(Arc<SenseVoiceEngine>, translator_asr::VoiceSegmenter), String> {
+    use translator_asr::VoiceSegmenter;
+
+    ensure_models(app, model_dir).await?;
+
+    let model = model_dir.join("model.int8.onnx");
+    let tokens = model_dir.join("tokens.txt");
+    let vad_model = model_dir.join("silero_vad.onnx");
+    let language = language.to_string();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = SenseVoiceEngine::load(&model, &tokens, &language, 4)?;
+        let vad = VoiceSegmenter::new(&vad_model, SAMPLE_RATE, 0.5, 6.0)?;
+        Ok::<_, translator_asr::SpeechError>((engine, vad))
+    })
+    .await
+    .map_err(|error| format!("语音模型加载失败：{error}"))?
+    .map(|(engine, vad)| (Arc::new(engine), vad))
+    .map_err(|error| format!("语音模型加载失败：{error}"))
+}
+
+/// Consumes finished VAD segments: transcribes each on a blocking thread,
+/// renders the source line and queues the translation. Shared by both capture
+/// modules.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn spawn_transcription_worker(
+    app: &AppHandle,
+    engine: Arc<SenseVoiceEngine>,
+    mut receiver: tokio::sync::mpsc::Receiver<Vec<f32>>,
+) -> tauri::async_runtime::JoinHandle<()> {
+    let app = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(samples) = receiver.recv().await {
+            let engine = engine.clone();
+            let result =
+                tauri::async_runtime::spawn_blocking(move || engine.transcribe(&samples, SAMPLE_RATE))
+                    .await;
+
+            match result {
+                Ok(Ok(transcript)) if !transcript.text.is_empty() => {
+                    emit_segment(&app, transcript.text.clone());
+                    translate_segment(&app, transcript.text);
+                }
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => eprintln!("caption: transcription failed: {error}"),
+                Err(error) => eprintln!("caption: worker failed: {error}"),
+            }
+        }
+    })
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn auto_download_enabled() -> bool {
+    let config = translator_core::settings::load_config();
+
+    match config.auto_download.as_deref() {
+        Some(value) => crate::parse_bool("auto_download", value).unwrap_or(true),
+        None => true,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn resolve_model_dir() -> Result<PathBuf, String> {
+    let config = translator_core::settings::load_config();
+
+    config
+        .asr_model_dir
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(translator_core::paths::default_asr_model_dir)
+        .ok_or_else(|| "无法确定语音模型目录".to_string())
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn resolve_language() -> String {
+    let config = translator_core::settings::load_config();
+    let language = config.caption_language.unwrap_or_default();
+
+    match language.as_str() {
+        "zh" | "en" | "ja" | "ko" | "yue" => language.clone(),
+        _ => "auto".to_string(),
+    }
+}
+
 #[cfg(target_os = "linux")]
 mod linux {
-    use std::path::{Path, PathBuf};
-    use std::sync::Arc;
-
     use tauri::async_runtime::JoinHandle;
     use tokio::io::AsyncReadExt;
     use tokio::process::Command;
-    use translator_asr::{SenseVoiceEngine, SpeechEngine, VoiceSegmenter};
 
-    use super::{emit_segment, emit_status};
-
-    const SAMPLE_RATE: i32 = 16_000;
-    const FRAME_SAMPLES: usize = 1_600; // 100 ms
-    const QUEUE: usize = 8;
-    const MIN_SEGMENT_SAMPLES: usize = (SAMPLE_RATE as usize) / 4; // 250 ms
-    const MODEL_FILES: [&str; 3] = ["model.int8.onnx", "tokens.txt", "silero_vad.onnx"];
+    use super::{emit_status, FRAME_SAMPLES, MIN_SEGMENT_SAMPLES, QUEUE};
 
     pub fn spawn(app: &tauri::AppHandle) -> Result<JoinHandle<()>, String> {
-        let model_dir = resolve_model_dir()?;
-        let missing: Vec<PathBuf> = MODEL_FILES
-            .iter()
-            .map(|name| model_dir.join(name))
-            .filter(|path| !path.is_file())
-            .collect();
-
-        if !missing.is_empty() && !auto_download_enabled() {
-            return Err(format!(
-                "缺少语音模型文件：{}（可开启 auto_download 自动下载）",
-                missing[0].display()
-            ));
-        }
-
-        let language = resolve_language();
+        let (model_dir, language) = super::check_models()?;
         let app = app.clone();
 
         Ok(tauri::async_runtime::spawn(async move {
             emit_status(&app, "starting", None);
             super::emit_config(&app);
 
-            if let Err(error) = ensure_models(&app, &model_dir).await {
-                let message = format!("实时字幕已停止：{error}");
-                emit_status(&app, "error", Some(message.clone()));
-                super::stop_after_failure(&app, &message);
-                return;
-            }
-
-            let model = model_dir.join("model.int8.onnx");
-            let tokens = model_dir.join("tokens.txt");
-            let vad_model = model_dir.join("silero_vad.onnx");
-
-            let loaded = {
-                let model = model.clone();
-                let tokens = tokens.clone();
-                let vad_model = vad_model.clone();
-                let language = language.clone();
-
-                tauri::async_runtime::spawn_blocking(move || {
-                    let engine = SenseVoiceEngine::load(&model, &tokens, &language, 4)?;
-                    let vad = VoiceSegmenter::new(&vad_model, SAMPLE_RATE, 0.5, 6.0)?;
-                    Ok::<_, translator_asr::SpeechError>((engine, vad))
-                })
-                .await
-            };
-
-            let (engine, vad) = match loaded {
-                Ok(Ok(value)) => value,
-                Ok(Err(error)) => {
-                    emit_status(&app, "error", Some(error.to_string()));
-                    super::stop_after_failure(&app, &format!("实时字幕已停止：{error}"));
-                    return;
-                }
+            let (engine, vad) = match super::prepare_engine(&app, &model_dir, &language).await {
+                Ok(value) => value,
                 Err(error) => {
-                    let message = format!("语音模型加载失败：{error}");
-                    emit_status(&app, "error", Some(message.clone()));
-                    super::stop_after_failure(&app, &message);
+                    super::caption_failure(&app, error);
                     return;
                 }
             };
-
-            let engine = Arc::new(engine);
 
             let mut child = match Command::new("pw-record")
                 .args([
@@ -605,29 +753,8 @@ mod linux {
                 return;
             };
 
-            let (sender, mut receiver) = tokio::sync::mpsc::channel::<Vec<f32>>(QUEUE);
-            let worker_app = app.clone();
-            let worker_engine = engine.clone();
-
-            let worker = tauri::async_runtime::spawn(async move {
-                while let Some(samples) = receiver.recv().await {
-                    let engine = worker_engine.clone();
-                    let result = tauri::async_runtime::spawn_blocking(move || {
-                        engine.transcribe(&samples, SAMPLE_RATE)
-                    })
-                    .await;
-
-                    match result {
-                        Ok(Ok(transcript)) if !transcript.text.is_empty() => {
-                            emit_segment(&worker_app, transcript.text.clone());
-                            super::translate_segment(&worker_app, transcript.text);
-                        }
-                        Ok(Ok(_)) => {}
-                        Ok(Err(error)) => eprintln!("caption: transcription failed: {error}"),
-                        Err(error) => eprintln!("caption: worker failed: {error}"),
-                    }
-                }
-            });
+            let (sender, receiver) = tokio::sync::mpsc::channel::<Vec<f32>>(QUEUE);
+            let worker = super::spawn_transcription_worker(&app, engine, receiver);
 
             super::start_session(&app);
             emit_status(&app, "listening", None);
@@ -664,86 +791,393 @@ mod linux {
             emit_status(&app, "error", Some("音频采集已停止".to_string()));
         }))
     }
+}
 
-    /// Downloads any missing ASR/VAD file (existing files are verified and
-    /// reused); progress is reported through `caption-status` with state
-    /// `downloading`.
-    async fn ensure_models(app: &tauri::AppHandle, model_dir: &Path) -> Result<(), String> {
-        let client = translator_core::models::download_client()
-            .map_err(|error| format!("下载初始化失败：{error}"))?;
-        let total = translator_core::models::asr_model_total_size().max(1);
-        let mut done_before = 0u64;
+#[cfg(target_os = "windows")]
+mod windows {
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
 
-        for file in &translator_core::models::ASR_MODEL_FILES {
-            let dest = model_dir.join(file.name);
+    use tauri::async_runtime::JoinHandle;
+    use translator_asr::VoiceSegmenter;
+    use wasapi::{
+        initialize_mta, AudioCaptureClient, AudioClient, Direction, DeviceEnumerator, Handle,
+        SampleType, StreamMode, WasapiError, WaveFormat,
+    };
 
-            if dest.is_file()
-                && translator_core::models::verify_sha256(&dest, file.sha256).unwrap_or(false)
-            {
-                done_before += file.size;
-                continue;
-            }
+    use super::{emit_status, FRAME_SAMPLES, MIN_SEGMENT_SAMPLES, QUEUE, SAMPLE_RATE};
 
-            let mut last_percent = u64::MAX;
+    /// Consecutive capture-session failures before captions give up. A device
+    /// switch (headphones plugged/unplugged) invalidates the stream and needs
+    /// a fresh client, which the retry loop handles.
+    const MAX_SESSION_FAILURES: u32 = 5;
 
-            let result = translator_core::models::download_model_file(
-                &client,
-                file,
-                model_dir,
-                |downloaded, _| {
-                    let overall = done_before + downloaded;
-                    let percent = overall * 100 / total;
+    pub fn spawn(app: &tauri::AppHandle, stop: Arc<AtomicBool>) -> Result<JoinHandle<()>, String> {
+        let (model_dir, language) = super::check_models()?;
+        let app = app.clone();
 
-                    if percent != last_percent {
-                        last_percent = percent;
-                        emit_status(
-                            app,
-                            "downloading",
-                            Some(format!(
-                                "正在下载语音模型：{percent}%（{}/{} MB）",
-                                overall / 1_000_000,
-                                total / 1_000_000
-                            )),
-                        );
-                    }
-                },
-            )
+        Ok(tauri::async_runtime::spawn(async move {
+            emit_status(&app, "starting", None);
+            super::emit_config(&app);
+
+            let (engine, vad) = match super::prepare_engine(&app, &model_dir, &language).await {
+                Ok(value) => value,
+                Err(error) => {
+                    super::caption_failure(&app, error);
+                    return;
+                }
+            };
+
+            let (sender, receiver) = tokio::sync::mpsc::channel::<Vec<f32>>(QUEUE);
+            let worker = super::spawn_transcription_worker(&app, engine, receiver);
+
+            // The wasapi client types are !Send, so construction, capture and
+            // teardown all happen on this one blocking thread. The stop flag
+            // cannot cancel blocking work, so the loop polls it.
+            let capture_app = app.clone();
+            let capture_stop = Arc::clone(&stop);
+            let capture = tauri::async_runtime::spawn_blocking(move || {
+                run_capture(&capture_app, &capture_stop, vad, sender)
+            })
             .await;
 
-            result.map_err(|error| format!("{}: {error}", file.name))?;
-            done_before += file.size;
+            // The channel sender was dropped when the capture closure returned,
+            // which ends the transcription worker.
+            let _ = worker.await;
+
+            match capture {
+                Ok(Ok(())) => emit_status(&app, "error", Some("音频采集已停止".to_string())),
+                Ok(Err(error)) => emit_status(&app, "error", Some(error)),
+                Err(error) => emit_status(&app, "error", Some(format!("音频采集失败：{error}"))),
+            }
+        }))
+    }
+
+    fn run_capture(
+        app: &tauri::AppHandle,
+        stop: &AtomicBool,
+        vad: VoiceSegmenter,
+        sender: tokio::sync::mpsc::Sender<Vec<f32>>,
+    ) -> Result<(), String> {
+        let mut failures = 0u32;
+        let mut session_started = false;
+
+        while !stop.load(Ordering::SeqCst) {
+            match capture_session(app, stop, &vad, &sender, &mut session_started) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    if stop.load(Ordering::SeqCst) {
+                        return Ok(());
+                    }
+
+                    failures += 1;
+
+                    if failures >= MAX_SESSION_FAILURES {
+                        return Err(format!("音频采集失败：{error}"));
+                    }
+
+                    emit_status(
+                        app,
+                        "starting",
+                        Some(format!("音频设备连接中断，正在重试…（{error}）")),
+                    );
+
+                    for _ in 0..10 {
+                        if stop.load(Ordering::SeqCst) {
+                            return Ok(());
+                        }
+
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
         }
 
         Ok(())
     }
 
-    fn auto_download_enabled() -> bool {
-        let config = translator_core::settings::load_config();
+    fn capture_session(
+        app: &tauri::AppHandle,
+        stop: &AtomicBool,
+        vad: &VoiceSegmenter,
+        sender: &tokio::sync::mpsc::Sender<Vec<f32>>,
+        session_started: &mut bool,
+    ) -> Result<(), String> {
+        initialize_mta()
+            .ok()
+            .map_err(|error| format!("COM 初始化失败：{error}"))?;
 
-        match config.auto_download.as_deref() {
-            Some(value) => crate::parse_bool("auto_download", value).unwrap_or(true),
-            None => true,
+        let enumerator =
+            DeviceEnumerator::new().map_err(|error| format!("设备枚举失败：{error}"))?;
+        let device = enumerator
+            .get_default_device(&Direction::Render)
+            .map_err(|error| format!("无法打开默认输出设备：{error}"))?;
+        let mut client = device
+            .get_iaudioclient()
+            .map_err(|error| format!("无法打开音频客户端：{error}"))?;
+
+        // The audio engine resamples and mixes to 16 kHz mono f32 for us
+        // (AUTOCONVERTPCM + SRC_DEFAULT_QUALITY). Drivers that reject the
+        // combination fall back to the device mix format plus a local
+        // converter.
+        let desired = WaveFormat::new(32, 32, &SampleType::Float, SAMPLE_RATE as usize, 1, None);
+        let format = match open_loopback(&mut client, &desired, true) {
+            Ok(()) => desired,
+            Err(_) => {
+                client = device
+                    .get_iaudioclient()
+                    .map_err(|error| format!("无法打开音频客户端：{error}"))?;
+                let mix = client
+                    .get_mixformat()
+                    .map_err(|error| format!("无法读取设备格式：{error}"))?;
+                open_loopback(&mut client, &mix, false)
+                    .map_err(|error| format!("回环采集初始化失败：{error}"))?;
+
+                if super::caption_debug() {
+                    eprintln!(
+                        "CAPDBG wasapi fallback mix format rate={} ch={} bits={}",
+                        mix.get_samplespersec(),
+                        mix.get_nchannels(),
+                        mix.get_bitspersample()
+                    );
+                }
+
+                mix
+            }
+        };
+
+        let converter = FormatConverter::new(&format)?;
+        let event = client
+            .set_get_eventhandle()
+            .map_err(|error| format!("音频事件创建失败：{error}"))?;
+        let capture = client
+            .get_audiocaptureclient()
+            .map_err(|error| format!("采集客户端创建失败：{error}"))?;
+
+        client
+            .start_stream()
+            .map_err(|error| format!("音频采集启动失败：{error}"))?;
+
+        if !*session_started {
+            super::start_session(app);
+            *session_started = true;
+        }
+
+        emit_status(app, "listening", None);
+
+        let result = capture_loop(stop, vad, sender, &converter, &event, &capture);
+
+        let _ = client.stop_stream();
+        result
+    }
+
+    fn open_loopback(
+        client: &mut AudioClient,
+        format: &WaveFormat,
+        autoconvert: bool,
+    ) -> Result<(), WasapiError> {
+        let mode = StreamMode::EventsShared {
+            autoconvert,
+            buffer_duration_hns: 100_000,
+        };
+        client.initialize_client(format, &Direction::Capture, &mode)
+    }
+
+    fn capture_loop(
+        stop: &AtomicBool,
+        vad: &VoiceSegmenter,
+        sender: &tokio::sync::mpsc::Sender<Vec<f32>>,
+        converter: &FormatConverter,
+        event: &Handle,
+        capture: &AudioCaptureClient,
+    ) -> Result<(), String> {
+        let mut deque: VecDeque<u8> = VecDeque::new();
+        let mut pending: Vec<f32> = Vec::new();
+
+        while !stop.load(Ordering::SeqCst) {
+            match event.wait_for_event(100) {
+                Ok(()) => {}
+                Err(WasapiError::EventTimeout) => continue,
+                Err(error) => return Err(format!("音频事件等待失败：{error}")),
+            }
+
+            loop {
+                capture
+                    .read_from_device_to_deque(&mut deque)
+                    .map_err(|error| format!("读取音频失败：{error}"))?;
+
+                let frames = deque.len() / converter.blockalign;
+
+                if frames == 0 {
+                    break;
+                }
+
+                let bytes: Vec<u8> = deque.drain(..frames * converter.blockalign).collect();
+                pending.extend_from_slice(&converter.to_mono_16k(&bytes));
+
+                while pending.len() >= FRAME_SAMPLES {
+                    let frame: Vec<f32> = pending.drain(..FRAME_SAMPLES).collect();
+                    push_segments(vad, sender, &frame);
+                }
+            }
+        }
+
+        // Flush the samples buffered after the last full frame plus whatever
+        // the VAD is still holding, so the final sentence is not lost.
+        if !pending.is_empty() {
+            push_segments(vad, sender, &pending);
+        }
+
+        for segment in vad.flush() {
+            if segment.len() < MIN_SEGMENT_SAMPLES {
+                continue;
+            }
+
+            if sender.try_send(segment).is_err() {
+                eprintln!("caption: segment queue full; dropping audio");
+            }
+        }
+
+        Ok(())
+    }
+
+    fn push_segments(
+        vad: &VoiceSegmenter,
+        sender: &tokio::sync::mpsc::Sender<Vec<f32>>,
+        samples: &[f32],
+    ) {
+        for segment in vad.accept(samples) {
+            if segment.len() < MIN_SEGMENT_SAMPLES {
+                continue;
+            }
+
+            if sender.try_send(segment).is_err() {
+                eprintln!("caption: segment queue full; dropping audio");
+            }
         }
     }
 
-    fn resolve_model_dir() -> Result<PathBuf, String> {
-        let config = translator_core::settings::load_config();
-
-        config
-            .asr_model_dir
-            .filter(|value| !value.trim().is_empty())
-            .map(PathBuf::from)
-            .or_else(translator_core::paths::default_asr_model_dir)
-            .ok_or_else(|| "无法确定语音模型目录".to_string())
+    /// Converts the initialized WASAPI format to 16 kHz mono f32. The common
+    /// path is the engine's own 16 kHz mono f32 output; the converter only
+    /// does real work when `AUTOCONVERTPCM` was rejected and the device mix
+    /// format had to be used.
+    struct FormatConverter {
+        channels: usize,
+        rate: u32,
+        bits: u16,
+        float: bool,
+        blockalign: usize,
     }
 
-    fn resolve_language() -> String {
-        let config = translator_core::settings::load_config();
-        let language = config.caption_language.unwrap_or_default();
+    impl FormatConverter {
+        fn new(format: &WaveFormat) -> Result<Self, String> {
+            let bits = format.get_bitspersample();
+            let float = matches!(format.get_subformat(), Ok(SampleType::Float));
 
-        match language.as_str() {
-            "zh" | "en" | "ja" | "ko" | "yue" => language.clone(),
-            _ => "auto".to_string(),
+            match (bits, float) {
+                (16, false) | (32, true) | (32, false) => {}
+                _ => return Err(format!("不支持的音频格式：{bits} 位（float={float}）")),
+            }
+
+            Ok(Self {
+                channels: format.get_nchannels().max(1) as usize,
+                rate: format.get_samplespersec().max(1),
+                bits,
+                float,
+                blockalign: format.get_blockalign().max(1) as usize,
+            })
+        }
+
+        fn sample(&self, bytes: &[u8]) -> f32 {
+            match (self.bits, self.float) {
+                (16, false) => i16::from_le_bytes([bytes[0], bytes[1]]) as f32 / 32_768.0,
+                (32, true) => f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+                _ => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as f32
+                    / 2_147_483_648.0,
+            }
+        }
+
+        /// Decodes, downmixes and resamples one packet to 16 kHz mono f32.
+        fn to_mono_16k(&self, bytes: &[u8]) -> Vec<f32> {
+            let bytes_per_sample = (self.bits / 8) as usize;
+            let frames = bytes.len() / self.blockalign;
+            let mut mono = Vec::with_capacity(frames);
+
+            for frame in 0..frames {
+                let base = frame * self.blockalign;
+                let mut sum = 0.0f32;
+
+                for channel in 0..self.channels {
+                    let at = base + channel * bytes_per_sample;
+                    sum += self.sample(&bytes[at..at + bytes_per_sample]);
+                }
+
+                mono.push(sum / self.channels as f32);
+            }
+
+            if mono.is_empty() || self.rate == SAMPLE_RATE as u32 {
+                return mono;
+            }
+
+            // Box pre-filter + decimation/interpolation, only on the fallback
+            // path when the audio engine refused to resample.
+            let step = self.rate as f64 / SAMPLE_RATE as f64;
+            let out_len = (mono.len() as f64 / step).floor() as usize;
+            let mut out = Vec::with_capacity(out_len);
+            let mut position = 0.0f64;
+
+            for _ in 0..out_len {
+                let end = position + step;
+                let first = position.floor() as usize;
+                let last = (end.ceil() as usize).max(first + 1).min(mono.len());
+                let sum: f64 = mono[first..last].iter().map(|&value| value as f64).sum();
+                out.push((sum / (last - first) as f64) as f32);
+                position = end;
+            }
+
+            out
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn decodes_stereo_i16_at_48k_to_16k_mono() {
+            // 48 frames at 48 kHz = 1 ms -> 16 output samples.
+            let format = WaveFormat::new(16, 16, &SampleType::Int, 48_000, 2, None);
+            let converter = FormatConverter::new(&format).unwrap();
+            let mut bytes = Vec::new();
+
+            for _ in 0..48 {
+                for value in [16_384i16, 0i16] {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+            }
+
+            let mono = converter.to_mono_16k(&bytes);
+            assert_eq!(mono.len(), 16);
+
+            for value in mono {
+                assert!((value - 0.25).abs() < 0.001);
+            }
+        }
+
+        #[test]
+        fn passes_16k_mono_f32_through() {
+            let format = WaveFormat::new(32, 32, &SampleType::Float, 16_000, 1, None);
+            let converter = FormatConverter::new(&format).unwrap();
+            let samples = [0.5f32, -0.25, 1.0];
+            let mut bytes = Vec::new();
+
+            for value in samples {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+
+            assert_eq!(converter.to_mono_16k(&bytes), samples);
         }
     }
 }
