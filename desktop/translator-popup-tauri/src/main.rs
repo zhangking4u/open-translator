@@ -1758,6 +1758,13 @@ fn build_ball_window(app: &AppHandle) -> tauri::Result<()> {
 const CAPTION_WIDTH: f64 = 860.0;
 const CAPTION_HEIGHT: f64 = 150.0;
 
+const GLOSSARY_TEMPLATE: &str = "# OpenTranslator 实时字幕术语表
+# 每行一条「源词=译词」，只对字幕翻译生效；以 # 开头的行是注释。
+# 例：
+# Kubernetes=쿠버네티스
+# kernel=内核
+";
+
 /// The caption overlay is a frameless, click-through, always-on-top window at
 /// the bottom center of the primary monitor (or its persisted position).
 fn build_caption_window(app: &AppHandle) -> tauri::Result<()> {
@@ -1900,6 +1907,47 @@ fn set_caption_layout(app: &AppHandle, layout: &str) {
     }
 }
 
+/// Opens `glossary.txt` in the user's editor, creating it with a template on
+/// first use. Edits apply to the next caption segment (the file is re-read on
+/// every translation).
+fn open_glossary_file() {
+    let Some(path) = translator_core::paths::glossary_path() else {
+        notify::show("OpenTranslator", "无法确定术语表路径");
+        return;
+    };
+
+    if !path.is_file() {
+        let _ = std::fs::write(&path, GLOSSARY_TEMPLATE);
+    }
+
+    open_in_default_app(&path);
+}
+
+/// Opens the directory that holds the per-session caption transcripts.
+fn open_captions_dir() {
+    let Some(dir) = translator_core::paths::captions_dir() else {
+        notify::show("OpenTranslator", "无法确定字幕记录目录");
+        return;
+    };
+
+    let _ = std::fs::create_dir_all(&dir);
+    open_in_default_app(&dir);
+}
+
+fn open_in_default_app(path: &std::path::Path) {
+    #[cfg(target_os = "linux")]
+    {
+        if let Err(error) = std::process::Command::new("xdg-open").arg(path).spawn() {
+            notify::show("OpenTranslator", &format!("打开失败：{error}"));
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        notify::show("OpenTranslator", &path.display().to_string());
+    }
+}
+
 fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
@@ -1941,6 +1989,20 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         caption_layout == "source",
         None::<&str>,
     )?;
+    let caption_glossary_item = MenuItem::with_id(
+        app,
+        "caption-glossary",
+        "编辑术语表…",
+        cfg!(target_os = "linux"),
+        None::<&str>,
+    )?;
+    let caption_transcripts_item = MenuItem::with_id(
+        app,
+        "caption-transcripts",
+        "打开字幕记录",
+        cfg!(target_os = "linux"),
+        None::<&str>,
+    )?;
     let caption_menu = Submenu::with_items(
         app,
         "实时字幕",
@@ -1950,6 +2012,9 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             &caption_bilingual,
             &caption_translation,
             &caption_source,
+            &PredefinedMenuItem::separator(app)?,
+            &caption_glossary_item,
+            &caption_transcripts_item,
         ],
     )?;
     let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -2058,6 +2123,8 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             "caption-layout-bilingual" => set_caption_layout(app, "bilingual"),
             "caption-layout-translation" => set_caption_layout(app, "translation"),
             "caption-layout-source" => set_caption_layout(app, "source"),
+            "caption-glossary" => open_glossary_file(),
+            "caption-transcripts" => open_captions_dir(),
             "quit" => app.exit(0),
             _ => {}
         });

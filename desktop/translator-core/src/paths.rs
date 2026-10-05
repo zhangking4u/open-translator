@@ -87,6 +87,9 @@ pub const DEFAULT_ASR_DIR: &str = "sense-voice";
 /// captions and available to other callers.
 pub const DEFAULT_GLOSSARY_FILE: &str = "glossary.txt";
 
+/// Session transcripts (one text file per caption session) under the data dir.
+pub const DEFAULT_CAPTIONS_DIR: &str = "captions";
+
 #[cfg(target_os = "windows")]
 pub fn models_dir() -> Option<PathBuf> {
     env::var_os("LOCALAPPDATA")
@@ -134,6 +137,12 @@ pub fn glossary_path() -> Option<PathBuf> {
     let config = config_path()?;
 
     Some(config.parent()?.join(DEFAULT_GLOSSARY_FILE))
+}
+
+/// Transcripts live next to the models, under the same open-translator data
+/// directory.
+pub fn captions_dir() -> Option<PathBuf> {
+    Some(models_dir()?.parent()?.join(DEFAULT_CAPTIONS_DIR))
 }
 
 pub fn log_path(name: &str) -> PathBuf {
@@ -242,5 +251,16 @@ mod tests {
             path.file_name().unwrap().to_string_lossy(),
             DEFAULT_GLOSSARY_FILE
         );
+    }
+
+    #[test]
+    fn captions_dir_sits_next_to_the_models() {
+        let dir = captions_dir().unwrap();
+
+        assert_eq!(
+            dir.file_name().unwrap().to_string_lossy(),
+            DEFAULT_CAPTIONS_DIR
+        );
+        assert_eq!(dir.parent(), models_dir().unwrap().parent());
     }
 }

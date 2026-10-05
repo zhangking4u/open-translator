@@ -50,6 +50,8 @@ pub struct CaptionRuntime {
     active: AtomicBool,
     translating: AtomicBool,
     queued: Mutex<Option<String>>,
+    session: Mutex<Option<PathBuf>>,
+    started: Mutex<Option<std::time::Instant>>,
 }
 
 impl CaptionRuntime {
@@ -112,6 +114,10 @@ fn emit_segment(app: &AppHandle, text: String) {
     // text, so the overlay never renders with a stale layout even if the
     // initial `caption-config` raced the webview load.
     emit_config(app);
+
+    if layout() == "source" {
+        append_transcript(app, &text, "");
+    }
 
     if let Err(error) = app.emit_to(WINDOW, EVENT_SEGMENT, SegmentPayload { text }) {
         if caption_debug() {
@@ -266,6 +272,8 @@ fn run_caption_translation(app: &AppHandle, text: String) {
 
     match result {
         Ok(result) => {
+            append_transcript(app, &request.text, &result.translated_text);
+
             let _ = app.emit_to(
                 WINDOW,
                 EVENT_TRANSLATION,
@@ -280,6 +288,8 @@ fn run_caption_translation(app: &AppHandle, text: String) {
             }
         }
         Err(error) => {
+            append_transcript(app, &request.text, "");
+
             if caption_debug() {
                 eprintln!("CAPDBG translation failed: {error}");
             }
@@ -351,6 +361,80 @@ fn load_glossary() -> Vec<GlossaryTerm> {
         })
         .take(MAX_GLOSSARY_TERMS)
         .collect()
+}
+
+/// HH:MM:SS since the session started.
+fn format_timestamp(seconds: f64) -> String {
+    let total = seconds.max(0.0) as u64;
+
+    format!(
+        "{:02}:{:02}:{:02}",
+        total / 3600,
+        (total / 60) % 60,
+        total % 60
+    )
+}
+
+/// One transcript entry: the source line and, when present, the translation.
+fn transcript_entry(seconds: f64, source: &str, translation: &str) -> String {
+    let stamp = format_timestamp(seconds);
+    let mut entry = format!("[{stamp}] {source}\n");
+
+    if !translation.trim().is_empty() {
+        entry.push_str(&format!("[{stamp}] {translation}\n"));
+    }
+
+    entry.push('\n');
+    entry
+}
+
+/// Creates the session transcript file and remembers it for
+/// [`append_transcript`].
+fn start_session(app: &AppHandle) {
+    let Some(dir) = translator_core::paths::captions_dir() else {
+        return;
+    };
+
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+
+    let epoch_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0);
+    let path = dir.join(format!("captions-{epoch_ms}.txt"));
+    let header = format!("# OpenTranslator 实时字幕记录\n# 开始时间（Unix 毫秒）：{epoch_ms}\n\n");
+
+    if std::fs::write(&path, header).is_err() {
+        return;
+    }
+
+    let runtime = &app.state::<crate::AppState>().caption;
+    *runtime.session.lock().unwrap() = Some(path);
+    *runtime.started.lock().unwrap() = Some(std::time::Instant::now());
+}
+
+/// Appends a finalized entry to the session transcript; no-op without an
+/// active session.
+fn append_transcript(app: &AppHandle, source: &str, translation: &str) {
+    let runtime = &app.state::<crate::AppState>().caption;
+    let path = runtime.session.lock().unwrap().clone();
+    let Some(path) = path else {
+        return;
+    };
+
+    let seconds = runtime
+        .started
+        .lock()
+        .unwrap()
+        .map(|started| started.elapsed().as_secs_f64())
+        .unwrap_or(0.0);
+
+    if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&path) {
+        use std::io::Write;
+        let _ = file.write_all(transcript_entry(seconds, source, translation).as_bytes());
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -493,6 +577,7 @@ mod linux {
                 }
             });
 
+            super::start_session(&app);
             emit_status(&app, "listening", None);
 
             let mut buffer = vec![0u8; FRAME_SAMPLES * 2];
@@ -608,5 +693,27 @@ mod linux {
             "zh" | "en" | "ja" | "ko" | "yue" => language.clone(),
             _ => "auto".to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_timestamp, transcript_entry};
+
+    #[test]
+    fn formats_session_timestamps() {
+        assert_eq!(format_timestamp(0.0), "00:00:00");
+        assert_eq!(format_timestamp(61.9), "00:01:01");
+        assert_eq!(format_timestamp(3_661.0), "01:01:01");
+        assert_eq!(format_timestamp(-5.0), "00:00:00");
+    }
+
+    #[test]
+    fn renders_bilingual_and_source_only_entries() {
+        assert_eq!(
+            transcript_entry(5.0, "hello", "你好"),
+            "[00:00:05] hello\n[00:00:05] 你好\n\n"
+        );
+        assert_eq!(transcript_entry(5.0, "hello", ""), "[00:00:05] hello\n\n");
     }
 }

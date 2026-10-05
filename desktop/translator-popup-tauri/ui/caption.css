@@ -58,6 +58,21 @@ body[data-state="error"] #caption {
   display: none;
 }
 
+/* Provisional states: waiting for the first translated token, then streaming
+   until the translation is final. */
+#translation.pending {
+  display: block;
+}
+
+#translation.pending::after {
+  content: "···";
+  opacity: 0.35;
+}
+
+#translation.streaming {
+  opacity: 0.72;
+}
+
 body[data-layout="translation"] #source {
   display: none;
 }

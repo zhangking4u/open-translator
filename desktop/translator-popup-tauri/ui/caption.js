@@ -33,6 +33,8 @@ listen("caption-segment", (event) => {
 
   source.textContent = layout === "translation" ? "" : text;
   translation.textContent = "";
+  translation.classList.remove("streaming");
+  translation.classList.add("pending");
   hint.textContent = "";
   document.body.dataset.state = "visible";
   scheduleHide();
@@ -42,10 +44,14 @@ listen("caption-translation", (event) => {
   const payload = event.payload || {};
   if (typeof payload.text !== "string" || layout === "source") return;
 
+  translation.classList.remove("pending");
+
   if (payload.done) {
     translation.textContent = payload.text;
+    translation.classList.remove("streaming");
     scheduleHide();
   } else {
+    translation.classList.add("streaming");
     translation.textContent += payload.text;
   }
 });
@@ -57,23 +63,19 @@ listen("caption-status", (event) => {
     clearTimeout(hideTimer);
     source.textContent = "实时字幕不可用";
     translation.textContent = "";
+    translation.classList.remove("pending", "streaming");
     hint.textContent = payload.message || "";
     document.body.dataset.state = "error";
     return;
   }
 
-  if (payload.state === "starting") {
+  if (payload.state === "starting" || payload.state === "downloading") {
     source.textContent = "";
     translation.textContent = "";
-    hint.textContent = payload.message || "正在加载语音模型…";
-    document.body.dataset.state = "visible";
-    return;
-  }
-
-  if (payload.state === "downloading") {
-    source.textContent = "";
-    translation.textContent = "";
-    hint.textContent = payload.message || "正在下载语音模型…";
+    translation.classList.remove("pending", "streaming");
+    hint.textContent =
+      payload.message ||
+      (payload.state === "starting" ? "正在加载语音模型…" : "正在下载语音模型…");
     document.body.dataset.state = "visible";
     return;
   }
