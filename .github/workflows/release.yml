@@ -59,9 +59,12 @@ jobs:
         with:
           workspaces: desktop/translator-popup-tauri
       - name: Rebuild the sherpa-onnx prebuilt libraries
-        # rust-cache can restore an unusable sherpa-onnx-prebuilt directory;
-        # sherpa-onnx-sys trusts it and skips re-extraction, so rebuild it.
-        run: rm -rf desktop/translator-popup-tauri/target/sherpa-onnx-prebuilt
+        # rust-cache restores a stale sherpa-onnx-sys fingerprint without the
+        # extracted lib directory, so cargo skips the build script. Clean the
+        # crate's artifacts so it downloads and extracts again.
+        run: |
+          cargo clean --manifest-path desktop/translator-popup-tauri/Cargo.toml -p sherpa-onnx-sys
+          rm -rf desktop/translator-popup-tauri/target/sherpa-onnx-prebuilt
       - name: Build
         env:
           OPEN_TRANSLATOR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}

@@ -53,10 +53,13 @@ jobs:
         with:
           workspaces: core/asr
       - name: Rebuild the sherpa-onnx prebuilt libraries
-        # rust-cache can restore target/sherpa-onnx-prebuilt with an
-        # incomplete lib directory, and sherpa-onnx-sys trusts the directory
-        # and skips re-extraction. Rebuild it from the archive every run.
-        run: rm -rf target/sherpa-onnx-prebuilt
+        # rust-cache restores a stale sherpa-onnx-sys fingerprint while the
+        # extracted lib directory is not in the cache, so cargo skips the
+        # build script and the linker cannot find the .so files. Clean the
+        # crate's artifacts so the build script downloads and extracts again.
+        run: |
+          cargo clean -p sherpa-onnx-sys
+          rm -rf target/sherpa-onnx-prebuilt
       - run: cargo test
 
   core-windows:
@@ -111,9 +114,10 @@ jobs:
           workspaces: desktop/translator-popup-tauri
       - name: Rebuild the sherpa-onnx prebuilt libraries
         if: runner.os == 'Linux'
-        # See the ASR crate job: the restored cache can leave an unusable
-        # sherpa-onnx-prebuilt directory.
-        run: rm -rf target/sherpa-onnx-prebuilt
+        # See the ASR crate job.
+        run: |
+          cargo clean -p sherpa-onnx-sys
+          rm -rf target/sherpa-onnx-prebuilt
       - run: cargo test --release
 
   tauri-frontend:
