@@ -470,6 +470,15 @@ relative `HH:MM:SS` stamps, source and translation lines) and the tray
 points; the experiential acceptance (a 30-minute session used to the end)
 remains a daily-use check rather than an automated one.
 
+M3 acceptance (2026-10-05, real video, 37 minutes): the objective transcript
+shows 432 segments with 432/432 translated (0 source-only entries, i.e. no
+skipped or failed translations), 0 gaps longer than 60 s and a flat segment
+density across every 5-minute bucket (53–63 segments); the client and the
+`pw-record` child stayed alive throughout. Spot checks were mostly good, with
+the expected local-model misses ("first class baggage" → "一流的产品",
+"upper East Side" → "东区的上游地区"). The maintainer's subjective
+impressions are the remaining part of this acceptance.
+
 
 ## 8. Risks
 
@@ -490,9 +499,13 @@ remains a daily-use check rather than an automated one.
    `hf-mirror.com`, Silero VAD from the sherpa-onnx GitHub release with a
    gh-proxy fallback) with SHA-256 verification, resume and skip-if-valid; the
    caption start downloads missing files and streams progress to the overlay.
-2. Overlay placement: a click-through window cannot be dragged — decide
-   between drag support (temporarily re-enabling input) and a settings control
-   for `caption_x`/`caption_y`.
+2. Overlay placement — **done 2026-10-05**: the click-through overlay stays
+   non-interactive by default; the tray 移动字幕条… item turns click-through
+   off for 30 seconds (or until the drag ends), the overlay gets a dashed
+   border and a drag hint, pointer capture keeps the drag alive outside the
+   window, and the position is clamped to the work area and persisted as
+   `caption_x`/`caption_y`; 重置字幕位置 clears both and returns to the
+   bottom-center default.
 3. Source language: `caption_language` defaults to `auto`; evaluate `auto` vs a
    fixed language for accuracy and latency now that the pipeline runs in-app.
 4. Glossary: `source=target` files landed in M2 and the edit-from-tray flow in

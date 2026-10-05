@@ -103,7 +103,7 @@ target = zh
 
 ### 2.1 实时字幕（Linux）
 
-托盘菜单「实时字幕」→「开启实时字幕」后，客户端采集系统默认输出设备的回环音频，用本地 SenseVoice 模型出字幕，再用本地模型流式翻译成目标语言；字幕条置顶、点击穿透、不抢焦点，静音数秒后自动淡出，子菜单可切换「双语字幕 / 仅译文 / 仅原文」。首次开启会自动下载语音模型（约 240MB，来自 hf-mirror，带 SHA-256 校验与断点续传，进度显示在字幕条上）；`auto_download = false` 时需自行把 `model.int8.onnx`、`tokens.txt`、`silero_vad.onnx` 放到 `~/.local/share/open-translator/models/sense-voice/`。术语表是 `~/.config/open-translator/glossary.txt`（每行 `源词=译词`，最多 50 条，`#` 注释），想让字幕固定使用某个译法时写进去即可；子菜单里还有「编辑术语表…」（首次创建并打开该文件，保存后下一句即生效）和「打开字幕记录」（每次开启会话都会在 `~/.local/share/open-translator/captions/` 生成一份带时间戳的双语文本）。译文等待时显示「···」，流式期间半透明、完成后变清晰。相关配置：`caption_enabled`、`caption_language`（默认 `auto`）、`caption_layout`、`caption_glossary`、`caption_x`/`caption_y`。目前仅 Linux 支持；Windows/macOS 上托盘项为灰色。
+托盘菜单「实时字幕」→「开启实时字幕」后，客户端采集系统默认输出设备的回环音频，用本地 SenseVoice 模型出字幕，再用本地模型流式翻译成目标语言；字幕条置顶、点击穿透、不抢焦点，静音数秒后自动淡出，子菜单可切换「双语字幕 / 仅译文 / 仅原文」。首次开启会自动下载语音模型（约 240MB，来自 hf-mirror，带 SHA-256 校验与断点续传，进度显示在字幕条上）；`auto_download = false` 时需自行把 `model.int8.onnx`、`tokens.txt`、`silero_vad.onnx` 放到 `~/.local/share/open-translator/models/sense-voice/`。术语表是 `~/.config/open-translator/glossary.txt`（每行 `源词=译词`，最多 50 条，`#` 注释），想让字幕固定使用某个译法时写进去即可；子菜单里还有「编辑术语表…」（首次创建并打开该文件，保存后下一句即生效）、「打开字幕记录」（每次开启会话都会在 `~/.local/share/open-translator/captions/` 生成一份带时间戳的双语文本）、「移动字幕条…」（字幕条暂时变为可拖动，30 秒后或松开鼠标自动恢复点击穿透，位置会被记住）和「重置字幕位置」（回到屏幕底部居中）。译文等待时显示「···」，流式期间半透明、完成后变清晰。相关配置：`caption_enabled`、`caption_language`（默认 `auto`）、`caption_layout`、`caption_glossary`、`caption_x`/`caption_y`。目前仅 Linux 支持；Windows/macOS 上托盘项为灰色。
 
 ### 3. 浏览器扩展（Edge / Chrome / Firefox）
 

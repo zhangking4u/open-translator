@@ -2071,6 +2071,18 @@ reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
 - M3 real-machine checks passed (pending dots, provisional → final, glossary
   editor, transcript folder); the 30-minute experiential acceptance stays a
   daily-use check.
+- Overlay position UI (2026-10-05): the tray 实时字幕 submenu gained 移动字幕条…
+  (click-through off for 30 s or until the drag ends; dashed border + hint;
+  pointer-capture drag clamped to the work area; persists `caption_x`/`caption_y`)
+  and 重置字幕位置 (clears both, back to bottom-center). Two bugs found on real
+  hardware: the overlay's `pointer-events: none` blocked every mouse event, and
+  plain mouse events stopped at the window edge — fixed with an editing-mode
+  `pointer-events: auto` plus `setPointerCapture`. Real-machine checks passed
+  (drag, click-through restoration, position restored after restart, reset).
+- 30-minute soak (2026-10-05, real video, ran 37 min): 432 segments, 432/432
+  translated, 0 gaps > 60 s, flat density across 5-minute buckets, no crash;
+  spot-check quality good with the expected local-model misses. The
+  maintainer's subjective impressions are pending.
 
 
 ## Sprint 6
