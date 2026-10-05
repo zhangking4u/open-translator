@@ -70,5 +70,13 @@ listen("caption-status", (event) => {
     return;
   }
 
+  if (payload.state === "downloading") {
+    source.textContent = "";
+    translation.textContent = "";
+    hint.textContent = payload.message || "正在下载语音模型…";
+    document.body.dataset.state = "visible";
+    return;
+  }
+
   hint.textContent = "";
 });

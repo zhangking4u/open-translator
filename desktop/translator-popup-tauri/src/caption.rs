@@ -132,6 +132,24 @@ fn raise_caption(app: &AppHandle) {
     let _ = window.set_always_on_top(true);
 }
 
+/// A background failure (model download or load) stops capture, hides the
+/// overlay and puts the tray back to the off state.
+fn stop_after_failure(app: &AppHandle, message: &str) {
+    let state = app.state::<crate::AppState>();
+    state.caption.active.store(false, Ordering::SeqCst);
+    translator_core::settings::persist_value("caption_enabled", "false");
+
+    if let Some(menu) = state.caption_menu.lock().unwrap().as_ref() {
+        let _ = menu.toggle.set_checked(false);
+    }
+
+    if let Some(window) = app.get_webview_window(WINDOW) {
+        let _ = window.hide();
+    }
+
+    crate::notify::show("OpenTranslator", message);
+}
+
 /// Caption layout: `bilingual` (source + translation), `translation`
 /// (translation only) or `source` (no translation).
 pub fn layout() -> String {
@@ -337,7 +355,7 @@ fn load_glossary() -> Vec<GlossaryTerm> {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
     use tauri::async_runtime::JoinHandle;
@@ -351,17 +369,21 @@ mod linux {
     const FRAME_SAMPLES: usize = 1_600; // 100 ms
     const QUEUE: usize = 8;
     const MIN_SEGMENT_SAMPLES: usize = (SAMPLE_RATE as usize) / 4; // 250 ms
+    const MODEL_FILES: [&str; 3] = ["model.int8.onnx", "tokens.txt", "silero_vad.onnx"];
 
     pub fn spawn(app: &tauri::AppHandle) -> Result<JoinHandle<()>, String> {
         let model_dir = resolve_model_dir()?;
-        let model = model_dir.join("model.int8.onnx");
-        let tokens = model_dir.join("tokens.txt");
-        let vad_model = model_dir.join("silero_vad.onnx");
+        let missing: Vec<PathBuf> = MODEL_FILES
+            .iter()
+            .map(|name| model_dir.join(name))
+            .filter(|path| !path.is_file())
+            .collect();
 
-        for path in [&model, &tokens, &vad_model] {
-            if !path.is_file() {
-                return Err(format!("缺少语音模型文件：{}", path.display()));
-            }
+        if !missing.is_empty() && !auto_download_enabled() {
+            return Err(format!(
+                "缺少语音模型文件：{}（可开启 auto_download 自动下载）",
+                missing[0].display()
+            ));
         }
 
         let language = resolve_language();
@@ -370,6 +392,17 @@ mod linux {
         Ok(tauri::async_runtime::spawn(async move {
             emit_status(&app, "starting", None);
             super::emit_config(&app);
+
+            if let Err(error) = ensure_models(&app, &model_dir).await {
+                let message = format!("实时字幕已停止：{error}");
+                emit_status(&app, "error", Some(message.clone()));
+                super::stop_after_failure(&app, &message);
+                return;
+            }
+
+            let model = model_dir.join("model.int8.onnx");
+            let tokens = model_dir.join("tokens.txt");
+            let vad_model = model_dir.join("silero_vad.onnx");
 
             let loaded = {
                 let model = model.clone();
@@ -389,10 +422,13 @@ mod linux {
                 Ok(Ok(value)) => value,
                 Ok(Err(error)) => {
                     emit_status(&app, "error", Some(error.to_string()));
+                    super::stop_after_failure(&app, &format!("实时字幕已停止：{error}"));
                     return;
                 }
                 Err(error) => {
-                    emit_status(&app, "error", Some(format!("语音模型加载失败：{error}")));
+                    let message = format!("语音模型加载失败：{error}");
+                    emit_status(&app, "error", Some(message.clone()));
+                    super::stop_after_failure(&app, &message);
                     return;
                 }
             };
@@ -490,6 +526,67 @@ mod linux {
             let _ = worker.await;
             emit_status(&app, "error", Some("音频采集已停止".to_string()));
         }))
+    }
+
+    /// Downloads any missing ASR/VAD file (existing files are verified and
+    /// reused); progress is reported through `caption-status` with state
+    /// `downloading`.
+    async fn ensure_models(app: &tauri::AppHandle, model_dir: &Path) -> Result<(), String> {
+        let client = translator_core::models::download_client()
+            .map_err(|error| format!("下载初始化失败：{error}"))?;
+        let total = translator_core::models::asr_model_total_size().max(1);
+        let mut done_before = 0u64;
+
+        for file in &translator_core::models::ASR_MODEL_FILES {
+            let dest = model_dir.join(file.name);
+
+            if dest.is_file()
+                && translator_core::models::verify_sha256(&dest, file.sha256).unwrap_or(false)
+            {
+                done_before += file.size;
+                continue;
+            }
+
+            let mut last_percent = u64::MAX;
+
+            let result = translator_core::models::download_model_file(
+                &client,
+                file,
+                model_dir,
+                |downloaded, _| {
+                    let overall = done_before + downloaded;
+                    let percent = overall * 100 / total;
+
+                    if percent != last_percent {
+                        last_percent = percent;
+                        emit_status(
+                            app,
+                            "downloading",
+                            Some(format!(
+                                "正在下载语音模型：{percent}%（{}/{} MB）",
+                                overall / 1_000_000,
+                                total / 1_000_000
+                            )),
+                        );
+                    }
+                },
+            )
+            .await;
+
+            result.map_err(|error| format!("{}: {error}", file.name))?;
+            done_before += file.size;
+        }
+
+        Ok(())
+    }
+
+    fn auto_download_enabled() -> bool {
+        let config = translator_core::settings::load_config();
+
+        match config.auto_download.as_deref() {
+            Some(value) => crate::parse_bool("auto_download", value).unwrap_or(true),
+            None => true,
+        }
     }
 
     fn resolve_model_dir() -> Result<PathBuf, String> {

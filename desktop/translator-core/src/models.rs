@@ -10,6 +10,57 @@ pub const DEFAULT_MODEL_SHA256: &str =
     "4383ac0c3c8e476de98ff979c2a3f069f8c4fb385e7860cf2d28da896cc477c7";
 pub const DEFAULT_MODEL_SIZE: u64 = 1_133_080_512;
 
+/// One file of a downloadable model set.
+pub struct ModelFile {
+    pub name: &'static str,
+    /// Tried in order; the first one that succeeds wins.
+    pub urls: &'static [&'static str],
+    pub sha256: &'static str,
+    pub size: u64,
+}
+
+/// SenseVoice (zh/en/ja/ko/yue) + Silero VAD for live captions. The files are
+/// served through the Hugging Face mirror (`hf-mirror.com`); ModelScope has no
+/// mirror of this sherpa-onnx conversion. The VAD file comes from the
+/// sherpa-onnx GitHub release with a gh-proxy fallback.
+pub const SENSE_VOICE_MODEL_URL: &str = "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx";
+pub const SENSE_VOICE_MODEL_SHA256: &str =
+    "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51";
+pub const SENSE_VOICE_TOKENS_URL: &str = "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt";
+pub const SENSE_VOICE_TOKENS_SHA256: &str =
+    "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc";
+pub const SILERO_VAD_URL: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx";
+pub const SILERO_VAD_FALLBACK_URL: &str =
+    "https://gh-proxy.com/https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx";
+pub const SILERO_VAD_SHA256: &str =
+    "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6";
+
+pub const ASR_MODEL_FILES: [ModelFile; 3] = [
+    ModelFile {
+        name: "model.int8.onnx",
+        urls: &[SENSE_VOICE_MODEL_URL],
+        sha256: SENSE_VOICE_MODEL_SHA256,
+        size: 239_233_841,
+    },
+    ModelFile {
+        name: "tokens.txt",
+        urls: &[SENSE_VOICE_TOKENS_URL],
+        sha256: SENSE_VOICE_TOKENS_SHA256,
+        size: 315_894,
+    },
+    ModelFile {
+        name: "silero_vad.onnx",
+        urls: &[SILERO_VAD_URL, SILERO_VAD_FALLBACK_URL],
+        sha256: SILERO_VAD_SHA256,
+        size: 643_854,
+    },
+];
+
+pub fn asr_model_total_size() -> u64 {
+    ASR_MODEL_FILES.iter().map(|file| file.size).sum()
+}
+
 pub fn download_client() -> Result<reqwest::Client, ModelError> {
     reqwest::Client::builder()
         .user_agent(concat!("OpenTranslator/", env!("CARGO_PKG_VERSION")))
@@ -193,6 +244,47 @@ fn hash_file(path: &Path, hasher: &mut Sha256) -> Result<(), ModelError> {
     Ok(())
 }
 
+/// Whether `path` exists and hashes to `expected` (hex, case-insensitive).
+pub fn verify_sha256(path: &Path, expected: &str) -> Result<bool, ModelError> {
+    let mut hasher = Sha256::new();
+    hash_file(path, &mut hasher)?;
+
+    Ok(hex(hasher.finalize()).eq_ignore_ascii_case(expected))
+}
+
+/// Downloads one [`ModelFile`], trying its URLs in order. An existing file
+/// that already matches the digest is kept without touching the network.
+pub async fn download_model_file<F>(
+    client: &reqwest::Client,
+    file: &ModelFile,
+    dest_dir: &Path,
+    mut progress: F,
+) -> Result<PathBuf, ModelError>
+where
+    F: FnMut(u64, Option<u64>),
+{
+    let dest = dest_dir.join(file.name);
+
+    if dest.is_file() && verify_sha256(&dest, file.sha256).unwrap_or(false) {
+        return Ok(dest);
+    }
+
+    let mut last_error = None;
+
+    for url in file.urls {
+        match download(client, url, &dest, Some(file.sha256), |downloaded, total| {
+            progress(downloaded, total)
+        })
+        .await
+        {
+            Ok(()) => return Ok(dest),
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| ModelError::Http("no download source".to_string())))
+}
+
 pub fn hex(bytes: impl AsRef<[u8]>) -> String {
     bytes.as_ref().iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -283,6 +375,60 @@ mod tests {
             format_download_status(123_000_000, None),
             "正在下载模型：已下载 123 MB"
         );
+    }
+
+    #[test]
+    fn asr_model_specs_are_well_formed() {
+        assert_eq!(ASR_MODEL_FILES.len(), 3);
+
+        for file in &ASR_MODEL_FILES {
+            assert!(!file.name.is_empty());
+            assert_eq!(file.sha256.len(), 64);
+            assert!(file.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+            assert!(!file.urls.is_empty());
+            assert!(file.urls.iter().all(|url| url.starts_with("https://")));
+            assert!(file.size > 0);
+        }
+
+        assert!(asr_model_total_size() > 200_000_000);
+    }
+
+    #[tokio::test]
+    async fn download_model_file_falls_back_to_the_second_url() {
+        let payload = payload();
+        let url = serve(payload.clone(), true).await;
+        let good_url: &'static str = Box::leak(url.into_boxed_str());
+        let urls: &'static [&'static str] =
+            Box::leak(vec!["http://127.0.0.1:9/refused", good_url].into_boxed_slice());
+        let sha: &'static str = Box::leak(sha256_hex(&payload).into_boxed_str());
+        let file = ModelFile {
+            name: "fallback.bin",
+            urls,
+            sha256: sha,
+            size: payload.len() as u64,
+        };
+        let dest_dir = std::env::temp_dir().join(format!(
+            "translator-core-asr-download-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dest_dir);
+
+        let client = reqwest::Client::new();
+        let path = download_model_file(&client, &file, &dest_dir, |_, _| {})
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), payload);
+
+        // A second call must keep the verified file without downloading again.
+        let path_again = download_model_file(&client, &file, &dest_dir, |_, _| {
+            panic!("must not download a verified file");
+        })
+        .await
+        .unwrap();
+        assert_eq!(path, path_again);
+
+        let _ = std::fs::remove_dir_all(&dest_dir);
     }
 
     #[tokio::test]
