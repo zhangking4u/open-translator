@@ -1,0 +1,8 @@
+[package]
+name = "translator-asr"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sherpa-onnx = { version = "1.13.8", default-features = false, features = ["shared"] }
+tracing = "0.1"
