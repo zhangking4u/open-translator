@@ -198,6 +198,16 @@ ModelScope API 404s for this mirror, a plain gh-proxy GET hung, and HEAD is not
 enough to download). No streaming Zipformer was tested because final-only
 latency already passes.
 
+M1 implementation: the official `sherpa-onnx` Rust crate (1.13.8) with
+**shared** libraries. The prebuilt *static* archive aborts with
+`free(): invalid pointer` inside `onnxruntime::GetPciBusId` once the Tauri
+binary links the other static runtimes in this process; the shared `.so` files
+(`libsherpa-onnx-c-api.so`, `libsherpa-onnx-cxx-api.so`, `libonnxruntime.so`)
+isolate that C++ runtime and fix it. `sherpa-onnx-sys` copies the libraries
+next to the produced binary, the client links with `-Wl,-rpath,$ORIGIN`
+(`build.rs`), and `packaging/linux/make-deb.sh` installs them into
+`/usr/lib/open-translator/` next to the executable.
+
 ### 5.3 Capture
 
 PipeWire monitor source on Linux (the default sink's `.monitor`; PipeWire's
@@ -220,16 +230,32 @@ reliably keep above or be placed by a token-less background app, so the
 existing `prefer_x11_backend` policy applies to the subtitle window too. GTK
 layer-shell would be the native Wayland fix but is out of scope for v1.
 
-### 5.5 Where the code lives
+M1 found two implementation traps: a newly mapped XWayland window can still
+sit below the active native window with always-on-top set, so every segment
+toggles the flag to force a restack; and click-through must be applied only
+after `show()`, because tao panics (`window.window().unwrap()` on `None`) when
+the GTK widget is not realized yet.
+
+### 5.5 Where the code lives (as implemented)
 
 - MT is already available in-process: `desktop/translator-popup-tauri` depends
   on `translator-service` (Cargo.toml), so `EngineRef`, `LlamaCppEngine` and
   `TimeoutEngine` can be reused directly.
-- ASR goes into a new crate (working name `core/asr`, package
-  `translator-asr`) with a dyn-compatible `SpeechEngine` trait, mirroring the
-  shape of `TranslationEngine` (`core/translator-service/src/engine/mod.rs`).
-  A separate crate keeps heavy build dependencies out of `translator-core`,
-  whose tests run on all three CI platforms.
+- ASR lives in `core/asr` (package `translator-asr`): a **synchronous**
+  `SpeechEngine` trait (`fn transcribe(&self, samples: &[f32], sample_rate:
+  i32) -> Result<Transcript, SpeechError>`) plus a `VoiceSegmenter` wrapper
+  over Silero VAD; the caller runs both on a blocking worker. Final-segment
+  decoding does not need the boxed-future shape of `TranslationEngine`, and
+  the simpler trait is easier to test. A separate crate keeps the heavy
+  sherpa/onnxruntime dependency out of `translator-core`, whose tests run on
+  all three CI platforms. The desktop depends on it Linux-only
+  (`[target.'cfg(target_os = "linux")'.dependencies]`) so Windows/macOS builds
+  do not link onnxruntime.
+- Captions live in the desktop client: `src/caption.rs` owns the `pw-record`
+  child, the VAD/ASR workers and the `caption-segment` / `caption-status`
+  events; `ui/caption.{html,css,js}` renders them. New window labels must be
+  added to `capabilities/default.json` or their `listen()` calls are rejected
+  by the Tauri ACL — this was the M1 bug that made events invisible.
 - Do not add audio to `translator-service` until a second consumer exists
   (the browser extension's tab audio is the natural candidate, through
   `src/server.rs`).
@@ -328,26 +354,43 @@ second line instead of waiting for the full translation.
   preference on Wayland.
 - Logging must follow the existing rule: never log raw audio or raw text.
 
-### 6.7 Trait sketch
+### 6.7 Implemented ASR surface
 
 ```rust
-pub type AsrFuture<'a> = Pin<
-    Box<dyn Future<Output = Result<Transcript, AsrError>> + Send + 'a>,
->;
-
-pub type PartialCallback = Box<dyn FnMut(&str) + Send + 'static>;
-pub type FinalCallback = Box<dyn FnMut(TranscriptSegment) + Send + 'static>;
-
-/// Mirrors `TranslationEngine`: dyn-compatible, streaming through callbacks.
 pub trait SpeechEngine: Send + Sync {
-    fn transcribe(&self, audio: &[f32]) -> AsrFuture<'_>;
+    fn transcribe(
+        &self,
+        samples: &[f32],
+        sample_rate: i32,
+    ) -> Result<Transcript, SpeechError>;
 
-    fn transcribe_streaming<'a>(
-        &'a self,
-        chunk: AudioChunk,
-        on_partial: PartialCallback,
-        on_final: FinalCallback,
-    ) -> AsrFuture<'a>;
+    fn name(&self) -> &'static str;
+}
+
+pub struct SenseVoiceEngine { /* OfflineRecognizer */ }
+
+impl SenseVoiceEngine {
+    pub fn load(
+        model: &Path,
+        tokens: &Path,
+        language: &str,
+        num_threads: i32,
+    ) -> Result<Self, SpeechError>;
+}
+
+pub struct VoiceSegmenter { /* Silero VAD */ }
+
+impl VoiceSegmenter {
+    pub fn new(
+        model: &Path,
+        sample_rate: i32,
+        min_silence_duration: f32,
+        max_speech_duration: f32,
+    ) -> Result<Self, SpeechError>;
+
+    /// Feed mono 16 kHz samples; returns every finished segment.
+    pub fn accept(&self, samples: &[f32]) -> Vec<Vec<f32>>;
+    pub fn flush(&self) -> Vec<Vec<f32>>;
 }
 ```
 
@@ -357,7 +400,7 @@ pub trait SpeechEngine: Send + Sync {
 | Milestone | Deliverable | Acceptance |
 | --- | --- | --- |
 | M0 smoke — **done 2026-10-04** | `pw-record` → energy VAD → SenseVoice → local MT → terminal output, no UI | 31-minute real video run: 494 segments, 0 dropped, 0 MT failures; end of speech → first translated token p50 0.82 s / p95 0.99 s / max 1.19 s; → full translation p50 1.20 s / p95 1.66 s / max 2.17 s; ASR RTF 0.022; CPU recorded |
-| M1 captions | Subtitle window showing source-language captions | Stays on top in X11 sessions, click-through, position remembered; 30 min without crash, drop or focus steal |
+| M1 captions — **done 2026-10-05** | Subtitle window showing source-language captions | Real-machine verified: captions render, click-through works, no focus steal, tray toggle works. Position is bottom-center (config override, no drag UI yet); the 30-minute soak remains part of normal daily use |
 | M2 translation | Second line via HY-MT streaming | First token p95 ≤ 1.2 s, segment ≤ 3 s; bilingual/translation-only switch; simple glossary file |
 | M3 trust | Provisional/final states, user corrections, personal glossary, history export | **A 30-minute session used to the end without switching it off or looking for the original text** |
 
@@ -376,6 +419,19 @@ dominates CPU. M0 is deliberately UI-free: the pipeline numbers decide whether
 the feature is viable before any interface work. The real product acceptance
 is M3 — the technology is not the risk; sustained trust is.
 
+M1 result (2026-10-05, Linux dev machine, GNOME Wayland/XWayland): the client
+now links `translator-asr` (Linux only) and adds a tray 实时字幕 check item,
+`src/caption.rs` (`pw-record` → Silero VAD → SenseVoice → events) and a
+click-through, non-focusable `caption` overlay whose text fades after 6 seconds
+of silence. Two implementation traps were found on real hardware and fixed:
+tao panics when `set_ignore_cursor_events` runs before the window is realized
+(apply it after `show()`), and `listen()` in a new window is rejected until the
+window label is added to `capabilities/default.json`. Packaging ships the
+shared sherpa/onnxruntime libraries next to the binary and relies on the
+`$ORIGIN` runpath. Not done yet: the app does not download the ASR model
+(models were placed manually for M1), and the overlay has no drag UI —
+position comes from `caption_x`/`caption_y` or the bottom-center default.
+
 
 ## 8. Risks
 
@@ -391,18 +447,26 @@ is M3 — the technology is not the risk; sustained trust is.
 
 ## 9. Open questions
 
-1. Source-language strategy: fixed per session, Whisper-style detection on the
-   first segment, or `translator-core::detect` on ASR output for MT routing?
-2. Glossary format and scope: plain text pairs, per-language, or a small
-   termbase with priorities?
-3. Per-app capture timing (capture only the meeting app's stream) — later than
+1. ASR model distribution: the app must download `model.int8.onnx`,
+   `tokens.txt` and `silero_vad.onnx` (currently placed by hand) through
+   `translator-core::models`; the working route is `hf-mirror.com` with
+   `HF_HUB_DISABLE_XET=1` (ModelScope has no reachable sherpa mirror for this
+   model). Main release blocker.
+2. Overlay placement: a click-through window cannot be dragged — decide
+   between drag support (temporarily re-enabling input) and a settings control
+   for `caption_x`/`caption_y`.
+3. Source language: `caption_language` defaults to `auto`; evaluate `auto` vs a
+   fixed language for accuracy and latency now that the pipeline runs in-app.
+4. Glossary format and scope: plain text pairs, per-language, or a small
+   termbase with priorities? (M2)
+5. Per-app capture timing (capture only the meeting app's stream) — later than
    default-sink capture, but more precise.
-4. Whether the subtitle window should support translation-only, source-only and
+6. Whether the subtitle window should support translation-only, source-only and
    bilingual layouts, and which is the default for a user who cannot read the
-   source language.
-5. Model licensing and redistribution checks for the chosen ASR model before
+   source language. (M2)
+7. Model licensing and redistribution checks for SenseVoice/Silero before
    packaging.
-6. Whether the browser extension should capture tab audio directly (second
+8. Whether the browser extension should capture tab audio directly (second
    consumer) instead of relying on system loopback.
 
 ## Sources and confidence

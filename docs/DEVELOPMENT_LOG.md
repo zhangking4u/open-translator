@@ -2014,6 +2014,29 @@ reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
   (time-base bug, fixed for future runs); ASR timing stands on the separate
   RTF measurement. No product code was written; spike scripts live in
   `/tmp/kilo` (`m0_run.py`, `analyze_run.py`).
+- M1 (live caption overlay, 2026-10-05) landed: `core/asr` (`translator-asr`,
+  official sherpa-onnx Rust crate, SenseVoice + Silero VAD, synchronous
+  `SpeechEngine`), `src/caption.rs` in the Tauri client (`pw-record` →
+  segments → caption events) and `ui/caption.*` (click-through, non-focusable,
+  always-on-top, fades after 6 s of silence). Tray 实时字幕 toggles it; config
+  keys are `caption_enabled`/`caption_language`/`caption_x`/`caption_y`/
+  `asr_model_dir`.
+- Build findings: the prebuilt **static** sherpa/onnxruntime archive aborts
+  with `free(): invalid pointer` in `onnxruntime::GetPciBusId` once linked
+  into the Tauri binary; switched to the **shared** libraries with an
+  `-Wl,-rpath,$ORIGIN` runpath, and the deb now ships
+  `libsherpa-onnx-c-api.so` / `libsherpa-onnx-cxx-api.so` / `libonnxruntime.so`
+  next to the binary (`pipewire-bin` added to Depends). Static mode remains
+  broken for this binary.
+- Runtime findings: `set_ignore_cursor_events(true)` panics in tao when the GTK
+  widget is not realized (apply it after `show()`); the new `caption` window
+  label must be listed in `capabilities/default.json` or its JS `listen()`
+  calls are rejected — this kept the overlay invisible until fixed.
+  `TRANSLATOR_CAPTION_DEBUG=1` prints `CAPDBG` status/segment lines.
+- M1 real-machine checks passed 2026-10-05 (caption renders, click-through, no
+  focus steal, tray toggle); the ASR models live in
+  `~/.local/share/open-translator/models/sense-voice/` and are not downloaded
+  by the app yet (next task).
 
 
 ## Sprint 6
