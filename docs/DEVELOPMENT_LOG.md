@@ -2132,6 +2132,18 @@ runtime bundle is the remaining packaging item, alongside a real-webpage
 fixture. Spike lives in `/tmp/kilo/ocr-spike` (with a vendored
 `rapidocr-core` feature patch and `score.py`).
 
+M1 plumbing (2026-10-06): `core/ocr` (`translator-ocr`) added with the
+engine-agnostic `OcrEngine` surface (`OcrBlock { text, score, quad }`, no
+adapter yet); `translator-service` gained `POST /translate/image` (base64 or
+data-URL PNG/JPEG → injected OCR provider → one joined text-engine request
+with a per-block fallback → `{image:{width,height}, blocks}`), an explicit
+`ocr_unavailable` 501 without a provider, image budgets (32 MiB base64 /
+16 MP / `max_chars`) and no image logging. 10 integration tests cover the
+endpoint (translation, data URLs, line-mismatch fallback, 400/501 paths); a
+`core/ocr` CI job was added. The RapidOCR adapter, `translator-core::models`
+download entries and the desktop wiring wait on the Windows/macOS ORT bundle
+decision.
+
 
 ## Sprint 6
 

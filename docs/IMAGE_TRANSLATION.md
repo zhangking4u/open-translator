@@ -173,6 +173,25 @@ covers both scripts, dark/light and DPR 1/2; clean synthetic text does not
 exercise stylized-UI failure modes. Final validation stays on the M2 path per
 the milestone table.
 
+### 5.2 M1 progress (2026-10-06)
+
+The service side of M1 landed:
+
+- `core/ocr` (crate `translator-ocr`): the engine-agnostic `OcrEngine` surface
+  (`recognize(pixels, width, height) -> Vec<OcrBlock>` with `OcrBlock { text,
+  score, quad }` and a `Quad::bounding_box` helper). No adapter yet.
+- `translator-service`: `POST /translate/image` — base64 or data-URL
+  PNG/JPEG input, OCR through the injected provider (`AppState::with_ocr`),
+  one joined translation request per page with a per-block fallback when the
+  model changes the line count, explicit `ocr_unavailable` (501) when no
+  provider is configured, 32 MiB / 16 MP / `max_chars` budgets, and image
+  bytes never logged. 10 integration tests cover translation, data URLs, the
+  fallback, and the 400/501 paths.
+
+Still pending: the RapidOCR adapter (blocked on the Windows/macOS runtime
+bundle decision), model download through `translator-core::models`, and the
+desktop wiring (`server.rs` + extension API).
+
 ## 6. Risks
 
 | Risk | Mitigation |
