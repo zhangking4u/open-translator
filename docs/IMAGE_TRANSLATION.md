@@ -129,6 +129,43 @@ spike decides with measured numbers, not preference.
 | M1 | service image endpoint + OCR provider + desktop wiring + model download | endpoint unit/integration tests; OCR quality/latency from M0; explicit capability error without a provider |
 | M2 | extension UX: command/menu, overlay (click-through, small toolbar), error states, PDF-viewer fallback | Chrome e2e; end-to-end latency, CPU peak, offline; Firefox manual pass; capture→overlay visible time and OCR numbers re-measured on the final path |
 
+### 5.1 Spike results (partial, 2026-10-06)
+
+Runtime selection (verified on the Linux dev machine):
+
+- **Selected: `rapidocr-core` 0.2.2 + `ort` with `load-dynamic`, reusing the
+  sherpa-shipped `libonnxruntime.so` 1.28.2** (vendored crate with
+  `ort { default-features = false, features = ["std", "ndarray",
+  "load-dynamic", "api-28"] }`). The build needs no OpenSSL and downloads no
+  ONNX Runtime, and the process loads the shared library the deb already
+  ships — no second runtime on Linux.
+- Eliminated: `ocrs` (the recognition alphabet is Latin-only —
+  `DEFAULT_ALPHABET` has no CJK — and no Chinese recognition model exists);
+  `ort` default features (add a second ONNX Runtime and need OpenSSL headers
+  at build time).
+- Remaining packaging item: Windows/macOS ship no ONNX Runtime today
+  (`translator-asr` is Linux-only), so the OCR provider needs a bundled ORT
+  dylib there (or the same `load-dynamic` trick against one it ships).
+
+Fixture: a Chrome-rendered 1280×800 page with ~30 mixed zh/en blocks on dark
+and light panels (`/tmp/kilo/ocr-spike/fixture.html`); detection found 41
+lines and the text was read correctly in both scripts (differences were
+spacing/case-level).
+
+| Model set | Median total | det | rec | Models on disk | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `ppocrv6-tiny` | **515 ms** | 194 ms | 327 ms | ~6.2 MB | provisional default: fastest, quality equal or better |
+| `ppocrv5-ch-mobile` | 2308 ms | 577 ms | 1813 ms | ~20.7 MB | more case/punctuation misses |
+| `ppocrv6-small` | 2952 ms | 1438 ms | 1516 ms | ~30.5 MB | no quality gain over tiny on this fixture |
+
+Models come from ModelScope (`RapidAI/RapidOCR`, Apache-2.0), downloaded on
+first use; `rapidocr-core` is Apache-2.0 (README attribution entry pending).
+
+Remaining M0 work: a DPR-2 and a real-webpage fixture; systematic character
+accuracy / block recall scoring (the current result is a read-through, not a
+metric); ORT intra-op thread tuning and CPU profile; the Windows/macOS
+runtime bundle decision.
+
 ## 6. Risks
 
 | Risk | Mitigation |
@@ -142,7 +179,8 @@ spike decides with measured numbers, not preference.
 
 ## 7. Open questions
 
-1. OCR model and license choice (spike output; README attribution entry).
+1. OCR model set and license entry: `ppocrv6-tiny` is the provisional choice
+   (README attribution entry pending; see §5.1).
 2. Iframe overlay strategy: top-frame vs per-frame rendering.
 3. PDF viewer (no content script): `result.html` panel fallback enough?
 4. Whether the response should also carry a whole-image reading (VLM) for

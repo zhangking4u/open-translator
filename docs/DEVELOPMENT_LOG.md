@@ -2116,6 +2116,20 @@ release/re-acquire) and the caption translation line in `caption.rs`
 submit/finish). Behaviour is unchanged: translator-core 75 tests / client 20
 tests green.
 
+OCR spike (2026-10-06, M0 partial): selected `rapidocr-core` + `ort`
+`load-dynamic` reusing the sherpa-shipped `libonnxruntime.so` 1.28.2 — the
+build needs no OpenSSL and downloads no ONNX Runtime, so on Linux the deb's
+existing runtime is the only one. `ocrs` was eliminated (Latin-only
+recognition alphabet, no zh model); `ort` defaults were rejected (second
+runtime plus an OpenSSL build dependency). On a Chrome-rendered 1280×800
+zh/en fixture (41 detected lines), PP-OCRv6 tiny ran a 515 ms median
+(det 194 / rec 327 ms, models ~6.2 MB) versus 2.31 s for PP-OCRv5 ch mobile
+and 2.95 s for PP-OCRv6 small, with no quality gain for the larger sets.
+Windows/macOS ship no ORT (ASR is Linux-only), so their OCR runtime bundle is
+the remaining packaging item. Spike lives in `/tmp/kilo/ocr-spike` (with a
+vendored `rapidocr-core` feature patch); remaining M0: DPR-2/real-webpage
+fixtures, accuracy scoring, thread tuning.
+
 
 ## Sprint 6
 
