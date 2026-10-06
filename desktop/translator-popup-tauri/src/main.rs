@@ -94,11 +94,10 @@ struct AppState {
     /// The watcher ignores selections until this instant after a hotkey
     /// trigger (the hotkey captures the same selection itself).
     suppress_until: Mutex<Option<Instant>>,
-    /// True while a translation is streaming. The engine is serialized, so
-    /// watcher bursts must not stack translations; instead the newest text
-    /// waits in `queued` and replaces any previous follow-up.
-    translating: AtomicBool,
-    queued: Mutex<Option<String>>,
+    /// Serializes card translations: watcher bursts must not stack
+    /// translations, so while one runs the slot keeps only the newest
+    /// follow-up (shared `latest_wins` state machine).
+    translation_queue: translator_core::latest_wins::LatestWins<String>,
     /// The card is currently on screen because the selection watcher showed
     /// it (as opposed to a hotkey/tray show); disabling the feature hides it.
     popup: AtomicBool,
@@ -366,8 +365,7 @@ fn main() {
             pending_selection: Mutex::new(None),
             ball_generation: AtomicU64::new(0),
             suppress_until: Mutex::new(None),
-            translating: AtomicBool::new(false),
-            queued: Mutex::new(None),
+            translation_queue: translator_core::latest_wins::LatestWins::new(),
             popup: AtomicBool::new(false),
             last_translated: Mutex::new(None),
             ball_state: AtomicU64::new(BALL_IDLE),
@@ -1290,21 +1288,36 @@ fn translate_text(app: &AppHandle, text: String) {
 
     // The engine processes requests serially. A burst of watcher triggers must
     // not queue translations whose streams keep rewriting the card after it
-    // has moved on; remember only the newest follow-up text instead and let
-    // the running translation chain into it.
-    if state.translating.swap(true, Ordering::SeqCst) {
-        *state.queued.lock().unwrap() = Some(text);
-        return;
-    }
+    // has moved on; the slot keeps only the newest follow-up and the running
+    // translation chains into it.
+    let job = state.translation_queue.submit(text);
 
+    if let Some(text) = job {
+        start_translation(app, text);
+    }
+}
+
+/// Runs a follow-up already handed over by the translation slot (the slot
+/// stays owned by this chain), mirroring the queuing half of
+/// [`translate_text`].
+fn translate_follow_up(app: &AppHandle, text: String) {
+    *app.state::<AppState>().last_text.lock().unwrap() = Some(text.clone());
     start_translation(app, text);
 }
 
 fn start_translation(app: &AppHandle, text: String) {
     let engine = app.state::<AppState>().engine.lock().unwrap().clone();
     let Some(engine) = engine else {
+        // The model is still downloading/loading: remember only the newest
+        // text and release the slot.
         *app.state::<AppState>().pending.lock().unwrap() = Some(text);
-        app.state::<AppState>().translating.store(false, Ordering::SeqCst);
+
+        let next = app.state::<AppState>().translation_queue.finish();
+
+        if let Some(next) = next {
+            translate_follow_up(app, next);
+        }
+
         return;
     };
 
@@ -1405,13 +1418,10 @@ fn start_translation(app: &AppHandle, text: String) {
 
         // Chain into the newest follow-up that arrived while this translation
         // was running (watcher bursts coalesce into at most one extra pass).
-        let state = app.state::<AppState>();
-        let next = state.queued.lock().unwrap().take();
-        state.translating.store(false, Ordering::SeqCst);
-        drop(state);
+        let next = app.state::<AppState>().translation_queue.finish();
 
         if let Some(next) = next {
-            translate_text(&app, next);
+            translate_follow_up(&app, next);
         } else {
             refresh_ball_state(&app);
         }
@@ -2271,7 +2281,7 @@ fn apply_selection_mode(app: &AppHandle, parsed: selection_watch::SelectionMode)
 
     if parsed == selection_watch::SelectionMode::Off {
         hide_ball(app);
-        *state.queued.lock().unwrap() = None;
+        state.translation_queue.clear_queued();
 
         // A card that the watcher popped up should not linger once the feature
         // is disabled.

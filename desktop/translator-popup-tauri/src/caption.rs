@@ -59,8 +59,9 @@ static EDITING: AtomicBool = AtomicBool::new(false);
 pub struct CaptionRuntime {
     task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     active: AtomicBool,
-    translating: AtomicBool,
-    queued: Mutex<Option<String>>,
+    /// Single-flight slot for the translation line: while one segment is
+    /// translating, only the newest follow-up is kept.
+    queue: translator_core::latest_wins::LatestWins<String>,
     session: Mutex<Option<PathBuf>>,
     started: Mutex<Option<std::time::Instant>>,
 }
@@ -238,21 +239,20 @@ pub fn emit_config(app: &AppHandle) {
 }
 
 /// Queues a finished segment for translation. Single-flight: while one
-/// translation runs, only the newest follow-up text is kept.
+/// translation runs, only the newest follow-up is kept (the shared
+/// `latest_wins` slot).
 fn translate_segment(app: &AppHandle, text: String) {
     if layout() == "source" || text.trim().is_empty() {
         return;
     }
 
     let runtime = &app.state::<crate::AppState>().caption;
+    let job = runtime.queue.submit(text);
 
-    if runtime.translating.swap(true, Ordering::SeqCst) {
-        *runtime.queued.lock().unwrap() = Some(text);
-        return;
+    if let Some(text) = job {
+        let app = app.clone();
+        std::thread::spawn(move || run_caption_translation(&app, text));
     }
-
-    let app = app.clone();
-    std::thread::spawn(move || run_caption_translation(&app, text));
 }
 
 fn run_caption_translation(app: &AppHandle, text: String) {
@@ -352,30 +352,14 @@ fn run_caption_translation(app: &AppHandle, text: String) {
 }
 
 fn finish_caption_translation(app: &AppHandle) {
-    let runtime = &app.state::<crate::AppState>().caption;
+    // The slot's take and idle transition share one lock, so a segment that
+    // arrives concurrently is either handed over here or starts its own run;
+    // the old take/store race cannot lose it.
+    let next = app.state::<crate::AppState>().caption.queue.finish();
 
-    loop {
-        let next = runtime.queued.lock().unwrap().take();
-
-        if let Some(next) = next {
-            let app = app.clone();
-            std::thread::spawn(move || run_caption_translation(&app, next));
-            return;
-        }
-
-        runtime.translating.store(false, Ordering::SeqCst);
-
-        // A segment that arrived between the take and the store may have seen
-        // `translating == true`; pick it up instead of losing it.
-        if runtime.queued.lock().unwrap().is_some() {
-            if runtime.translating.swap(true, Ordering::SeqCst) {
-                return;
-            }
-
-            continue;
-        }
-
-        return;
+    if let Some(next) = next {
+        let app = app.clone();
+        std::thread::spawn(move || run_caption_translation(&app, next));
     }
 }
 

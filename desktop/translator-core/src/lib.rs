@@ -2,6 +2,7 @@ pub mod args;
 pub mod detect;
 pub mod history;
 pub mod languages;
+pub mod latest_wins;
 pub mod models;
 pub mod paths;
 pub mod services;
