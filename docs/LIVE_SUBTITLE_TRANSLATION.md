@@ -1,10 +1,11 @@
 # Live Subtitle Translation (实时字幕翻译) — Research & Design Intent
 
-Status: research and design intent, 2026-10-04. Nothing is implemented — the
-tree has no audio capture, VAD or ASR code. Scope was decided with the
-maintainer on 2026-10-04: **single-direction comprehension, overlay captions,
-strictly local, Linux first**. This document is the reference for the feature;
-it does not commit to a schedule.
+Status: design intent, 2026-10-04; M0–M3 implemented and accepted
+(2026-10-05, see §7). Microphone mode was decided on 2026-10-06 as the second
+capture source (§6.8) and the driver for extracting a shared audio pipeline.
+Scope was decided with the maintainer on 2026-10-04: **single-direction
+comprehension, overlay captions, strictly local, Linux first**. This document
+is the reference for the feature.
 
 
 ## 1. Goal
@@ -399,6 +400,32 @@ impl VoiceSegmenter {
     pub fn flush(&self) -> Vec<Vec<f32>>;
 }
 ```
+
+### 6.8 Microphone mode (decided 2026-10-06)
+
+The second capture source, and the consumer that drives the shared pipeline
+extraction (D2 of the multimodal roadmap):
+
+- Config: `caption_source = sink | mic` (default `sink`); one capture session
+  at a time — v1 never runs system loopback and microphone together (echo and
+  double CPU).
+- Capture is the same `pw-record` subprocess with
+  `--target @DEFAULT_AUDIO_SOURCE@`; VAD (Silero), ASR (SenseVoice), MT,
+  overlay, glossary and transcripts are reused unchanged.
+- Linux first, for the same reason captions are: `translator-asr` is a
+  Linux-only target dependency. Microphone capture on Windows/macOS would need
+  WASAPI/CoreAudio and cross-platform ASR — a separate project.
+- Extraction order: parameterize the capture source inside `caption.rs`
+  first; when both sources work, promote the shared shape (capture source +
+  session lifecycle + the §6.2 event sequence) into the pipeline crate, so it
+  is defined by two real consumers instead of one.
+- Acceptance: near-field speech latency comparable to the monitor path
+  (first-token p50 target ≤ 1.2 s, to be fixed by measurement); a 30-minute
+  microphone soak (segment count, translation success, no loss); switching the
+  source at runtime without a restart; the device is released when captions
+  turn off.
+- The `latest_wins` scheduler shared by the card and caption translations
+  landed 2026-10-06 as Phase 1a; the audio-session extraction is Phase 1b.
 
 
 ## 7. Milestones and acceptance

@@ -258,6 +258,8 @@ Status:
 
 5. Release history in the sections below: v0.2.x desktop fixes, v0.3.0 (Tauri client on three platforms), v0.3.1 (update UI moved to settings), v0.4.0 (desktop + extension redesign, extension zips attached to releases), v0.4.1 (Linux gap closure + fullscreen tray fix), v0.5.0 (inline translation + unified UI, shared UI sources)
 
+6. Multimodal roadmap decisions (2026-10-06): the first image consumer is browser-extension screenshot translation (OCR + existing MT + DOM overlay; the desktop region-screenshot → card flow is second and system-level UI translation is deferred, Windows/macOS first) — see `docs/IMAGE_TRANSLATION.md`; the second pipeline consumer is microphone mode (Linux first) — see `docs/LIVE_SUBTITLE_TRANSLATION.md` §6.8. Phase 1a landed 2026-10-06: the duplicated single-flight latest-wins schedulers (the card/selection path in `main.rs` and the caption translation line in `caption.rs`) are unified in `translator-core::latest_wins` (single-lock state machine with race tests; behavior unchanged, translator-core 75 / client 20 tests green). Next: the OCR selection spike (M0 in `docs/IMAGE_TRANSLATION.md`), then the image endpoint and the extension UX; microphone mode may proceed in parallel.
+
 
 ---
 

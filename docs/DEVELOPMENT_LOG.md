@@ -2089,6 +2089,34 @@ reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
   and depends on `pipewire-bin`. Tagging `v0.7.0` is deferred by the maintainer.
 
 
+## Multimodal Roadmap (2026-10-06)
+
+Two decisions were locked with the maintainer after the multimodal
+architecture discussion:
+
+- **D1 — first image consumer: browser-extension screenshot translation.**
+  `tabs.captureVisibleTab` from a user gesture → the existing extension port →
+  a new local `POST /translate/image` endpoint → OCR (text + boxes) + the
+  existing MT → a DOM overlay in the page. OCR first, VLM later; the desktop
+  region-screenshot → card flow is the second image consumer, and system-level
+  UI translation is deferred (Windows/macOS first; Wayland cannot position the
+  overlay). Design reference: `docs/IMAGE_TRANSLATION.md`; the OCR selection
+  spike is the next step.
+- **D2 — second pipeline consumer: microphone mode.** `caption_source =
+  sink | mic`, one capture session at a time, same VAD/ASR/MT/overlay stack,
+  Linux first. It drives the shared audio-pipeline extraction once both
+  capture sources work. Reference: `docs/LIVE_SUBTITLE_TRANSLATION.md` §6.8.
+
+Phase 1a landed the same day: the duplicated single-flight latest-wins
+schedulers — the card/selection chain in `main.rs` (`translating` + `queued`,
+release/re-acquire) and the caption translation line in `caption.rs`
+(take/store race loop) — are unified in
+`translator-core::latest_wins::LatestWins` (one mutex;
+`submit`/`finish`/`clear_queued`; unit tests including concurrent
+submit/finish). Behaviour is unchanged: translator-core 75 tests / client 20
+tests green.
+
+
 ## Sprint 6
 
 Mobile client.
