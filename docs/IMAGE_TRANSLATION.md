@@ -129,7 +129,7 @@ spike decides with measured numbers, not preference.
 | M1 | service image endpoint + OCR provider + desktop wiring + model download | endpoint unit/integration tests; OCR quality/latency from M0; explicit capability error without a provider |
 | M2 | extension UX: command/menu, overlay (click-through, small toolbar), error states, PDF-viewer fallback | Chrome e2e; end-to-end latency, CPU peak, offline; Firefox manual pass; capture→overlay visible time and OCR numbers re-measured on the final path |
 
-### 5.1 Spike results (partial, 2026-10-06)
+### 5.1 Spike results (2026-10-06)
 
 Runtime selection (verified on the Linux dev machine):
 
@@ -148,23 +148,30 @@ Runtime selection (verified on the Linux dev machine):
   dylib there (or the same `load-dynamic` trick against one it ships).
 
 Fixture: a Chrome-rendered 1280×800 page with ~30 mixed zh/en blocks on dark
-and light panels (`/tmp/kilo/ocr-spike/fixture.html`); detection found 41
-lines and the text was read correctly in both scripts (differences were
-spacing/case-level).
+and light panels (`/tmp/kilo/ocr-spike/fixture.html`), captured at DPR 1 and
+DPR 2; detection found 41 lines on both.
 
-| Model set | Median total | det | rec | Models on disk | Notes |
+| Model set | 1 thread | 4 threads | det / rec at 4t | Models | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `ppocrv6-tiny` | **515 ms** | 194 ms | 327 ms | ~6.2 MB | provisional default: fastest, quality equal or better |
-| `ppocrv5-ch-mobile` | 2308 ms | 577 ms | 1813 ms | ~20.7 MB | more case/punctuation misses |
-| `ppocrv6-small` | 2952 ms | 1438 ms | 1516 ms | ~30.5 MB | no quality gain over tiny on this fixture |
+| `ppocrv6-tiny` | 515 ms | **240 ms** (8t: 274 ms) | 108 / 132 ms | ~6.2 MB | provisional default |
+| `ppocrv5-ch-mobile` | 2308 ms | 1392 ms | 254 / 1133 ms | ~20.7 MB | more case/punctuation misses |
+| `ppocrv6-small` | 2952 ms | 2069 ms | 1066 / 994 ms | ~30.5 MB | no quality gain over tiny, high variance |
+
+Scoring against the fixture's ground truth (41 blocks, NFKC + whitespace
+normalization): **41/41 blocks matched, mean similarity 1.0000,
+recall@0.95 = 1.000** at both DPR 1 and DPR 2. The only differences were
+spacing/punctuation presentation (e.g. `100 / 100` → `100/100`), which
+normalization removes. DPR 2 median at 4 threads: 596 ms (det 307 / rec 137).
 
 Models come from ModelScope (`RapidAI/RapidOCR`, Apache-2.0), downloaded on
 first use; `rapidocr-core` is Apache-2.0 (README attribution entry pending).
+OCR sessions should default to 4 intra-op threads (ORT default is 1; 8
+oversubscribes the 41 recognition crops).
 
-Remaining M0 work: a DPR-2 and a real-webpage fixture; systematic character
-accuracy / block recall scoring (the current result is a read-through, not a
-metric); ORT intra-op thread tuning and CPU profile; the Windows/macOS
-runtime bundle decision.
+Remaining M0 item: a real-webpage fixture — the current one is synthetic but
+covers both scripts, dark/light and DPR 1/2; clean synthetic text does not
+exercise stylized-UI failure modes. Final validation stays on the M2 path per
+the milestone table.
 
 ## 6. Risks
 
@@ -173,7 +180,7 @@ runtime bundle decision.
 | DRM/protected video captures black | detect and say so; do not pretend |
 | Coordinate mapping bugs (DPR, zoom, scroll, iframes) | unit-test the math; start with the top frame |
 | Firefox capture API parity | spike before building the UX |
-| OCR runtime packaging (second onnxruntime) | prefer pure Rust; exclude `ort` by default |
+| OCR runtime packaging | Linux: reuse the sherpa-shipped ONNX Runtime via `ort` `load-dynamic` (spike-verified); Windows/macOS: bundle an ORT dylib (decision pending) |
 | Overlay interferes with the page | pointer-events off except a small toolbar; Esc/menu dismiss |
 | OCR quality on stylized UI | VLM fallback later; report misses honestly |
 
