@@ -1,12 +1,15 @@
+use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use base64::Engine as _;
 use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
 
+use translator_ocr::{OcrBlock, OcrEngine, OcrError, Quad};
 use translator_service::api::{self, AppState};
 use translator_service::domain::translation::{
     TranslationError, TranslationRequest, TranslationResult,
@@ -259,4 +262,242 @@ async fn stream_reports_engine_errors() {
 
     assert!(body.contains("\"type\":\"error\""));
     assert!(body.contains("engine_unavailable"));
+}
+
+fn block(text: &str) -> OcrBlock {
+    OcrBlock {
+        text: text.to_string(),
+        score: 0.99,
+        quad: Quad {
+            points: [[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]],
+        },
+    }
+}
+
+struct FixedOcr {
+    blocks: Vec<OcrBlock>,
+}
+
+impl OcrEngine for FixedOcr {
+    fn recognize(
+        &self,
+        _pixels: &[u8],
+        _width: u32,
+        _height: u32,
+    ) -> Result<Vec<OcrBlock>, OcrError> {
+        Ok(self.blocks.clone())
+    }
+}
+
+fn ocr_router(engine: EngineRef, blocks: Vec<OcrBlock>, max_chars: usize) -> axum::Router {
+    api::router(
+        AppState::new(engine, "mock", "", max_chars).with_ocr(Arc::new(FixedOcr { blocks })),
+    )
+}
+
+fn tiny_png_base64() -> String {
+    let image = image::RgbImage::from_pixel(2, 2, image::Rgb([255, 255, 255]));
+    let mut bytes = Vec::new();
+
+    image::DynamicImage::ImageRgb8(image)
+        .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .unwrap();
+
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+fn image_request(body: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/translate/image")
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_owned()))
+        .unwrap()
+}
+
+/// Prefixes every input line with `[zh] `, so joined-line round trips are
+/// visible in the response.
+struct EchoEngine;
+
+impl TranslationEngine for EchoEngine {
+    fn translate(&self, request: TranslationRequest) -> TranslationFuture<'_> {
+        Box::pin(async move {
+            let text = request
+                .text
+                .split('\n')
+                .map(|line| format!("[zh] {line}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            Ok(TranslationResult {
+                translated_text: text,
+            })
+        })
+    }
+}
+
+/// Merges multi-line input into a single line, forcing the per-block
+/// fallback.
+struct MergingEngine;
+
+impl TranslationEngine for MergingEngine {
+    fn translate(&self, request: TranslationRequest) -> TranslationFuture<'_> {
+        Box::pin(async move {
+            Ok(TranslationResult {
+                translated_text: format!("[zh] {}", request.text.replace('\n', " ")),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn image_endpoint_requires_an_ocr_provider() {
+    let body = format!(
+        r#"{{"image":"{}","source":"en","target":"zh"}}"#,
+        tiny_png_base64()
+    );
+
+    let response = app().oneshot(image_request(&body)).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+
+    let json = body_json(response).await;
+    assert_eq!(json["error"]["kind"], "ocr_unavailable");
+}
+
+#[tokio::test]
+async fn image_endpoint_translates_recognized_blocks() {
+    let app = ocr_router(
+        Arc::new(EchoEngine),
+        vec![block("START GAME"), block("设置")],
+        1500,
+    );
+    let body = format!(
+        r#"{{"image":"{}","source":"en","target":"zh"}}"#,
+        tiny_png_base64()
+    );
+
+    let response = app.oneshot(image_request(&body)).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = body_json(response).await;
+    assert_eq!(json["image"]["width"], 2);
+    assert_eq!(json["image"]["height"], 2);
+    assert_eq!(json["blocks"][0]["text"], "START GAME");
+    assert_eq!(json["blocks"][0]["translation"], "[zh] START GAME");
+    assert_eq!(json["blocks"][1]["translation"], "[zh] 设置");
+    assert_eq!(json["blocks"][0]["score"], 0.99);
+    assert_eq!(json["blocks"][0]["quad"][0][0], 0.0);
+}
+
+#[tokio::test]
+async fn image_endpoint_accepts_a_data_url_payload() {
+    let app = ocr_router(Arc::new(EchoEngine), vec![block("BACK")], 1500);
+    let body = format!(
+        r#"{{"image":"data:image/png;base64,{}","source":"en","target":"zh"}}"#,
+        tiny_png_base64()
+    );
+
+    let response = app.oneshot(image_request(&body)).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = body_json(response).await;
+    assert_eq!(json["blocks"][0]["translation"], "[zh] BACK");
+}
+
+#[tokio::test]
+async fn image_endpoint_falls_back_to_per_block_translation() {
+    let app = ocr_router(Arc::new(MergingEngine), vec![block("A"), block("B")], 1500);
+    let body = format!(
+        r#"{{"image":"{}","source":"en","target":"zh"}}"#,
+        tiny_png_base64()
+    );
+
+    let response = app.oneshot(image_request(&body)).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = body_json(response).await;
+    assert_eq!(json["blocks"][0]["translation"], "[zh] A");
+    assert_eq!(json["blocks"][1]["translation"], "[zh] B");
+}
+
+#[tokio::test]
+async fn image_endpoint_rejects_bad_base64() {
+    let app = ocr_router(Arc::new(MockEngine), Vec::new(), 1500);
+    let response = app
+        .oneshot(image_request(
+            r#"{"image":"!!!not-base64!!!","source":"en","target":"zh"}"#,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let json = body_json(response).await;
+    assert_eq!(json["error"]["kind"], "invalid_request");
+}
+
+#[tokio::test]
+async fn image_endpoint_rejects_a_non_image_payload() {
+    let payload = base64::engine::general_purpose::STANDARD.encode(b"hello");
+    let app = ocr_router(Arc::new(MockEngine), Vec::new(), 1500);
+    let body = format!(r#"{{"image":"{payload}","source":"en","target":"zh"}}"#);
+
+    let response = app.oneshot(image_request(&body)).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let json = body_json(response).await;
+    assert_eq!(json["error"]["kind"], "invalid_request");
+    assert!(
+        json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unrecognized image format")
+    );
+}
+
+#[tokio::test]
+async fn image_endpoint_rejects_too_much_text() {
+    let app = ocr_router(
+        Arc::new(MockEngine),
+        vec![block("a block that exceeds the cap")],
+        5,
+    );
+    let body = format!(
+        r#"{{"image":"{}","source":"en","target":"zh"}}"#,
+        tiny_png_base64()
+    );
+
+    let response = app.oneshot(image_request(&body)).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let json = body_json(response).await;
+    assert_eq!(json["error"]["kind"], "invalid_request");
+    assert!(
+        json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("image text is too long")
+    );
+}
+
+#[tokio::test]
+async fn image_endpoint_accepts_an_empty_recognition() {
+    let app = ocr_router(Arc::new(MockEngine), Vec::new(), 1500);
+    let body = format!(
+        r#"{{"image":"{}","source":"en","target":"zh"}}"#,
+        tiny_png_base64()
+    );
+
+    let response = app.oneshot(image_request(&body)).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = body_json(response).await;
+    assert!(json["blocks"].as_array().unwrap().is_empty());
 }

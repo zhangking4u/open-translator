@@ -2232,6 +2232,8 @@ dependencies = [
  "num-traits",
  "png 0.18.1",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -5099,6 +5101,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "translator-ocr"
+version = "0.1.0"
+
+[[package]]
 name = "translator-popup-tauri"
 version = "0.1.0"
 dependencies = [
@@ -5132,7 +5138,9 @@ name = "translator-service"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "futures-util",
+ "image",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -5140,6 +5148,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "translator-inference",
+ "translator-ocr",
 ]
 
 [[package]]

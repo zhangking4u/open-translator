@@ -17,12 +17,20 @@ use serde::{Deserialize, Serialize};
 use crate::domain::translation::{GlossaryTerm, TranslationError, TranslationRequest};
 use crate::engine::EngineRef;
 
+mod image;
+
+/// OCR provider used by `POST /translate/image`. `None` means the service
+/// has no OCR engine configured and the endpoint reports that explicitly
+/// instead of failing deep inside a request.
+pub type OcrEngineRef = std::sync::Arc<dyn translator_ocr::OcrEngine>;
+
 #[derive(Clone)]
 pub struct AppState {
     pub engine: EngineRef,
     pub engine_name: String,
     pub model: String,
     pub max_chars: usize,
+    pub ocr: Option<OcrEngineRef>,
 }
 
 impl AppState {
@@ -37,7 +45,14 @@ impl AppState {
             engine_name: engine_name.into(),
             model: model.into(),
             max_chars,
+            ocr: None,
         }
+    }
+
+    /// Enables the image endpoint with an OCR provider.
+    pub fn with_ocr(mut self, ocr: OcrEngineRef) -> Self {
+        self.ocr = Some(ocr);
+        self
     }
 }
 
@@ -46,6 +61,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/translate", post(translate))
         .route("/translate/stream", post(translate_stream))
+        .route("/translate/image", post(image::translate_image))
         .with_state(state)
 }
 
@@ -252,14 +268,20 @@ struct ErrorBody {
     message: String,
 }
 
+/// HTTP status for a translation failure, shared by the text and image
+/// endpoints.
+fn translation_status(error: &TranslationError) -> StatusCode {
+    match error {
+        TranslationError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+        TranslationError::EngineUnavailable(_) => StatusCode::BAD_GATEWAY,
+        TranslationError::Timeout => StatusCode::GATEWAY_TIMEOUT,
+        TranslationError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
 impl IntoResponse for TranslationError {
     fn into_response(self) -> Response {
-        let status = match &self {
-            TranslationError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-            TranslationError::EngineUnavailable(_) => StatusCode::BAD_GATEWAY,
-            TranslationError::Timeout => StatusCode::GATEWAY_TIMEOUT,
-            TranslationError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        };
+        let status = translation_status(&self);
 
         let body = ErrorResponse {
             error: ErrorBody {
