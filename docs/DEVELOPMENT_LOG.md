@@ -2406,6 +2406,20 @@ still returns the term list, 1/40), join ≤600 now splits 26/40 blocks
 joined with 3/24 fallback requests — still no throughput win, so per-block
 stays the MVP default.
 
+Reading spike S2 (2026-10-07): the dynamic-page step exercises the
+MutationObserver lifecycle on a new append-on-scroll feed fixture
+(`browser/spike/feed.html`: capped 40 items, repeated texts, hidden/short
+items, and two re-render buttons — in-place paragraph replacement and a full
+SPA reset). Over 120 s of scrolling plus both stresses the spike translated
+50 blocks with 13 model requests and 37 cache hits (repeated/re-collected
+texts never re-entered the engine) and the DOM audit finished clean: 0
+duplicates, 0 missing, 0 orphans, 0 stale siblings; 37 mutation batches / 102
+added nodes, no horizontal overflow, 125 s to full drain. Residual noted for
+the MVP: ~2/53 unique texts still get a trailing glossary-commentary sentence
+at temperature 0.7, so the reading mode should add an output guard (strip a
+trailing meta sentence or retry cooler). The spike is complete; the doc's §9
+records the decision proposal (per-block default, no join in v1).
+
 
 ## Sprint 6
 

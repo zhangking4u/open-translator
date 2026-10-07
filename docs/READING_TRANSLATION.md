@@ -5,6 +5,8 @@ pivot (see `docs/IMAGE_TRANSLATION.md` §5.6): the whole-page OCR overlay was
 removed because web pages are selectable and translatable in the DOM. Reading
 foreign pages is the real web need; this document evaluates building a
 DOM-based bilingual reading mode and proposes a spike before any commitment.
+Spike S1–S3 completed on 2026-10-07 (results in §9, including the glossary
+prompt fix it surfaced); the MVP decision can proceed from those results.
 
 ## 1. Why this exists
 
@@ -132,7 +134,31 @@ per-block sum, but the model's line discipline is not reliable enough yet
 (3/24 requests came back with the wrong line count) and the 30 s timeout
 caps the budget.
 
-### Glossary prompt fix (landed with this spike)
+### S2 — dynamic feed (MutationObserver)
+
+Fixture `browser/spike/feed.html`: append-on-scroll feed (capped at 40 items),
+repeated texts (cache), hidden and short items, and two re-render stresses —
+`替换正文` replaces six paragraphs with fresh nodes in place (orphan/stale
+stress) and `重新渲染` wipes and rebuilds the list (SPA navigation). The
+driver runs `--page feed --scroll-seconds 120`, clicks the stresses at 40% and
+70%, waits until the queue has been drained for 3 s and then audits the DOM.
+
+Results (post-fix engine, per-block):
+
+- 50 blocks translated / 0 failed; 13 model requests and 37 cache hits — the
+  repeated feed texts never re-entered the engine, and re-collected blocks
+  (fresh nodes carrying the same text) were served from the cache.
+- Audit: **0 duplicates, 0 missing translations, 0 orphans, 0 stale
+  siblings** after the two re-renders; observer saw 37 mutation batches / 102
+  added nodes with 0 budget skips; no horizontal overflow (756 = 756). The
+  full drain took 125 s for the 120 s scroll plus a second wave of items.
+- Residual quality note: one unique text of 13 came back with a trailing
+  glossary-commentary sentence (`…必须使用以下术语来表述：…`) at temperature
+  0.7 — the same class as the heading case above (≈2/53 unique texts across
+  both fixtures). The MVP should either post-filter a trailing meta sentence
+  or retry/lower the temperature when the prompt carries a glossary.
+
+
 
 Finding: with a non-empty `glossary`, HY-MT continued the standalone hint
 line (`术语表（必须使用以下译法）：…`) instead of translating — every response
@@ -156,7 +182,14 @@ trailing instruction line already prevents the continuation).
 - Keep joining out of v1: line discipline needs a tolerant splitter, and the
   join budget must respect the non-streaming timeout — or batching moves to
   the streaming path. Re-measure on the Linux dev machine before revisiting.
-- Reuse the fixed glossary prompt for the reading mode (terms apply).
+- Reuse the fixed glossary prompt for the reading mode (terms apply) and add
+  a small output guard for the residual glossary commentary (strip a trailing
+  meta sentence, or retry at a lower temperature).
+- The MutationObserver pass is sound: markers + cache + idempotent injection
+  + orphan pruning survived both re-render styles with a clean audit, so the
+  MVP can build on the same lifecycle.
 
-Next: S2 (dynamic feed + MutationObserver) has not been exercised yet.
+Next: the spike is complete (S1/S2/S3); the MVP scope decision can proceed,
+with the output guard and the Linux-side measurement as the remaining
+prerequisites.
 
