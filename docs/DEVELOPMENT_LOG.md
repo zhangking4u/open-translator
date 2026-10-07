@@ -2420,6 +2420,21 @@ at temperature 0.7, so the reading mode should add an output guard (strip a
 trailing meta sentence or retry cooler). The spike is complete; the doc's §9
 records the decision proposal (per-block default, no join in v1).
 
+Reading mode MVP (2026-10-07): the bilingual reading mode shipped as the
+extension's `reading.js` content script (inert until enabled): popup toggle
+网页翻译 (`readingEnabled`) plus the per-site opt-out, block set + skip
+heuristics as specced, viewport-first single-flight queue with an
+IntersectionObserver backlog, MutationObserver for dynamic pages, per-page
+cache, idempotent injection, orphan pruning, hover 复制/重译, `record: false`
+so history stays clean, top frame only. The background `translate` message
+now honors `record`, the popup gained the toggle, both manifests and
+`build.sh` carry the new file, and the Chrome e2e harness gained a
+reading-mode scenario (inject → state hook → cleanup). Verified locally with
+a targeted headless-Edge run against the running client: injection renders
+("The quick brown fox…" → 快速的棕色狐狸跳过了那只懒惰的狗。), state hook and
+disable-cleanup pass. Deferred per §10: streaming display, joined batches,
+extension-side glossary, iframes, 仅译文.
+
 
 ## Sprint 6
 

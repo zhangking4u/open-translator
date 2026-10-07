@@ -6,7 +6,7 @@ removed because web pages are selectable and translatable in the DOM. Reading
 foreign pages is the real web need; this document evaluates building a
 DOM-based bilingual reading mode and proposes a spike before any commitment.
 Spike S1–S3 completed on 2026-10-07 (results in §9, including the glossary
-prompt fix it surfaced); the MVP decision can proceed from those results.
+prompt fix it surfaced); the MVP landed the same day (§10).
 
 ## 1. Why this exists
 
@@ -192,4 +192,28 @@ trailing instruction line already prevents the continuation).
 Next: the spike is complete (S1/S2/S3); the MVP scope decision can proceed,
 with the output guard and the Linux-side measurement as the remaining
 prerequisites.
+
+## 10. MVP landed (2026-10-07)
+
+The bilingual reading mode shipped as the extension's `reading.js` (a content
+script on all pages, inert until enabled):
+
+- Popup toggle 网页翻译 (`readingEnabled`) plus the existing per-site opt-out
+  (`disabledSites`); top frame only in v1.
+- Block set and skip heuristics as specced (paragraphs/headings/lists/quotes/
+  cells; hidden, code, editable, target-language and short blocks skipped).
+- Viewport-first single-flight queue with an IntersectionObserver for the
+  off-screen backlog (a long article never queues everything at once), a
+  MutationObserver for dynamic pages, a per-page text cache, idempotent
+  injection and orphan pruning — the lifecycle verified in S2.
+- Per-block requests (the spike's default), hover controls 复制 / 重译, no
+  history writes (`record: false`), no original replacement (仅译文 deferred
+  per §7 open question 3).
+- Not in v1: streaming display, joined batches (S3), extension-side glossary
+  (the extension has no glossary storage yet; the shared glossary stays a
+  desktop-side feature until the output guard lands), iframes.
+- Verified: a targeted headless-Edge run against the running client (inject →
+  state hook → cleanup on disable, all pass) and the CI harness gained a
+  reading-mode scenario.
+
 
