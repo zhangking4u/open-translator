@@ -213,11 +213,22 @@ script on all pages, inert until enabled):
   existing `translate` port and renders deltas into the pending block (the
   one-shot message remains the fallback when the background cannot stream);
   stopping the mode cancels the in-flight stream.
+- Coverage revision after the first real-page pass: a post-order leaf walk
+  claims the innermost block first and falls back to containers, so div-based
+  text (tag-soup pages) is translated without double injections; container
+  blocks with link density > 0.6 are skipped as UI; class/style/hidden
+  attribute changes trigger a debounced rescan (tabs/accordions become
+  translatable once visible); the MutationObserver watches
+  `document.documentElement` (SPA frameworks replace `document.body`); the
+  `lang`-based target skip now applies to non-CJK targets only — for zh/ja/ko
+  the script-ratio heuristic is enough, so English blocks on a `lang="zh"`
+  page are no longer skipped.
 - Not in v1: joined batches (S3), extension-side glossary
   (the extension has no glossary storage yet; the shared glossary stays a
-  desktop-side feature until the output guard lands), iframes.
+  desktop-side feature until the output guard lands), iframes, shadow DOM.
 - Verified: a targeted headless-Edge run against the running client (inject →
-  state hook → cleanup on disable, all pass) and the CI harness gained a
-  reading-mode scenario that waits for the streamed block to settle.
+  state hook → cleanup on disable, plus a div-based block, all pass) and the
+  CI harness gained a reading-mode scenario that waits for the streamed block
+  to settle.
 
 

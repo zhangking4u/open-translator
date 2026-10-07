@@ -2444,6 +2444,22 @@ streamed block to settle (`ot-reading-pending` cleared) and both pass against
 the running client; the e2e scenario was made streaming-aware after the first
 run caught a partial delta.
 
+Reading-mode coverage fixes (2026-10-07): the first real-page pass showed
+missing translations on tag-soup and dynamic pages. `reading.js` now walks
+the DOM post-order: the innermost block is claimed first and containers
+(div/section/article/main) are translated only when no descendant block was
+claimed, so div-based text is covered without double injections; containers
+that are mostly links (density > 0.6) are skipped as UI; class/style/hidden
+attribute changes trigger a debounced rescan so tab/accordion content
+translates once visible; the MutationObserver watches `documentElement`
+(SPA frameworks replace `document.body`); and the `lang`-based target skip
+applies to non-CJK targets only (zh/ja/ko rely on the script ratio, so
+English blocks on a `lang="zh"` page are no longer skipped). The test page
+gained a div-only paragraph and the e2e checks it; the targeted run passes
+(both blocks translated, cleanup clean). A GitHub-page diagnostic was
+inconclusive locally because the restricted network leaves that page
+unhydrated; real-page retest pending.
+
 
 ## Sprint 6
 
