@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Reading translation spike article</title>
+    <style>
+      body {
+        max-width: 720px;
+        margin: 40px auto;
+        font: 16px/1.6 Georgia, serif;
+        color: #222;
+        padding: 0 16px;
+      }
+      h1,
+      h2 {
+        font-family: -apple-system, "Segoe UI", sans-serif;
+      }
+      blockquote {
+        border-left: 3px solid #ccc;
+        margin-left: 0;
+        padding-left: 12px;
+        color: #555;
+      }
+      td,
+      th {
+        border: 1px solid #ddd;
+        padding: 6px 10px;
+        text-align: left;
+      }
+      pre {
+        background: #f5f5f5;
+        padding: 10px;
+      }
+      .ot-spike-translation {
+        display: block;
+        margin: 2px 0 6px;
+        padding-left: 10px;
+        border-left: 3px solid #4a90d9;
+        color: #333;
+        font-size: 0.95em;
+        line-height: 1.55;
+      }
+      li > .ot-spike-translation {
+        margin: 2px 0 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav><a href="#">Home</a> · <a href="#">Archive</a> · <a href="#">About</a></nav>
+
+    <h1>Running Translation Models Locally: What Actually Matters</h1>
+
+    <p>
+      Every translation product eventually has to decide where the model runs. The
+      cloud route is easy to start and hard to leave, while local inference trades
+      convenience for control. This article walks through the engineering
+      considerations we hit while building a fully local translator.
+    </p>
+
+    <p>
+      The first argument for local processing is not privacy in the abstract. It is
+      latency: a warm model on the same machine answers a short paragraph in a few
+      hundred milliseconds, and no network hop can beat that.
+    </p>
+
+    <h2>Memory is the real budget</h2>
+
+    <p>
+      A quantized 1.8B model can fit comfortably in four gigabytes of RAM, but the
+      context window is what usually blows the budget. Attention cost grows with
+      sequence length, and every extra token of prompt is paid on every request.
+    </p>
+
+    <p>
+      We keep the default context window modest and make it configurable. Users who
+      translate longer documents raise it deliberately, and everyone else keeps the
+      fast path.
+    </p>
+
+    <p>
+      Quantization is the other lever. Four-bit weights cut the file size by roughly
+      a factor of four with a small quality cost that is hard to notice in
+      paragraph-level translation.
+    </p>
+
+    <blockquote>
+      The fastest request is the one you never send: caching a paragraph that was
+      already translated beats any optimization of the model itself.
+    </blockquote>
+
+    <h2>The prompt is a contract</h2>
+
+    <p>
+      Instruction-tuned models are sensitive to prompt shape. A prompt that asks for
+      a translation and a prompt that asks for a JSON object produce very different
+      failure modes, and mixing the two in one string invites trouble.
+    </p>
+
+    <p>
+      We keep one style per model family. The HY-MT template is already
+      source-agnostic, which means the detector never has to be perfect before the
+      translator runs.
+    </p>
+
+    <ul>
+      <li>Keep the source language optional so auto-detection can stay best-effort.</li>
+      <li>Never inject user text into the instruction part of the prompt.</li>
+      <li>Preserve numbers, code fragments and product names whenever possible.</li>
+      <li>Return one line per input line when the caller sends a batch.</li>
+    </ul>
+
+    <h2>Streaming changes the experience</h2>
+
+    <p>
+      Streaming does not make the model faster. It changes when the user sees the
+      first useful token, and that number dominates perceived quality for anything
+      longer than a sentence.
+    </p>
+
+    <p>
+      Our server emits server-sent events with one delta per decoded piece and a
+      terminal event that carries the elapsed time. The extension and the desktop
+      card consume the same stream.
+    </p>
+
+    <p>
+      A streaming client also needs an idle timeout, not just a total one. A model
+      that pauses between tokens should still be cancelled if the pause grows past a
+      threshold.
+    </p>
+
+    <h2>Glossaries beat fine-tuning</h2>
+
+    <p>
+      Product names and UI terms are where generic translation falls apart. Fine
+      tuning on a glossary is expensive and brittle; injecting the terms into every
+      prompt is cheap and reversible.
+    </p>
+
+    <p>
+      The glossary file uses one <code>source=target</code> pair per line, capped at
+      fifty entries. That cap is a prompt-budget decision, not a technical one.
+    </p>
+
+    <table>
+      <thead>
+        <tr><th>Term</th><th>Translation</th><th>Why it matters</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>context window</td>
+          <td>上下文窗口</td>
+          <td>Sets the upper bound on how much text one request can carry.</td>
+        </tr>
+        <tr>
+          <td>quantization</td>
+          <td>量化</td>
+          <td>Determines the memory footprint and part of the quality trade-off.</td>
+        </tr>
+        <tr>
+          <td>keep-alive</td>
+          <td>保活时间</td>
+          <td>Controls how long an idle model stays loaded between requests.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Hardware is not the bottleneck</h2>
+
+    <p>
+      On a modern laptop the encoding phase of a short paragraph is dominated by
+      prompt processing, and prompt processing is dominated by the context window.
+      Once the prompt is cached, token generation is fast enough to feel
+      interactive.
+    </p>
+
+    <p>
+      The practical limit is memory bandwidth. A model that fits entirely in cache
+      behaves very differently from one that streams weights from system memory on
+      every token.
+    </p>
+
+    <h2>Shipping the runtime is the hard part</h2>
+
+    <p>
+      Local inference means shipping a runtime, and shipping a runtime means dealing
+      with platforms. Dynamic loading keeps the binary small but turns a load
+      failure into a runtime error instead of a build error.
+    </p>
+
+    <p>
+      We pin one ONNX Runtime version for OCR and reuse the speech runtime for the
+      rest. Two runtimes in one process is a recipe for very confusing crashes.
+    </p>
+
+    <p>
+      Version pinning is not glamorous. It is the difference between a release that
+      reproduces on a user's machine and a support thread that never ends.
+    </p>
+
+    <h2>What we would do differently</h2>
+
+    <p>
+      We would measure end-to-end latency before choosing a model size. A smaller
+      model with a tighter prompt beats a larger model with a sprawling one on
+      almost every interactive workload.
+    </p>
+
+    <p>
+      We would also keep the translation cache persistent from day one. A session
+      cache helps, but a disk cache survives the tab reloads that are the norm on
+      the web.
+    </p>
+
+    <h2>中文段落示例</h2>
+
+    <p>
+      本地推理的另一个好处是离线可用：飞机上、内网环境里，翻译服务不应该因为网络不可达而整体失效。这一点在演示时尤其有说服力。
+    </p>
+
+    <p>
+      我们的做法是把模型和运行时都交给用户本机管理，模型权重在首次使用时下载，之后完全离线运行，不上传任何文本。
+    </p>
+
+    <h2>Short and non-translatable fixtures</h2>
+
+    <p>Draft.</p>
+
+    <p>OK</p>
+
+    <p>1, 2, 3</p>
+
+    <div style="display: none">
+      <p>
+        This paragraph is hidden and should never be translated, because it is not
+        visible to the reader at all.
+      </p>
+    </div>
+
+    <pre><code>let context = "window";
+translate(context); // code blocks are skipped by the walker
+</code></pre>
+
+    <h2>Conclusion</h2>
+
+    <p>
+      Local translation is not a feature you add at the end of a product. It is an
+      architectural decision that shapes prompts, packaging and the update story.
+    </p>
+
+    <p>
+      The good news is that the pieces compose: one text pipeline, one scheduling
+      model, and a runtime that stays on the machine where the text already lives.
+    </p>
+
+    <footer>
+      <p>Copyright 2026 OpenTranslator. All rights reserved on this machine.</p>
+    </footer>
+
+    <script src="/reading-spike.js"></script>
+  </body>
+</html>
