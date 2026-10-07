@@ -305,15 +305,22 @@ text, destroyed the spatial mapping.
   item and the hotkey start a new selection.
 - Pipeline: unchanged — the shared `translate_image_bytes` runs in-process
   with the lazily loaded OCR provider; history records the joined pair.
-- Platform: Linux only for now (portal + window placement); the item is
-  disabled on Windows/macOS. The viewer is a normal always-on-top window, not
-  a click-through overlay; exclusive-fullscreen games may not show any
-  window, borderless windowed is the reliable mode.
+- Platform: Linux (XDG portal) and Windows (Windows Graphics Capture through
+  `xcap`'s `wgc` feature — the monitor holding the selector is captured in
+  physical pixels, so a mixed-DPI multi-monitor desktop needs no stitching);
+  the item is disabled on macOS. Windows drags the viewer from the page
+  (`move_viewer_by`: the OS move loop does not engage for this always-on-top
+  tool window), Linux keeps the compositor move; blur-dismiss is Linux-only
+  (Windows users close with Esc/×). The viewer is a normal always-on-top
+  window, not a click-through overlay; exclusive-fullscreen games may not show
+  any window, borderless windowed is the reliable mode.
 
 Geometry (monitor slice for a virtual-desktop capture, CSS→capture-pixel
-mapping, clamping, minimum selection) is unit-tested in `screenshot.rs`.
-Manual verification on the dev machine is pending (drag, viewer, refresh);
-portal capture, URI parsing and file reading are verified.
+mapping, clamping, minimum selection) is unit-tested in `screenshot.rs` and
+passes on Windows. Manual verification on the Linux dev machine is pending
+(drag, viewer, refresh); portal capture, URI parsing and file reading are
+verified. The Windows backend (physical-pixel selector placement, WGC
+capture, viewer, drag) passed its real-machine check on 2026-10-07.
 
 ## 6. Risks
 

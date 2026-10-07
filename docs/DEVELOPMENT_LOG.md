@@ -2320,6 +2320,36 @@ running; a debug build (`TRANSLATOR_SHOT_DEBUG=1`) dumps the failing crop and
 full capture to `/tmp/open-translator-shot-{crop,full}.png` for offline
 analysis (private content; off by default).
 
+Windows desktop screenshot translation (2026-10-07): the region-screenshot
+flow now builds and runs on Windows. `screenshot.rs` is compiled for
+Linux and Windows; `capture_screen(target)` is platform-split — Linux keeps
+the XDG portal, Windows uses `xcap` 0.9 with the `wgc` feature (Windows
+Graphics Capture) and captures only the monitor holding the selector in
+physical pixels, so the slice math takes the single-monitor branch and a
+mixed-DPI desktop needs no stitching. The selector is placed and sized with
+`PhysicalPosition`/`PhysicalSize` (Tauri reports monitor rects in physical
+pixels), avoiding a wrong logical conversion on mixed-DPI setups, and the
+capture thread initializes a COM apartment (`CoInitializeEx`, best-effort)
+for WinRT. Debug dumps moved from `/tmp` to `std::env::temp_dir()`. The tray
+截图翻译 item, the `screenshot_hotkey` registration and the `shot_*` commands
+are enabled for Windows; macOS stays disabled. Client
+tests 23/23 green on Windows (incl. the geometry suite); real-machine manual
+check pending.
+
+Windows viewer drag fix (2026-10-07): the first real-machine pass found the
+viewer could not be moved. Reproduced with synthetic input: `start_dragging`
+(from the injected `data-tauri-drag-region` handler and from an explicit
+`getCurrentWindow().startDragging()`) resolves but the OS move loop never
+engages for this always-on-top tool window, and posting `WM_NCLBUTTONDOWN`
+from Rust does not help either. The viewer now drags itself from the page
+like the docked ball: mousedown records the pointer, mousemove invokes
+`move_viewer_by` with the screen delta (Tauri `set_position`, scaled), and
+Windows removes the drag-region attributes on load; Linux keeps the
+compositor move. `setPosition` straight from JS was rejected by the ACL
+(`core:default` has no `allow-set-position`), which the app command avoids.
+Blur-dismiss stays Linux-only — Windows reports focus changes during normal
+use. Verified by the user on the Windows real machine: the viewer moves.
+
 
 ## Sprint 6
 
