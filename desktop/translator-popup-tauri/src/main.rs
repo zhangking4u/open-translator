@@ -3,7 +3,7 @@
 mod caption;
 mod capture;
 mod notify;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 mod screenshot;
 mod selection_watch;
 mod server;
@@ -28,7 +28,8 @@ use translator_service::domain::translation::TranslationRequest;
 use translator_service::engine::llama_cpp::LlamaCppEngine;
 
 const DEFAULT_HOTKEY: &str = "Ctrl+Alt+T";
-/// Region-screenshot translation (Linux, XDG portal).
+/// Region-screenshot translation (Linux XDG portal / Windows Graphics
+/// Capture).
 const DEFAULT_SCREENSHOT_HOTKEY: &str = "Ctrl+Alt+S";
 const DEFAULT_N_CTX: u32 = 4096;
 
@@ -113,7 +114,7 @@ struct AppState {
     ocr: Mutex<Option<translator_service::api::OcrEngineRef>>,
     /// The parsed 截图翻译 hotkey; the global handler compares incoming
     /// shortcuts against it to route to the screenshot flow.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     screenshot_shortcut: Mutex<Option<tauri_plugin_global_shortcut::Shortcut>>,
     /// Docked ball presentation state (see `BALL_*`).
     ball_state: AtomicU64,
@@ -386,7 +387,7 @@ fn main() {
             popup: AtomicBool::new(false),
             last_translated: Mutex::new(None),
             ocr: Mutex::new(None),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             screenshot_shortcut: Mutex::new(None),
             ball_state: AtomicU64::new(BALL_IDLE),
             caption: caption::CaptionRuntime::default(),
@@ -417,7 +418,7 @@ fn main() {
                         return;
                     }
 
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", target_os = "windows"))]
                     {
                         let is_screenshot = app
                             .state::<AppState>()
@@ -485,7 +486,8 @@ fn main() {
             shot_region,
             shot_refresh,
             shot_close,
-            shot_cancel
+            shot_cancel,
+            move_viewer_by
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -500,7 +502,7 @@ fn main() {
                 eprintln!("failed to create the caption window: {error}");
             }
 
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             {
                 app.manage(screenshot::ShotState::default());
 
@@ -560,7 +562,7 @@ fn main() {
                 let _ = app.emit("error", ErrorPayload { message });
             }
 
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             match screenshot_hotkey_spec
                 .parse::<tauri_plugin_global_shortcut::Shortcut>()
             {
@@ -618,9 +620,12 @@ fn main() {
                 }
             }
 
-            // The screenshot viewer behaves like a popover: clicking anywhere
-            // else (blur) dismisses it, and the stored region stays available
-            // for the next hotkey refresh.
+            // The screenshot viewer behaves like a popover on Linux: clicking
+            // anywhere else (blur) dismisses it, and the stored region stays
+            // available for the next hotkey refresh. Windows reports focus
+            // changes during normal use (dragging the viewer, clicking the
+            // source app), so there Esc/×/关闭 dismiss the viewer and the tray
+            // item starts a new selection.
             #[cfg(target_os = "linux")]
             if window.label() == screenshot::VIEWER_LABEL {
                 if let WindowEvent::Focused(false) = event {
@@ -2084,13 +2089,13 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
-    // Region screenshot translation is Linux-only (XDG portal) for now. The
-    // item stays visible but disabled elsewhere so it is discoverable.
+    // Region screenshot translation is Linux/Windows-only for now; the item
+    // stays visible but disabled elsewhere so it is discoverable.
     let screenshot_item = MenuItem::with_id(
         app,
         "screenshot",
         "截图翻译",
-        cfg!(target_os = "linux"),
+        cfg!(any(target_os = "linux", target_os = "windows")),
         None::<&str>,
     )?;
     let update_item = MenuItem::with_id(app, "update", "正在检查更新…", false, None::<&str>)?;
@@ -2258,7 +2263,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
                 let _ = app.emit("open-settings", ());
             }
             "screenshot" => {
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 screenshot::start_selection(app.clone());
             }
             "update" => {
@@ -2820,8 +2825,9 @@ fn retranslate(app: AppHandle) {
     }
 }
 
-/// Region-screenshot commands (Linux): invoked by the selector and viewer
-/// windows. They are no-ops elsewhere so the handler list stays portable.
+/// Region-screenshot commands (Linux/Windows): invoked by the selector and
+/// viewer windows. They are no-ops elsewhere so the handler list stays
+/// portable.
 #[tauri::command]
 fn shot_region(
     app: AppHandle,
@@ -2832,7 +2838,7 @@ fn shot_region(
     viewport_width: f64,
     viewport_height: f64,
 ) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     return screenshot::region_selected(
         &app,
         x,
@@ -2843,38 +2849,48 @@ fn shot_region(
         viewport_height,
     );
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         let _ = (app, x, y, width, height, viewport_width, viewport_height);
-        Err("截图翻译仅支持 Linux".to_string())
+        Err("截图翻译暂不支持当前系统".to_string())
     }
 }
 
 #[tauri::command]
 fn shot_refresh(app: AppHandle) {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     screenshot::refresh(app);
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     let _ = app;
 }
 
 #[tauri::command]
 fn shot_close(app: AppHandle) {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     screenshot::close(&app);
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     let _ = app;
 }
 
 #[tauri::command]
 fn shot_cancel(app: AppHandle) {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     screenshot::cancel(&app);
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     let _ = app;
+}
+
+/// Moves the screenshot viewer by a screen delta (its toolbar/footer drag).
+#[tauri::command]
+fn move_viewer_by(app: AppHandle, dx: f64, dy: f64) {
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    screenshot::move_viewer_by(&app, dx, dy);
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    let _ = (app, dx, dy);
 }
 
 #[tauri::command]

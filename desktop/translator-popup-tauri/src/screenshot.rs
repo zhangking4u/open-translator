@@ -1,16 +1,18 @@
-//! Region-screenshot translation (Linux).
+//! Region-screenshot translation (Linux / Windows).
 //!
 //! Flow: a transparent click layer covers the monitor (the screen stays live —
-//! no freeze, no dim), the user drags a region, the selector hides, the XDG
-//! portal captures the screen without a dialog, and a Lens-style viewer window
-//! shows the translations over the cropped pixels, anchored at the region. The
-//! stored region can be replayed with the hotkey (while the viewer is visible)
-//! or the 刷新 button — the game loop: select once, re-translate on demand.
+//! no freeze, no dim), the user drags a region, the selector hides, the
+//! platform captures the screen — the XDG portal on Linux, the Windows
+//! Graphics Capture API on Windows — and a Lens-style viewer window shows the
+//! translations over the cropped pixels, anchored at the region. The stored
+//! region can be replayed with the hotkey (while the viewer is visible) or the
+//! 刷新 button — the game loop: select once, re-translate on demand.
 
 use std::io::Cursor;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[cfg(target_os = "linux")]
 use ashpd::desktop::screenshot::Screenshot;
 use base64::Engine as _;
 use serde::Serialize;
@@ -182,8 +184,28 @@ pub fn start_selection(app: AppHandle) {
             // Show before sizing: geometry calls on an unrealized window are
             // dropped on Linux.
             let _ = selector.show();
-            let _ = selector.set_position(LogicalPosition::new(monitor.x, monitor.y));
-            let _ = selector.set_size(LogicalSize::new(monitor.width, monitor.height));
+
+            #[cfg(target_os = "linux")]
+            {
+                let _ = selector.set_position(LogicalPosition::new(monitor.x, monitor.y));
+                let _ = selector.set_size(LogicalSize::new(monitor.width, monitor.height));
+            }
+
+            // Windows reports monitors in physical pixels, so place the
+            // window physically: a logical position would be converted with
+            // the wrong scale factor on a mixed-DPI desktop.
+            #[cfg(target_os = "windows")]
+            {
+                let _ = selector.set_position(tauri::PhysicalPosition::new(
+                    (monitor.x * monitor.scale).round() as i32,
+                    (monitor.y * monitor.scale).round() as i32,
+                ));
+                let _ = selector.set_size(tauri::PhysicalSize::new(
+                    (monitor.width * monitor.scale).round() as u32,
+                    (monitor.height * monitor.scale).round() as u32,
+                ));
+            }
+
             let _ = selector.set_always_on_top(true);
             let _ = selector.set_focus();
         }
@@ -254,7 +276,7 @@ pub fn region_selected(
         // Let the compositor remove the selector before capturing.
         tokio::time::sleep(HIDE_SETTLE).await;
 
-        let (png, capture_width, capture_height) = match capture_screen().await {
+        let (png, capture_width, capture_height) = match capture_screen(monitor).await {
             Ok(capture) => capture,
             Err(message) => {
                 crate::notify::show("OpenTranslator", &message);
@@ -300,7 +322,7 @@ pub fn refresh(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let (region, monitor) = stored;
 
-        let (png, capture_width, capture_height) = match capture_screen().await {
+        let (png, capture_width, capture_height) = match capture_screen(monitor).await {
             Ok(capture) => capture,
             Err(message) => {
                 crate::notify::show("OpenTranslator", &message);
@@ -341,6 +363,25 @@ pub fn close(app: &AppHandle) {
     }
 }
 
+/// Moves the viewer by a logical-pixel screen delta (its drag handler; the
+/// Windows move loop does not engage for this tool window, so the drag is
+/// applied from the page like the docked ball).
+pub fn move_viewer_by(app: &AppHandle, dx: f64, dy: f64) {
+    let Some(viewer) = app.get_webview_window(VIEWER_LABEL) else {
+        return;
+    };
+
+    let Ok(position) = viewer.outer_position() else {
+        return;
+    };
+
+    let scale = viewer.scale_factor().unwrap_or(1.0);
+    let x = position.x + (dx * scale).round() as i32;
+    let y = position.y + (dy * scale).round() as i32;
+
+    let _ = viewer.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
 fn viewer_visible(app: &AppHandle) -> bool {
     app.get_webview_window(VIEWER_LABEL)
         .and_then(|window| window.is_visible().ok())
@@ -365,8 +406,9 @@ async fn run_region(
     // Debug aid: keep the exact inputs of a failing capture for offline
     // analysis (private content; only with TRANSLATOR_SHOT_DEBUG=1).
     if shot_debug() {
-        let _ = std::fs::write("/tmp/open-translator-shot-full.png", png);
-        let _ = std::fs::write("/tmp/open-translator-shot-crop.png", &cropped);
+        let dir = std::env::temp_dir();
+        let _ = std::fs::write(dir.join("open-translator-shot-full.png"), png);
+        let _ = std::fs::write(dir.join("open-translator-shot-crop.png"), &cropped);
     }
 
     let payload = match translate_cropped(app, &cropped).await {
@@ -557,7 +599,14 @@ fn record_history(app: &AppHandle, source_text: String, translation_text: String
     translator_core::history::save(&history);
 }
 
-async fn capture_screen() -> Result<(Vec<u8>, u32, u32), String> {
+/// Captures the screen into PNG bytes plus its dimensions in capture pixels.
+///
+/// Linux asks the XDG portal, which returns the whole virtual desktop or one
+/// monitor; Windows captures the target monitor through the Windows Graphics
+/// Capture API (`xcap`), so a mixed-DPI multi-monitor desktop never needs
+/// stitching.
+#[cfg(target_os = "linux")]
+async fn capture_screen(_target: MonitorBox) -> Result<(Vec<u8>, u32, u32), String> {
     let request = Screenshot::request()
         .interactive(false)
         .send()
@@ -585,6 +634,76 @@ async fn capture_screen() -> Result<(Vec<u8>, u32, u32), String> {
         .map_err(|error| format!("截图失败：{error}"))?;
 
     Ok((bytes, width, height))
+}
+
+/// Windows capture through the Windows Graphics Capture API. Tauri reports
+/// monitor rects in physical pixels on Windows, exactly what the API returns,
+/// so the target monitor is found by rect (with the primary monitor as a
+/// fallback). Capturing only that monitor keeps the mixed-DPI geometry out.
+#[cfg(target_os = "windows")]
+async fn capture_screen(target: MonitorBox) -> Result<(Vec<u8>, u32, u32), String> {
+    tokio::task::spawn_blocking(move || capture_monitor_windows(target))
+        .await
+        .map_err(|error| format!("截图失败：{error}"))?
+}
+
+#[cfg(target_os = "windows")]
+fn capture_monitor_windows(target: MonitorBox) -> Result<(Vec<u8>, u32, u32), String> {
+    // WinRT needs an apartment on the calling thread; blocking-pool threads
+    // are reused, so S_FALSE / RPC_E_CHANGED_MODE just mean it is already set.
+    unsafe {
+        use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
+
+    let want = (
+        (target.x * target.scale).round() as i32,
+        (target.y * target.scale).round() as i32,
+        (target.width * target.scale).round() as u32,
+        (target.height * target.scale).round() as u32,
+    );
+
+    let monitors = xcap::Monitor::all().map_err(|error| format!("截图失败：{error}"))?;
+
+    let monitor = monitors
+        .iter()
+        .find(|monitor| monitor_matches(monitor, want))
+        .or_else(|| {
+            monitors
+                .iter()
+                .find(|monitor| monitor.is_primary().unwrap_or(false))
+        })
+        .or_else(|| monitors.first())
+        .ok_or_else(|| "截图失败：找不到显示器".to_string())?;
+
+    let image = monitor
+        .capture_image()
+        .map_err(|error| format!("截图失败：{error}"))?;
+    let (width, height) = (image.width(), image.height());
+
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|error| format!("截图编码失败：{error}"))?;
+
+    Ok((png, width, height))
+}
+
+#[cfg(target_os = "windows")]
+fn monitor_matches(monitor: &xcap::Monitor, want: (i32, i32, u32, u32)) -> bool {
+    let (Ok(x), Ok(y), Ok(width), Ok(height)) = (
+        monitor.x(),
+        monitor.y(),
+        monitor.width(),
+        monitor.height(),
+    ) else {
+        return false;
+    };
+
+    (x - want.0).abs() <= 2
+        && (y - want.1).abs() <= 2
+        && width == want.2
+        && height == want.3
 }
 
 /// All monitors in logical coordinates.
@@ -658,7 +777,9 @@ pub(crate) fn monitor_slice(
     let union_width = max_x - min_x;
     let union_height = max_y - min_y;
 
-    // The portal returns either the full virtual desktop or one monitor.
+    // The capture is either the full virtual desktop (Linux portal) or one
+    // monitor (a portal single-monitor result or the Windows per-monitor
+    // capture).
     let (span_x, span_y, scale) = if union_width > 0.0
         && (capture_width as f64 - union_width).abs() <= 2.0
         && (capture_height as f64 - union_height).abs() <= 2.0

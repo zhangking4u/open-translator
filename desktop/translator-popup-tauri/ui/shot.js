@@ -5,6 +5,58 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+// The OS move loop behind data-tauri-drag-region / start_dragging does not
+// engage for this always-on-top tool window on Windows, so the Windows drag
+// is driven from the page like the docked ball (`move_viewer_by`): mousedown
+// records the pointer, mousemove sends the screen delta, and the pointer
+// capture WebView2 holds keeps the events coming. The drag region attributes
+// stay in the markup for Linux, whose compositor owns window moves.
+const IS_WINDOWS = navigator.userAgent.includes("Windows");
+
+if (IS_WINDOWS) {
+  for (const element of document.querySelectorAll("[data-tauri-drag-region]")) {
+    element.removeAttribute("data-tauri-drag-region");
+  }
+}
+
+let dragging = false;
+let lastScreenX = 0;
+let lastScreenY = 0;
+
+function startWindowDrag(event) {
+  if (event.button !== 0 || !IS_WINDOWS) return;
+
+  dragging = true;
+  lastScreenX = event.screenX;
+  lastScreenY = event.screenY;
+  event.preventDefault();
+}
+
+window.addEventListener("mousemove", (event) => {
+  if (!dragging) return;
+
+  const dx = event.screenX - lastScreenX;
+  const dy = event.screenY - lastScreenY;
+
+  if (dx === 0 && dy === 0) return;
+
+  lastScreenX = event.screenX;
+  lastScreenY = event.screenY;
+  invoke("move_viewer_by", { dx, dy }).catch(() => {});
+});
+
+window.addEventListener("mouseup", () => {
+  dragging = false;
+});
+
+// If the pointer grab is lost (e.g. a system dialog takes focus), stop the
+// drag rather than applying a jump on the next move.
+window.addEventListener("blur", () => {
+  dragging = false;
+});
+
+const toolbar = document.getElementById("toolbar");
+
 const image = document.getElementById("image");
 const boxes = document.getElementById("boxes");
 const footer = document.getElementById("footer");
@@ -15,6 +67,10 @@ const listButton = document.getElementById("list");
 const copyButton = document.getElementById("copy");
 const refreshButton = document.getElementById("refresh");
 const closeButton = document.getElementById("close");
+
+for (const handle of [toolbar, footer]) {
+  handle.addEventListener("mousedown", startWindowDrag);
+}
 
 let blocks = [];
 let showOriginal = false;
