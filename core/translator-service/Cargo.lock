@@ -2616,6 +2616,7 @@ name = "translator-ocr"
 version = "0.1.0"
 dependencies = [
  "image",
+ "ort",
  "rapidocr-core",
  "tracing",
 ]

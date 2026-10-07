@@ -22,7 +22,7 @@ mod image;
 /// OCR provider used by `POST /translate/image`. `None` means the service
 /// has no OCR engine configured and the endpoint reports that explicitly
 /// instead of failing deep inside a request.
-pub type OcrEngineRef = std::sync::Arc<dyn translator_ocr::OcrEngine>;
+pub use crate::image::OcrEngineRef;
 
 #[derive(Clone)]
 pub struct AppState {
