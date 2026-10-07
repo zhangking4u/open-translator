@@ -2533,6 +2533,24 @@ pipeline, same machine, llama.cpp in-process:
   translation-tuned model), not a general instruct model. Probe and the two
   GGUF downloads were temporary and removed.
 
+Default model switched to Hy-MT2-1.8B (2026-10-07): after the LFM2.5 dead
+end, evaluated Tencent's successor family. Same 5-text probe, same sampling:
+Hy-MT2-1.8B Q4_K_M 18.2 s / 75 tokens vs HY-MT1.5 20.3 s / 80 tokens
+in-process, with better terminology ("上下文窗口就是这里的实际预算。") and
+cleaner longer sentences. On the deployed service the gain is bigger on the
+short blocks the reading mode lives on: 7 menu labels average 1.33 s (vs
+~3.1-3.7 s before) and the 5-text mix totals 16.5 s. The extreme AngelSlim
+quants (1.25-bit 440 MB, 2-bit 573 MB) both fail to load with stock
+llama.cpp ("null result"), so Q4_K_M stays. Switched the defaults:
+`paths.rs` `DEFAULT_MODEL_FILE` → `hy-mt2-1.8b-q4_k_m.gguf` and `models.rs`
+URL/SHA-256/SIZE to the ModelScope Hy-MT2 repo (hash verified against the
+download: dc5f44…, 1 133 080 448 bytes); install scripts, skills and README
+updated. Existing installs auto-download the new model on next start
+(`auto_download`); the old HY-MT1.5 file is no longer referenced. Client
+rebuilt and installed; `/health` reports `hy-mt2-1.8b-q4_k_m.gguf`, the
+reading-mode e2e passes end to end (inject/coverage/cache/cleanup), and
+translator-core tests stay 76/76.
+
 
 ## Sprint 6
 

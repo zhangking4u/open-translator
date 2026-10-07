@@ -337,7 +337,7 @@ Completed:
 - Ollama engine adapter and model config (`TRANSLATOR_MODEL_URL`, `TRANSLATOR_MODEL`)
 - Live end-to-end translation via local Ollama (qwen2.5:7b, CPU)
 - Model quality evaluation (translategemma:4b + official prompt recommended; qwen2.5:7b fallback)
-- HY-MT evaluation: hy-mt1.5-1.8b / hy-mt2-1.8b imported from ModelScope GGUFs (0.1–0.5s warm, >4× faster than 4B/7B models); hy-mt1.5-1.8b recommended default
+- HY-MT evaluation: hy-mt1.5-1.8b / hy-mt2-1.8b imported from ModelScope GGUFs (0.1–0.5s warm, >4× faster than 4B/7B models); the embedded client default moved to **Hy-MT2-1.8B Q4_K_M** on 2026-10-07 (better terminology, ~10% fewer tokens in-process, 7 menu labels average 1.33s on the deployed service vs ~3.1–3.7s before; the AngelSlim 1.25-bit/2-bit quants do not load with stock llama.cpp)
 - Per-model prompt styles and sampling (`TRANSLATOR_PROMPT_STYLE=generic|translategemma|hymt`); HY-MT import script in `models/`
 - Service hardening: tracing logs (`RUST_LOG`), startup warmup (`TRANSLATOR_WARMUP`), `/health` reports engine and model
 - Tests for invalid input, engine failure, timeout, config parsing, prompt building and Ollama adapter
