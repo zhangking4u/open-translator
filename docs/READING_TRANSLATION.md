@@ -236,6 +236,11 @@ script on all pages, inert until enabled):
   IntersectionObserver backlog with the deterministic scroll check described
   above — headless/occluded renderers throttle IO callbacks (and scroll
   events) indefinitely, which also kept the e2e from seeing the footer.
+  A fourth pass fixed the footer link items (`<div class="item"><a>Label</a>`
+  was skipped by the link-density rule because a single link is 100% of the
+  block): spans and links inside `footer` are now label candidates like
+  nav/header, so the link claims its own label and a single-link item is never
+  mistaken for a UI cluster.
 - Not in v1: joined batches (S3), extension-side glossary
   (the extension has no glossary storage yet; the shared glossary stays a
   desktop-side feature until the output guard lands), iframes, shadow DOM.

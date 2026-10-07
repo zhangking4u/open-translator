@@ -2491,6 +2491,15 @@ The fixture gained a footer (heading, link list, button) and the targeted
 run passes end to end (nav / short heading / div text / footer heading +
 button / cleanup, 9 blocks, 0 failures).
 
+Reading-mode footer link items (2026-10-07): the spring.io footer column links
+are `<div class="item"><a>Label</a></div>` and were skipped by the
+link-density rule (a single link is 100% of the block), which is why only the
+link-less "Resources" heading translated. Spans and links inside `footer` are
+now label candidates like nav/header (the link claims the label and injects
+next to it, so a single-link item is never mistaken for a UI cluster); the
+fixture's footer gained a link assertion and the targeted run passes
+(为什么是春天 / 博客 / 订阅).
+
 
 ## Sprint 6
 
