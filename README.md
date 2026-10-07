@@ -165,7 +165,7 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 | sherpa-onnx / onnxruntime | 语音识别与截图 OCR 运行时 | Apache-2.0 / MIT |
 | llama.cpp | 本地推理运行时 | MIT |
 
-语音识别基于 FunASR 的 **SenseVoiceSmall** 模型，经 sherpa-onnx 项目转换为 ONNX 格式；截图翻译使用 PaddleOCR 的 **PP-OCRv6** 模型。模型权重不随安装包分发，由客户端首次使用时下载。
+语音识别基于 FunASR 的 **SenseVoiceSmall** 模型，经 sherpa-onnx 项目转换为 ONNX 格式；截图翻译使用 PaddleOCR 的 **PP-OCRv6** 模型。模型权重不随安装包分发，由客户端首次使用时下载。Windows/macOS 安装包附带固定版本的 ONNX Runtime（SHA-256 校验后打包，截图 OCR 使用）；Linux 安装包复用 sherpa-onnx 自带的运行时。
 
 ## 仓库结构
 

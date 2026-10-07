@@ -143,12 +143,14 @@ Runtime selection (verified on the Linux dev machine):
   `DEFAULT_ALPHABET` has no CJK — and no Chinese recognition model exists);
   `ort` default features (add a second ONNX Runtime and need OpenSSL headers
   at build time).
-- Remaining packaging item (decision 2026-10-07, option B2): Windows/macOS
-  do not ship an ONNX Runtime, so their installers will carry a pinned
-  `onnxruntime.dll`/`.dylib` next to the binary; Linux keeps reusing the
-  sherpa-shipped one. The dependency side uses a vendored patched
-  `rapidocr-core` (option A2, `vendor/rapidocr-core`) until upstream exposes
-  the ort features.
+- Packaging (B2, decided and implemented 2026-10-07): the Windows zip and
+  macOS dmg bundle a pinned ONNX Runtime 1.28.2 dylib
+  (`onnxruntime.dll` / `libonnxruntime.dylib`, SHA-256 verified in the
+  release workflow from the official GitHub asset) next to the binary, which
+  `core/ocr` picks up automatically; Linux keeps reusing the sherpa-shipped
+  `libonnxruntime.so`. The dependency side is the vendored patched
+  `rapidocr-core` (A2, `vendor/rapidocr-core`) until upstream exposes the ort
+  features.
 
 Fixture: a Chrome-rendered 1280×800 page with ~30 mixed zh/en blocks on dark
 and light panels (`/tmp/kilo/ocr-spike/fixture.html`), captured at DPR 1 and
@@ -223,8 +225,12 @@ for `onnxruntime.dll`/`libonnxruntime.dylib` there, which is the hook the B2
 installer bundle will use. `translator-core` gained
 `paths::default_ocr_model_dir()` and the `ocr_model_dir` setting.
 
-Still pending: the extension capture/overlay UX (M2) and the B2 runtime
-bundle in the Windows/macOS installers.
+Still pending: the extension capture/overlay UX (M2). The B2 runtime bundle
+landed 2026-10-07: the Windows zip and macOS dmg carry a pinned ONNX Runtime
+1.28.2 (SHA-256 verified in the release workflow) that the engine auto-loads
+next to the executable; the deb keeps reusing the sherpa-shipped
+`libonnxruntime.so`, and the local install scripts fetch the runtime on first
+run.
 
 ## 6. Risks
 

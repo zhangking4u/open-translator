@@ -2165,6 +2165,15 @@ text path. `core/ocr` auto-detects a bundled runtime next to the executable
 `ort::init_from`, which is also the B2 installer hook on Windows/macOS.
 Tests: translator-core 76, translator-ocr 7, client 20 green.
 
+B2 runtime bundle (2026-10-07): the Windows zip and macOS dmg now carry a
+pinned ONNX Runtime 1.28.2 (`onnxruntime.dll` / `libonnxruntime.dylib`,
+SHA-256 verified in `release.yml` against the official GitHub asset digests;
+1.28.2 ships an arm64 macOS build only, matching the arm64 runner artifact).
+`packaging/windows/install.ps1` copies the dll next to the installed exe, the
+dmg script takes `ORT_DYLIB`, and both dev install scripts fetch the runtime
+on first run (cached). The deb still reuses the sherpa-shipped
+`libonnxruntime.so`.
+
 
 ## Sprint 6
 
