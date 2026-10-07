@@ -216,6 +216,17 @@ script on all pages, inert until enabled):
   existing `translate` port and renders deltas into the pending block (the
   one-shot message remains the fallback when the background cannot stream);
   stopping the mode cancels the in-flight stream.
+- Cross-page cache: translations of short blocks (≤ 200 chars — menus,
+  footers, buttons, headings) persist in `storage.local` (capped at 1200
+  entries, oldest-first eviction) and replay instantly on the next page or
+  visit; reload verification shows `persistHits: 3, engineCalls: 0`. Long
+  article paragraphs stay in the per-page memory cache only.
+- Parallelism was measured and rejected: 4 concurrent `/translate` requests
+  complete at 3.1/6.5/9.4/12.5 s (engine serializes; wall time equals the
+  serial run), and 4/6/8 worker threads are within 6 % of each other on the
+  4-core/8-thread dev machine — the bottleneck is the CPU / memory bandwidth,
+  not the request pattern. Moving the engine to multiple contexts or a
+  smaller model is the remaining lever for raw throughput.
 - Coverage revision after the first real-page pass: a post-order leaf walk
   claims the innermost block first and falls back to containers, so div-based
   text (tag-soup pages) is translated without double injections; container

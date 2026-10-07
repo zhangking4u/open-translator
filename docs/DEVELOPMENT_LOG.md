@@ -2500,6 +2500,18 @@ next to it, so a single-link item is never mistaken for a UI cluster); the
 fixture's footer gained a link assertion and the targeted run passes
 (为什么是春天 / 博客 / 订阅).
 
+Reading-mode speed (2026-10-07): the user asked for parallel translation.
+Measured against the running client: four concurrent `/translate` requests
+finish at 3.1/6.5/9.4/12.5 s (the engine serves one request at a time; wall
+time 12.5 s ≈ the 13.3 s serial run), and an inference probe with
+4/6/8 worker threads lands within 6 % (the 4-core i5-10210U is
+bandwidth-bound) — parallelism is off the table on this hardware. Shipped the
+practical alternative instead: short reading-mode blocks (≤ 200 chars) now
+persist in `storage.local` (1200-entry cap, oldest-first eviction) and replay
+without engine calls on the next page or visit; the reload verification shows
+`persistHits: 3, engineCalls: 0`. Raw throughput for long articles remains
+model/CPU-bound (a smaller model or a multi-context engine are the levers).
+
 
 ## Sprint 6
 
