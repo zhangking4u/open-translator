@@ -20,11 +20,12 @@
   const PRIMARY =
     "h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, figcaption, dd, dt, summary";
   const CONTAINER = "div, section, article, main";
-  // Menu labels often live in spans/links with button roles; only inside
-  // nav/header, so body links never split a paragraph.
-  const CHROME_LABEL = "span, a, button, [role='button'], [role='link']";
+  // Buttons are page UI labels everywhere; spans/links only inside nav/header
+  // (menu labels), so body links never split a paragraph.
+  const LABEL = "button, [role='button']";
+  const CHROME_LABEL = "span, a, [role='link']";
   const SKIP_CLOSEST =
-    "[data-ot-reading], footer, aside, pre, code, script, style, noscript, textarea, select, [contenteditable], [translate=no], .ot-reading-translation";
+    "[data-ot-reading], pre, code, script, style, noscript, textarea, select, [contenteditable], [translate=no], .ot-reading-translation";
   const MIN_CHARS = 12;
   const MIN_HEADING_CHARS = 3;
   const MIN_NAV_CHARS = 4;
@@ -100,7 +101,8 @@
   let disabledSites = [];
   let started = false;
   let observer = null;
-  let intersection = null;
+  let scrollTimer = null;
+  let offscreenTimer = null;
 
   const cache = new Map();
   const queue = [];
@@ -135,6 +137,9 @@
     },
     get pending() {
       return queue.length + (inFlight ? 1 : 0);
+    },
+    get offscreen() {
+      return offscreen.size;
     },
   };
 
@@ -188,7 +193,7 @@
     node.className = "ot-reading-translation ot-reading-pending";
     node.dataset.otReadingTranslation = "1";
     node.lang = target;
-    if (element.closest("nav, header")) node.classList.add("ot-reading-compact");
+    if (element.closest("nav, header, footer")) node.classList.add("ot-reading-compact");
 
     const text = document.createElement("span");
     text.className = "ot-reading-text";
@@ -427,12 +432,14 @@
     return linkChars / text.length;
   }
 
-  /// Headings and navigation labels are meaningful even when short.
+  /// Headings and navigation/footer labels are meaningful even when short.
   function minCharsFor(element) {
     if (element.matches("h1, h2, h3, h4, h5, h6, th, summary, dt, figcaption")) {
       return MIN_HEADING_CHARS;
     }
-    if (element.closest("nav, header")) return MIN_NAV_CHARS;
+    if (element.matches(LABEL) || element.closest("nav, header, footer")) {
+      return MIN_NAV_CHARS;
+    }
     return MIN_CHARS;
   }
 
@@ -444,9 +451,11 @@
     if (entries.length > 0 && !inFlight) worker();
   }
 
-  /// Viewport blocks go first; the rest are picked up by the intersection
-  /// observer when they approach the viewport, so a long article never
-  /// queues everything at once (the engine is serialized).
+  /// Viewport blocks go first; the rest wait in the offscreen map and are
+  /// picked up by the throttled scroll/resize check when they come close, so
+  /// a long article never queues everything at once (the engine is
+  /// serialized). A plain scroll check is used instead of IntersectionObserver
+  /// because headless/occluded renderers throttle IO callbacks indefinitely.
   function schedule(entry) {
     if (entry.viewport) {
       enqueue([entry]);
@@ -454,7 +463,36 @@
     }
 
     offscreen.set(entry.element, entry);
-    intersection.observe(entry.element);
+  }
+
+  function checkOffscreen() {
+    if (offscreen.size === 0) return;
+
+    const margin = 300;
+    for (const [element, entry] of [...offscreen]) {
+      if (!element.isConnected) {
+        offscreen.delete(element);
+        continue;
+      }
+
+      const rect = element.getBoundingClientRect();
+      const near =
+        rect.bottom > -margin && rect.top < window.innerHeight + margin;
+
+      if (near) {
+        offscreen.delete(element);
+        enqueue([entry]);
+      }
+    }
+  }
+
+  function onViewportChange() {
+    if (scrollTimer) return;
+
+    scrollTimer = setTimeout(() => {
+      scrollTimer = null;
+      if (started) checkOffscreen();
+    }, 250);
   }
 
   /// Post-order walk: innermost blocks are claimed first, so a container is
@@ -469,7 +507,9 @@
 
     const inChrome = element.closest("nav, header") !== null;
     const isPrimary =
-      element.matches(PRIMARY) || (inChrome && element.matches(CHROME_LABEL));
+      element.matches(PRIMARY) ||
+      element.matches(LABEL) ||
+      (inChrome && element.matches(CHROME_LABEL));
     const isContainer = !isPrimary && element.matches(CONTAINER);
     if (!isPrimary && !isContainer) return claimed;
     if (claimed) return true;
@@ -627,21 +667,6 @@
       attributes: true,
       attributeFilter: ["class", "style", "hidden"],
     });
-
-    intersection = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          intersection.unobserve(entry.target);
-          const item = offscreen.get(entry.target);
-          if (item) {
-            offscreen.delete(entry.target);
-            enqueue([item]);
-          }
-        }
-      },
-      { rootMargin: "300px 0px" }
-    );
   }
 
   function injectStyle() {
@@ -659,6 +684,13 @@
     started = true;
     injectStyle();
     observe();
+    window.addEventListener("scroll", onViewportChange, { passive: true });
+    window.addEventListener("resize", onViewportChange);
+    // Safety net for environments that throttle scroll events (occluded or
+    // headless renderers); the scroll path does the real work.
+    offscreenTimer = setInterval(() => {
+      if (offscreen.size > 0) checkOffscreen();
+    }, 1500);
     scan(document.body);
   }
 
@@ -671,9 +703,16 @@
       observer.disconnect();
       observer = null;
     }
-    if (intersection) {
-      intersection.disconnect();
-      intersection = null;
+    window.removeEventListener("scroll", onViewportChange);
+    window.removeEventListener("resize", onViewportChange);
+
+    if (scrollTimer) {
+      clearTimeout(scrollTimer);
+      scrollTimer = null;
+    }
+    if (offscreenTimer) {
+      clearInterval(offscreenTimer);
+      offscreenTimer = null;
     }
 
     queue.length = 0;

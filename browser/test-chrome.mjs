@@ -990,6 +990,38 @@ try {
     }
     check("reading mode translates navigation labels", Boolean(navText), navText ?? "<none>");
 
+    let footerState = null;
+    await evaluate(pageSession, "window.scrollTo(0, document.body.scrollHeight), true");
+    for (let attempt = 0; attempt < 150; attempt++) {
+      footerState = await evaluate(
+        pageSession,
+        `(() => {
+           const block = document.getElementById("foothead");
+           const node = block && block.nextElementSibling;
+           if (!node || node.dataset.otReadingTranslation !== "1") return null;
+           if (node.classList.contains("ot-reading-pending")) return null;
+           const head = node.querySelector(".ot-reading-text");
+           const button = document.getElementById("subscribe").nextElementSibling;
+           const buttonText =
+             button &&
+             button.dataset.otReadingTranslation === "1" &&
+             !button.classList.contains("ot-reading-pending")
+               ? button.querySelector(".ot-reading-text").textContent
+               : null;
+           return { head: head ? head.textContent : null, button: buttonText };
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (footerState && footerState.head && footerState.button) break;
+      footerState = null;
+      await sleep(200);
+    }
+    check(
+      "reading mode translates footer headings and buttons",
+      Boolean(footerState),
+      JSON.stringify(footerState)
+    );
+
     const readingStats = await evaluate(
       pageSession,
       `(() => {
