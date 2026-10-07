@@ -57,8 +57,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path package | Out-Null
           Copy-Item target/release/translator-popup-tauri.exe package/
-          Copy-Item target/release/*.dll package/
-          if (-not (Test-Path package/onnxruntime.dll)) { throw "onnxruntime.dll missing from the build output" }
+          # sherpa-onnx runtime DLLs from the build output; the pinned ONNX
+          # Runtime for screenshot OCR was placed in package/ above and must
+          # win (same file name, the `ort` load-dynamic API needs 1.28.2).
+          Get-ChildItem target/release -Filter *.dll |
+            Where-Object { $_.Name -ne "onnxruntime.dll" } |
+            Copy-Item -Destination package/
+          if (-not (Test-Path package/onnxruntime.dll)) { throw "onnxruntime.dll missing from the package" }
           Copy-Item ../../packaging/windows/install.ps1 package/
           Copy-Item ../../packaging/windows/README.txt package/
           Compress-Archive -Path package/* -DestinationPath OpenTranslator-windows-x64.zip -Force
