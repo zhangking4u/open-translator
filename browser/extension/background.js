@@ -39,6 +39,12 @@ function friendlyError(error, status) {
 
   if (kind === "timeout") return "翻译超时，请重试。";
   if (kind === "engine_unavailable") return "翻译引擎暂不可用，请稍后重试。";
+  if (kind === "ocr_unavailable") {
+    return "截图文字识别未启用：请确认桌面客户端已启动且 OCR 模型可用。";
+  }
+  if (kind === "ocr_failed") {
+    return "截图文字识别失败：" + (message || "请重试。");
+  }
 
   if (kind === "invalid_request") {
     const tooLong = /text is too long: (\d+) chars \(max (\d+)\)/.exec(message);
@@ -295,6 +301,100 @@ async function sendOneShot(port, requestId, text, record = true) {
   }
 }
 
+// Reads the visible tab, recognizes its text through the local service and
+// hands the blocks to the page overlay. The service can be slow on the first
+// request (OCR model download); the content script shows nothing until the
+// result arrives.
+async function translateImage(image) {
+  const settings = await getSettings();
+  const url = baseUrl(settings.serviceUrl) + "/translate/image";
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image,
+        source: settings.source,
+        target: settings.target,
+      }),
+    });
+  } catch (error) {
+    return { ok: false, error: connectionError(settings.serviceUrl) };
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    return { ok: false, error: "本地服务返回了无效响应。" };
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: friendlyError(payload && payload.error, response.status),
+    };
+  }
+
+  return {
+    ok: true,
+    image: payload.image || null,
+    blocks: Array.isArray(payload.blocks) ? payload.blocks : [],
+  };
+}
+
+async function sendScreenshotError(tab, message) {
+  try {
+    await api.tabs.sendMessage(tab.id, { type: "screenshot-error", message });
+  } catch (error) {
+    console.warn("[OpenTranslator] screenshot error:", message);
+  }
+}
+
+async function deliverImageResult(tab, result) {
+  if (!result.ok) {
+    await sendScreenshotError(tab, result.error);
+    return;
+  }
+
+  if (!result.blocks.length) {
+    await sendScreenshotError(tab, "没有识别到可翻译的文字。");
+    return;
+  }
+
+  try {
+    await api.tabs.sendMessage(tab.id, {
+      type: "screenshot-result",
+      image: result.image,
+      blocks: result.blocks,
+    });
+  } catch (error) {
+    // No content script (PDF viewer, browser pages): fall back to the result
+    // page with the recognized text.
+    const text = result.blocks
+      .map((block) => (block.text || "").trim())
+      .filter(Boolean)
+      .join("\n");
+    if (text) openResultPage(text);
+  }
+}
+
+async function screenshotTranslate(tab) {
+  if (!tab || tab.id === undefined) return;
+
+  let image = null;
+  try {
+    image = await api.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  } catch (error) {
+    await sendScreenshotError(tab, "截图失败：无法捕获当前页面。");
+    return;
+  }
+
+  await deliverImageResult(tab, await translateImage(image));
+}
+
 async function checkHealth() {
   const settings = await getSettings();
   const url = baseUrl(settings.serviceUrl) + "/health";
@@ -382,6 +482,11 @@ api.runtime.onInstalled.addListener((details) => {
       title: "翻译选中文本（OpenTranslator）",
       contexts: ["selection"],
     });
+    api.contextMenus.create({
+      id: "screenshot-translate",
+      title: "截图翻译页面（OpenTranslator）",
+      contexts: ["page"],
+    });
   });
 
   api.alarms.create(HEALTH_ALARM, { periodInMinutes: 1 });
@@ -406,6 +511,11 @@ if (api.alarms && api.alarms.onAlarm) {
 }
 
 api.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === "screenshot-translate") {
+    await screenshotTranslate(tab);
+    return;
+  }
+
   if (info.menuItemId !== "translate-selection") return;
 
   if (tab && tab.id !== undefined) {
@@ -423,6 +533,14 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 api.commands.onCommand.addListener((command) => {
+  if (command === "screenshot-translate") {
+    api.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+      const tab = tabs[0];
+      if (tab) screenshotTranslate(tab);
+    });
+    return;
+  }
+
   let type = null;
 
   if (command === "translate-selection") {

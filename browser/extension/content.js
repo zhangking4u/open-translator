@@ -1531,6 +1531,222 @@ function onTypeInput(event) {
   }, typeDelay);
 }
 
+// Screenshot translation overlay: translated blocks laid over the captured
+// viewport. Coordinates arrive in image pixels; the capture is the viewport
+// at devicePixelRatio and page zoom, so dividing by imageWidth / innerWidth
+// maps them onto fixed CSS pixels without scroll math. The screenshot is a
+// moment in time, so scrolling or resizing dismisses the overlay.
+
+let shotHost = null;
+let shotBlocks = null;
+let shotImageWidth = 0;
+let shotShowOriginal = false;
+let shotToastTimer = null;
+
+function ensureShotHost() {
+  if (shotHost) return shotHost.shadowRoot;
+
+  shotHost = document.createElement("div");
+  shotHost.dataset.opentranslator = "shot";
+  shotHost.style.position = "fixed";
+  shotHost.style.inset = "0";
+  shotHost.style.zIndex = "2147483647";
+  shotHost.style.pointerEvents = "none";
+  shotHost.style.display = "none";
+
+  const shadow = shotHost.attachShadow({ mode: "open" });
+
+  const style = document.createElement("style");
+  style.textContent = [
+    (globalThis.OT_TOKENS_CSS || ""),
+    ".shot-layer { position: absolute; inset: 0; overflow: hidden; }",
+    ".shot-box { position: absolute; padding: 1px 5px; border-radius: 4px;",
+    "  background: rgba(15, 17, 21, .78); color: #fff; font-family: var(--ot-font);",
+    "  line-height: 1.3; white-space: pre-wrap; word-break: break-word;",
+    "  width: max-content; max-width: 60vw;",
+    "  box-shadow: 0 0 0 .5px rgba(255, 255, 255, .25); }",
+    ".shot-toolbar { position: fixed; top: 12px; right: 12px; display: flex;",
+    "  align-items: center; gap: 4px; padding: 4px 6px; border-radius: 10px;",
+    "  background: var(--ot-bg-solid); color: var(--ot-label);",
+    "  font-family: var(--ot-font); font-size: 12.5px;",
+    "  box-shadow: inset 0 0 0 .5px var(--ot-hairline), var(--ot-shadow);",
+    "  pointer-events: auto; }",
+    "@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {",
+    "  .shot-toolbar { background: var(--ot-bg-material); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }",
+    "}",
+    ".shot-toolbar[hidden] { display: none; }",
+    ".shot-title { color: var(--ot-label-2); padding: 0 4px 0 2px; }",
+    "button { font: inherit; font-size: 12.5px; padding: 3px 8px; min-height: 24px;",
+    "  border: 0; border-radius: var(--ot-radius-sm); background: none; cursor: pointer;",
+    "  color: var(--ot-label-2); display: inline-flex; align-items: center; gap: 6px;",
+    "  transition: background-color .15s ease, color .15s ease; }",
+    "button:hover { background: var(--ot-fill); }",
+    "button:active { background: var(--ot-fill-hover); }",
+    "button:focus-visible { outline: 2px solid var(--ot-accent); outline-offset: 1px; }",
+    ".shot-toast { position: fixed; top: 12px; right: 12px; max-width: 340px;",
+    "  padding: 8px 12px; border-radius: 10px; background: var(--ot-bg-solid);",
+    "  color: var(--ot-label); font-family: var(--ot-font); font-size: 13px;",
+    "  line-height: 1.5; cursor: pointer; pointer-events: auto;",
+    "  box-shadow: inset 0 0 0 .5px var(--ot-hairline), var(--ot-shadow); }",
+    ".shot-toast[hidden] { display: none; }",
+    "@media (prefers-reduced-motion: reduce) { button { transition: none; } }",
+  ].join("\n");
+
+  const layer = document.createElement("div");
+  layer.className = "shot-layer";
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "shot-toolbar";
+
+  const title = document.createElement("span");
+  title.className = "shot-title";
+  title.textContent = "截图翻译";
+
+  const toggleButton = document.createElement("button");
+  toggleButton.className = "shot-toggle";
+  toggleButton.textContent = "显示原文";
+  toggleButton.addEventListener("click", () => {
+    shotShowOriginal = !shotShowOriginal;
+    toggleButton.textContent = shotShowOriginal ? "显示译文" : "显示原文";
+    renderShotBlocks();
+  });
+
+  const copyButton = document.createElement("button");
+  copyButton.className = "shot-copy";
+  const copyLabel = document.createElement("span");
+  copyLabel.textContent = "复制译文";
+  copyButton.append(createIcon("copy"), copyLabel);
+  copyButton.addEventListener("click", () => {
+    const text = (shotBlocks || [])
+      .map((block) => block.translation || "")
+      .filter(Boolean)
+      .join("\n");
+
+    navigator.clipboard.writeText(text).then(() => {
+      const label = copyButton.querySelector("span");
+      if (!label) return;
+      label.textContent = "已复制";
+      setTimeout(() => {
+        label.textContent = "复制译文";
+      }, 1200);
+    });
+  });
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "shot-close";
+  closeButton.append(createIcon("close"));
+  closeButton.title = "关闭";
+  closeButton.addEventListener("click", hideShotOverlay);
+
+  toolbar.append(title, toggleButton, copyButton, closeButton);
+
+  const toast = document.createElement("div");
+  toast.className = "shot-toast";
+  toast.hidden = true;
+  toast.addEventListener("click", hideShotOverlay);
+
+  shadow.append(style, layer, toolbar, toast);
+  document.documentElement.append(shotHost);
+
+  return shadow;
+}
+
+function quadBoundingBox(quad) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const point of Array.isArray(quad) ? quad : []) {
+    if (!Array.isArray(point) || point.length < 2) continue;
+
+    const [x, y] = point;
+    if (typeof x !== "number" || typeof y !== "number") continue;
+
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+
+  if (!Number.isFinite(minX)) return null;
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function renderShotBlocks() {
+  const shadow = ensureShotHost();
+  const layer = shadow.querySelector(".shot-layer");
+  layer.textContent = "";
+
+  const scale =
+    shotImageWidth > 0 && window.innerWidth > 0 ? shotImageWidth / window.innerWidth : 1;
+
+  for (const block of shotBlocks || []) {
+    const box = quadBoundingBox(block.quad);
+    if (!box) continue;
+
+    const element = document.createElement("div");
+    element.className = "shot-box";
+
+    const height = Math.max(12, box.height / scale);
+    element.style.left = box.x / scale + "px";
+    element.style.top = box.y / scale + "px";
+    element.style.minHeight = height + "px";
+    element.style.fontSize = Math.min(Math.max(10, height * 0.7), 20) + "px";
+    element.textContent = shotShowOriginal
+      ? block.text || ""
+      : block.translation || "";
+
+    layer.append(element);
+  }
+}
+
+function showScreenshotOverlay(payload) {
+  shotBlocks = Array.isArray(payload.blocks) ? payload.blocks : [];
+  shotImageWidth = payload.image && payload.image.width ? payload.image.width : 0;
+  shotShowOriginal = false;
+
+  const shadow = ensureShotHost();
+  const toggleButton = shadow.querySelector(".shot-toggle");
+  toggleButton.textContent = "显示原文";
+
+  shadow.querySelector(".shot-toast").hidden = true;
+  shadow.querySelector(".shot-toolbar").hidden = false;
+
+  renderShotBlocks();
+  shotHost.style.display = "block";
+}
+
+function showScreenshotError(message) {
+  const shadow = ensureShotHost();
+
+  shadow.querySelector(".shot-toolbar").hidden = true;
+
+  const toast = shadow.querySelector(".shot-toast");
+  toast.textContent = message || "截图翻译失败。";
+  toast.hidden = false;
+
+  shotHost.style.display = "block";
+
+  clearTimeout(shotToastTimer);
+  shotToastTimer = setTimeout(hideShotOverlay, 5000);
+}
+
+function hideShotOverlay() {
+  if (!shotHost) return;
+
+  shotHost.style.display = "none";
+
+  const shadow = shotHost.shadowRoot;
+  if (shadow) {
+    shadow.querySelector(".shot-layer").textContent = "";
+    shadow.querySelector(".shot-toast").hidden = true;
+  }
+
+  shotBlocks = null;
+  clearTimeout(shotToastTimer);
+}
+
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message && message.type === "get-site-info") {
     sendResponse({ hostname: location.hostname });
@@ -1540,6 +1756,10 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     translateClipboard();
   } else if (message && message.type === "cycle-target") {
     cycleTypeTarget();
+  } else if (message && message.type === "screenshot-result") {
+    showScreenshotOverlay(message);
+  } else if (message && message.type === "screenshot-error") {
+    showScreenshotError(message.message);
   }
 });
 
@@ -1549,6 +1769,10 @@ document.addEventListener(
     if (event.key !== "Escape") return;
     if (typeSelectController && typeSelectController.isOpen()) {
       typeSelectController.close();
+      return;
+    }
+    if (shotHost && shotHost.style.display !== "none") {
+      hideShotOverlay();
       return;
     }
     typeHide();
@@ -1692,12 +1916,14 @@ document.addEventListener(
   () => {
     queueReposition();
     typeQueueReposition();
+    hideShotOverlay();
   },
   true
 );
 window.addEventListener("resize", () => {
   queueReposition();
   typeQueueReposition();
+  hideShotOverlay();
 });
 
 loadSettings();

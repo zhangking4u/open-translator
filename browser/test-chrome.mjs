@@ -6,6 +6,8 @@
 //     --extension browser/dist/chrome \
 //     --page http://127.0.0.1:8099/test-page.html
 
+import http from "node:http";
+
 function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i += 2) {
@@ -79,6 +81,47 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` (${detail})` : ""}`);
   if (!ok) failures += 1;
 }
+
+// Mock /translate/image: one block, viewport-sized image, so the overlay
+// mapping can be asserted. captureVisibleTab needs a user gesture (activeTab),
+// which CDP cannot grant, so the test drives translateImage +
+// deliverImageResult — everything after the capture.
+const imageMock = http.createServer((request, response) => {
+  if (request.method === "POST" && request.url === "/translate/image") {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          image: { width: 800, height: 600 },
+          blocks: [
+            {
+              text: "START GAME",
+              translation: "开始游戏",
+              score: 0.98,
+              quad: [
+                [100, 80],
+                [300, 80],
+                [300, 120],
+                [100, 120],
+              ],
+            },
+          ],
+        })
+      );
+    });
+    return;
+  }
+
+  response.writeHead(404);
+  response.end();
+});
+
+await new Promise((resolve) => imageMock.listen(0, "127.0.0.1", resolve));
+const imageMockUrl = `http://127.0.0.1:${imageMock.address().port}`;
 
 try {
   const loaded = await send("Extensions.loadUnpacked", { path: args.extension });
@@ -996,6 +1039,142 @@ try {
           menuPlacement.bottom <= menuPlacement.innerHeight + 0.5
       ),
       JSON.stringify(menuPlacement)
+    );
+
+    // --- Screenshot translation ---------------------------------------------
+    const originalSettings = JSON.parse(
+      await evaluate(workerSession, `(async () => JSON.stringify(await getSettings()))()`)
+    );
+
+    await evaluate(
+      workerSession,
+      `(async () => { await api.storage.local.set({ serviceUrl: ${JSON.stringify(
+        imageMockUrl
+      )}, source: "en", target: "zh" }); return true; })()`
+    );
+
+    const delivered = JSON.parse(
+      await evaluate(
+        workerSession,
+        `(async () => {
+           const tabs = await api.tabs.query({ active: true, currentWindow: true });
+           const result = await translateImage("data:image/png;base64,AAAA");
+           await deliverImageResult(tabs[0], result);
+           return JSON.stringify({ ok: result.ok, blocks: (result.blocks || []).length });
+         })()`
+      )
+    );
+    check(
+      "screenshot image translated via the service",
+      delivered.ok === true && delivered.blocks === 1,
+      JSON.stringify(delivered)
+    );
+
+    let shot = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      shot = await evaluate(
+        pageSession,
+        `(() => {
+           const host = document.querySelector('[data-opentranslator="shot"]');
+           if (!host || host.style.display === "none") return null;
+           const root = host.shadowRoot;
+           const boxes = [...root.querySelectorAll(".shot-box")];
+           return {
+             boxes: boxes.length,
+             text: boxes[0] ? boxes[0].textContent : null,
+             toolbar: !root.querySelector(".shot-toolbar").hidden,
+           };
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (shot) break;
+      await sleep(100);
+    }
+    check(
+      "screenshot overlay renders the translated block",
+      Boolean(shot) && shot.boxes === 1 && shot.text === "开始游戏" && shot.toolbar,
+      JSON.stringify(shot)
+    );
+
+    await evaluate(
+      pageSession,
+      `(() => {
+         document.querySelector('[data-opentranslator="shot"]').shadowRoot.querySelector(".shot-toggle").click();
+         return true;
+       })()`,
+      { contextId: isolated.id }
+    );
+    const originalShot = await evaluate(
+      pageSession,
+      `(() => {
+         const box = document.querySelector('[data-opentranslator="shot"]').shadowRoot.querySelector(".shot-box");
+         return box ? box.textContent : null;
+       })()`,
+      { contextId: isolated.id }
+    );
+    check(
+      "screenshot overlay toggles the original",
+      originalShot === "START GAME",
+      originalShot ?? "<none>"
+    );
+
+    await evaluate(
+      pageSession,
+      `(() => {
+         document.querySelector('[data-opentranslator="shot"]').shadowRoot.querySelector(".shot-close").click();
+         return true;
+       })()`,
+      { contextId: isolated.id }
+    );
+    const shotClosed = await evaluate(
+      pageSession,
+      `document.querySelector('[data-opentranslator="shot"]').style.display`,
+      { contextId: isolated.id }
+    );
+    check("screenshot overlay closes", shotClosed === "none", shotClosed);
+
+    // Error path: an unreachable service surfaces as a toast instead of a
+    // silent failure.
+    await evaluate(
+      workerSession,
+      `(async () => { await api.storage.local.set({ serviceUrl: "http://127.0.0.1:1" }); return true; })()`
+    );
+    await evaluate(
+      workerSession,
+      `(async () => {
+         const tabs = await api.tabs.query({ active: true, currentWindow: true });
+         const result = await translateImage("data:image/png;base64,AAAA");
+         await deliverImageResult(tabs[0], result);
+         return true;
+       })()`
+    );
+
+    let toast = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      toast = await evaluate(
+        pageSession,
+        `(() => {
+           const host = document.querySelector('[data-opentranslator="shot"]');
+           if (!host || host.style.display === "none") return null;
+           const node = host.shadowRoot.querySelector(".shot-toast");
+           return node && !node.hidden ? node.textContent : null;
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (toast) break;
+      await sleep(100);
+    }
+    check(
+      "screenshot errors surface as a toast",
+      typeof toast === "string" && toast.includes("无法连接本地翻译服务"),
+      toast ?? "<none>"
+    );
+
+    await evaluate(
+      workerSession,
+      `(async () => { await api.storage.local.set({ serviceUrl: ${JSON.stringify(
+        originalSettings.serviceUrl
+      )} }); return true; })()`
     );
   }
 

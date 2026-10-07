@@ -15,6 +15,7 @@
     }
   },
   "permissions": [
+    "activeTab",
     "contextMenus",
     "storage",
     "alarms",
@@ -63,6 +64,12 @@
         "default": "Alt+Shift+L"
       },
       "description": "边写边译：切换目标语言（OpenTranslator）"
+    },
+    "screenshot-translate": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "截图翻译当前页面（OpenTranslator）"
     }
   },
   "options_ui": {
