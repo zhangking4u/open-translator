@@ -2362,6 +2362,13 @@ remove-then-`create_new`, so a pre-planted symlink or foreign file is not
 followed (debug-only, `TRANSLATOR_SHOT_DEBUG=1`). Client tests 23/23 green;
 synthetic end-to-end run on the dev machine: selection, OCR, translation,
 viewer and the toolbar drag all pass.
+- v0.9.0 released 2026-10-07 (tag `bc40b95`, release run 37593934905): the
+  first release carrying the image-translation/OCR batch — the browser
+  extension Lens viewer, the shared image pipeline, desktop region screenshot
+  translation on Linux and Windows, and the pinned ONNX Runtime 1.28.2 in the
+  Windows/macOS packages. Five assets landed (Windows zip 16.8 MB, Linux deb
+  17.5 MB, macOS dmg 21.8 MB, extension zips); the Windows package job
+  re-verified the DLL copy order from the v0.8.0 fix.
 
 
 ## Sprint 6
