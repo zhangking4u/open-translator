@@ -20,8 +20,10 @@
     "h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, figcaption, dd, dt, summary";
   const CONTAINER = "div, section, article, main";
   const SKIP_CLOSEST =
-    "[data-ot-reading], nav, footer, header, aside, pre, code, script, style, noscript, textarea, select, [contenteditable], [translate=no], .ot-reading-translation";
+    "[data-ot-reading], footer, aside, pre, code, script, style, noscript, textarea, select, [contenteditable], [translate=no], .ot-reading-translation";
   const MIN_CHARS = 12;
+  const MIN_HEADING_CHARS = 3;
+  const MIN_NAV_CHARS = 4;
   const MAX_BLOCK_CHARS = 1200;
   const MAX_NEW_PER_BATCH = 20;
   const LINK_DENSITY = 0.6;
@@ -72,6 +74,13 @@
 }
 .ot-reading-translation.ot-reading-error .ot-reading-text {
   cursor: pointer;
+}
+.ot-reading-translation.ot-reading-compact {
+  margin: 0 0 2px;
+  padding-left: 6px;
+  border-left-width: 2px;
+  font-size: 0.85em;
+  line-height: 1.4;
 }
 @media (prefers-color-scheme: dark) {
   .ot-reading-translation { color: #c9c9ce; border-left-color: #5b9bd5; }
@@ -175,6 +184,7 @@
     node.className = "ot-reading-translation ot-reading-pending";
     node.dataset.otReadingTranslation = "1";
     node.lang = target;
+    if (element.closest("nav, header")) node.classList.add("ot-reading-compact");
 
     const text = document.createElement("span");
     text.className = "ot-reading-text";
@@ -370,7 +380,7 @@
       noteSkip("empty");
       return null;
     }
-    if (text.length < MIN_CHARS) {
+    if (text.length < minCharsFor(element)) {
       noteSkip("short");
       return null;
     }
@@ -411,6 +421,15 @@
     }
 
     return linkChars / text.length;
+  }
+
+  /// Headings and navigation labels are meaningful even when short.
+  function minCharsFor(element) {
+    if (element.matches("h1, h2, h3, h4, h5, h6, th, summary, dt, figcaption")) {
+      return MIN_HEADING_CHARS;
+    }
+    if (element.closest("nav, header")) return MIN_NAV_CHARS;
+    return MIN_CHARS;
   }
 
   function enqueue(entries) {

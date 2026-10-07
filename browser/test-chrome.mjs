@@ -946,6 +946,50 @@ try {
       divText ?? "<none>"
     );
 
+    // Short headings and navigation labels are meaningful even when short.
+    let shortHead = null;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      shortHead = await evaluate(
+        pageSession,
+        `(() => {
+           const block = document.getElementById("shorthead");
+           const node = block && block.nextElementSibling;
+           if (!node || node.dataset.otReadingTranslation !== "1") return null;
+           if (node.classList.contains("ot-reading-pending")) return null;
+           const text = node.querySelector(".ot-reading-text");
+           return text ? text.textContent : null;
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (shortHead && !shortHead.startsWith("翻译失败")) break;
+      shortHead = null;
+      await sleep(200);
+    }
+    check("reading mode translates short headings", Boolean(shortHead), shortHead ?? "<none>");
+
+    let navText = null;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      navText = await evaluate(
+        pageSession,
+        `(() => {
+           const item = document.querySelector("#topnav li");
+           const node =
+             item &&
+             [...item.children].find(
+               (child) => child.dataset.otReadingTranslation === "1"
+             );
+           if (!node || node.classList.contains("ot-reading-pending")) return null;
+           const text = node.querySelector(".ot-reading-text");
+           return text ? text.textContent : null;
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (navText && !navText.startsWith("翻译失败")) break;
+      navText = null;
+      await sleep(200);
+    }
+    check("reading mode translates navigation labels", Boolean(navText), navText ?? "<none>");
+
     const readingStats = await evaluate(
       pageSession,
       `(() => {
