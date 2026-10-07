@@ -2174,7 +2174,7 @@ dmg script takes `ORT_DYLIB`, and both dev install scripts fetch the runtime
 on first run (cached). The deb still reuses the sherpa-shipped
 `libonnxruntime.so`.
 
-Extension screenshot UX (2026-10-07, M2): the 截图翻译页面 context menu item and
+Extension screenshot UX (2026-10-07, M2 — superseded the same day, see below): the 截图翻译页面 context menu item and
 the `screenshot-translate` command (`Alt+Shift+S`) capture the visible tab
 (`activeTab` + `tabs.captureVisibleTab`), POST `/translate/image` and render
 the blocks through a click-through DOM overlay in the content script
@@ -2185,6 +2185,89 @@ fallback). Blocks are positioned from their quads divided by
 and the Chrome e2e grew five checks against a mock `/translate/image`
 (fetch → deliver → overlay render/toggle/close, error toast); the
 `captureVisibleTab` gesture itself stays a manual check.
+
+Screenshot UX revision (2026-10-07): the first manual check in Chrome killed
+the whole-page screenshot overlay — translations stacked on the page's own
+selectable text, which is exactly where a DOM translation belongs; 截图翻译页面
+and the `Alt+Shift+S` command were removed the same day. The extension now
+ships 翻译此图片 (image context): the content script supplies the image's
+visible rect, crops the tab capture on a canvas (DPR/zoom-aware, data URLs
+stay untainted) and the background POSTs `/translate/image`; the result is a
+panel next to the image (译文在前/原文小字/复制译文/关闭), errors toast, and
+pages without a content script fall back to `result.html`. Chrome e2e covers
+the crop math, the panel and the error toast; `web-ext lint` stays clean. The
+pivot is recorded in `docs/IMAGE_TRANSLATION.md` §5.6; the web reading
+translation evaluation (C) lives in `docs/READING_TRANSLATION.md`; B (desktop
+region screenshot → card) is next.
+
+Image viewer revision (2026-10-07): the flat panel beside the image was
+replaced the same day by a modal viewer that draws each translation over its
+original position (camera-translation / Lens metaphor) — the panel lost the
+spatial mapping that makes image translation intuitive. Boxes are
+scale-mapped from the OCR quads; hovering shows the original in the footer,
+clicking copies a block, the toolbar toggles 原文/译文 and 列表 (bilingual
+pairs), copies all translations, backdrop/Esc close; errors toast and a
+missing crop falls back to list-only. The page's own image is untouched and
+the viewer works on the cropped capture (data URL), so no extra permissions
+are needed. Chrome e2e covers the box overlay, the 原文 toggle, list mode and
+close; `web-ext lint` stays 0/0/0.
+
+Desktop region screenshot (2026-10-07, B): the Linux tray 截图翻译 item and a
+new `screenshot_hotkey` (default Ctrl+Alt+S, config-only) capture a region
+through the XDG portal (`ashpd`, native picker; Wayland and X11) and run the
+in-process pipeline: `translator-service` gained `src/image.rs`
+(`translate_image_bytes`, now shared with `POST /translate/image`), the
+client caches a lazily loaded RapidOCR provider in `AppState` and reuses the
+card (recognized lines as 原文, joined translations, history recorded). The
+portal file is removed after reading; the tray item is disabled on
+Windows/macOS. Non-interactive portal plumbing verified on the dev machine
+(DBus → file URI → read); the interactive flow needs a human region pick.
+
+Screenshot presentation revision 2 (2026-10-07): the card-based first cut was
+replaced after a first-principles review — selecting a region is deixis, so
+the answer stays at the region. `screenshot.rs` now captures through the
+portal without a dialog, shows a full-screen selector (`ui/select.*`,
+`shot-select`) whose drag is mapped to capture pixels (geometry unit-tested:
+single/HiDPI/multi-monitor slices, CSS→pixel mapping, clamping), and opens a
+Lens-style viewer window (`ui/shot.*`, `shot`) anchored at the region with
+hover-original, click-copy, 原文/译文, bilingual 列表, 复制, 刷新 and close;
+blur/Esc dismiss. The region is stored, so the hotkey (while the viewer is
+visible) or 刷新 replays it without selecting again; with the viewer hidden a
+new selection starts. The card no longer carries screenshot results; history
+still records them. Client 26 tests green; 0.8.3 built, installed and
+running on the dev machine.
+
+Screenshot selection revision 3 (2026-10-07): the frozen, dimmed selector was
+rejected in the first manual check ("screen froze and darkened — cannot pick
+a region"). The selector is now a transparent click layer over the **live**
+screen: only the dragged rectangle highlights (accent border + light fill),
+no dim and no frozen capture; it hides, the compositor settles 200 ms, and
+then the portal capture follows. This also removed the capture→selector image
+channel entirely (no data-URL event, no black-screen failure mode). 0.8.4
+built, installed and running; manual drag pass pending.
+
+Screenshot viewer fixes (2026-10-07): the first working viewer exposed two
+issues. The window kept its default 800×600 because tao pins min/max size
+hints with `.resizable(false)`, so the later `set_size` was ignored and the
+image stretched ~3.4× with most translation boxes below the fold — fixed by
+dropping `resizable(false)`, a 64×64 initial size, and no-stretch image CSS
+(`width:auto; max-width:100%`), plus `SHOTDBG` sequence logs. The viewer is
+now movable (toolbar/footer as a `data-tauri-drag-region` handle; `core:window:
+allow-start-dragging` was already granted) and a moved viewer keeps its
+position on refresh. 0.8.8 built, installed and running.
+
+Screenshot mapping fix (2026-10-07): the work-area constraint was the real
+cause of the "long selection loses text" reports. GNOME kept the selector
+inside the work area (67 px dock + 32 px top bar), so the window actually sat
+at (67,32) with 1853×1048 while the mapping assumed it covered the whole
+1920×1080 monitor: crops were ~52×27 px off, growing toward the right — wide
+selections diverged the most. `map_selection` now takes the selector window's
+actual physical position and scale factor (`outer_position`), and coordinates
+map 1:1 through the device scale without the viewport-stretch factor. Unit
+tests cover the work-area offset and HiDPI. 0.8.11 built, installed and
+running; a debug build (`TRANSLATOR_SHOT_DEBUG=1`) dumps the failing crop and
+full capture to `/tmp/open-translator-shot-{crop,full}.png` for offline
+analysis (private content; off by default).
 
 
 ## Sprint 6

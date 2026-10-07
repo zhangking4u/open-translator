@@ -1,11 +1,12 @@
 # Browser Screenshot Translation (扩展截图翻译) — Design Intent
 
-Status: decided 2026-10-06. This is **D1** of the multimodal roadmap: browser
-screenshot translation is the **first image consumer**; the desktop
-region-screenshot → card flow is second; system-level UI translation is
-deferred. Nothing is implemented yet — the OCR selection spike (§5, M0) is the
-next step. Phase 1a (the shared latest-wins scheduler) landed 2026-10-06 as
-the prerequisite (`translator-core::latest_wins`).
+Status: decided 2026-10-06, revised 2026-10-07. This is **D1** of the
+multimodal roadmap. The first form (whole-page screenshot overlay in the
+browser) was removed after the first manual check (§5.6); the first image
+consumer is now 翻译此图片 (right-click image → panel), the desktop
+region-screenshot → card flow is next (B), and system-level UI translation is
+deferred. The OCR stack (§5.1–§5.4) is implemented and validated; web reading
+translation is evaluated separately in `docs/READING_TRANSLATION.md` (C).
 
 ## 1. Goal
 
@@ -232,28 +233,87 @@ auto-loads next to the executable; the deb keeps reusing the sherpa-shipped
 `libonnxruntime.so`, and the local install scripts fetch the runtime on first
 run.
 
-### 5.5 Extension UX landed (2026-10-07)
+### 5.5 First extension form (2026-10-07, superseded)
 
-- Trigger: the 截图翻译页面 context menu item and the `screenshot-translate`
-  command (`Alt+Shift+S`); both run from a user gesture, so the new
-  `activeTab` permission grants `tabs.captureVisibleTab`.
-- Background: `translateImage` POSTs the PNG data URL to
-  `/translate/image` with the stored source/target; `deliverImageResult`
-  sends `screenshot-result` to the content script or falls back to
-  `result.html` with the recognized text when no content script exists
-  (PDF viewer). Service errors (including `ocr_unavailable`) are mapped to
-  Chinese messages.
-- Content script: a click-through fixed overlay (`data-opentranslator="shot"`)
-  positions each block from its quad divided by `imageWidth / innerWidth`
-  (covers DPR and page zoom); the toolbar toggles 原文/译文, copies the
-  translations and closes; scroll, resize and Esc dismiss it (the screenshot
-  is stale); errors show a toast. `web-ext lint` reports zero warnings.
-- E2E: `browser/test-chrome.mjs` runs a mock `/translate/image` and asserts
-  fetch → deliver → overlay render/toggle/close and the error toast;
-  `captureVisibleTab` itself needs a user gesture and remains a manual check.
+The first form shipped a whole-page screenshot overlay: the 截图翻译页面
+context menu item and the `screenshot-translate` command (`Alt+Shift+S`)
+captured the viewport, POSTed `/translate/image`, and painted each block's
+translation on top of the page at its original position. It was replaced the
+same day after the first manual check — see §5.6.
 
-Remaining for M2: a manual real-browser pass of the full capture gesture
-(including DRM/black-frame behavior) and Firefox parity.
+### 5.6 Revision: the whole-page overlay was removed (2026-10-07)
+
+The first manual check in Chrome showed the obvious failure mode: the
+translations stacked over the page's own (selectable) text, occluding the
+original and adding no value where a DOM translation belongs. The screenshot
+overlay premise — "translate whatever is on screen in place" — is wrong for
+web pages; screenshot/OCR translation is only for content that cannot be
+selected at all.
+
+What replaced it (option A of the pivot):
+
+- Trigger: the 翻译此图片（OpenTranslator）context menu (image context) only.
+  The page-level command and menu item were removed.
+- Flow: the background asks the content script for the image's visible
+  rectangle, captures the tab (`activeTab` + `tabs.captureVisibleTab`), and
+  the content script crops the capture on a canvas to that rectangle (data
+  URLs stay untainted; the crop follows bitmap width / innerWidth, covering
+  DPR and page zoom before POSTing the smaller image).
+- Presentation (second revision, same day): a modal viewer
+  (`data-opentranslator="image-viewer"`) draws each translation over its
+  original position — camera-translation (Lens) style. The first fix used a
+  flat panel next to the image, but a text list loses the spatial mapping
+  that makes image translation intuitive; covering the source is right here
+  precisely because the source is a static snapshot, unlike a live page.
+  Hovering a box shows the original in the footer, clicking copies that
+  block, the toolbar toggles 原文/译文 and 列表 (bilingual pairs) and copies
+  all translations, backdrop/Esc close; errors show a toast; pages without a
+  content script fall back to `result.html`.
+- E2E: a mock `/translate/image` drives `translateImage` + an `image-result`
+  message; the crop helper is asserted in the page, and the viewer checks
+  cover the box overlay, the 原文 toggle, list mode and close;
+  `captureVisibleTab` needs a user gesture and stays a manual check.
+
+The rest of the pivot: B — desktop region screenshot → card is the real home
+for unselectable content; C — a DOM-based web reading translation mode is
+evaluated separately in `docs/READING_TRANSLATION.md`.
+
+### 5.7 Desktop region screenshot (B) landed (2026-10-07)
+
+Revised the same day from the first cut (portal's native picker → card) after
+a first-principles review: selecting a region is deixis ("this here"), so the
+answer must stay attached to the region — the card, designed for selected
+text, destroyed the spatial mapping.
+
+- Selection: a transparent full-screen selector window covers the monitor and
+  the screen **stays live** — only the dragged rectangle is highlighted (no
+  freeze, no dim; the first cut dimmed a frozen capture and was unusable). It
+  reports the rectangle in CSS pixels, hides, and after a 200 ms compositor
+  settle the XDG portal (`ashpd`, non-interactive) captures the screen
+  without a dialog. Coordinates are mapped through the selector window's
+  actual screen position and device scale (the WM may constrain it to the
+  work area — GNOME's dock/top bar — so a full-monitor assumption offsets
+  every crop). The portal does not report region coordinates — that is
+  why the selector is ours, and why the region can be replayed exactly.
+- Viewer: a Lens-style floating window anchored at the region draws each
+  translation over the captured pixels (hover shows the original in the
+  footer, click copies the block; toolbar 原文/译文 · 列表 · 复制 · 刷新 ·
+  关闭; blur/Esc/× dismiss). Long text switches to the bilingual list mode.
+- Replay: the region is stored; pressing the hotkey while the viewer is
+  visible (or the 刷新 button) re-captures and re-translates the same region
+  without selecting again — the game loop. With the viewer hidden, the tray
+  item and the hotkey start a new selection.
+- Pipeline: unchanged — the shared `translate_image_bytes` runs in-process
+  with the lazily loaded OCR provider; history records the joined pair.
+- Platform: Linux only for now (portal + window placement); the item is
+  disabled on Windows/macOS. The viewer is a normal always-on-top window, not
+  a click-through overlay; exclusive-fullscreen games may not show any
+  window, borderless windowed is the reliable mode.
+
+Geometry (monitor slice for a virtual-desktop capture, CSS→capture-pixel
+mapping, clamping, minimum selection) is unit-tested in `screenshot.rs`.
+Manual verification on the dev machine is pending (drag, viewer, refresh);
+portal capture, URI parsing and file reading are verified.
 
 ## 6. Risks
 
@@ -263,14 +323,18 @@ Remaining for M2: a manual real-browser pass of the full capture gesture
 | Coordinate mapping bugs (DPR, zoom, scroll, iframes) | unit-test the math; start with the top frame |
 | Firefox capture API parity | spike before building the UX |
 | OCR runtime packaging | Linux: reuse the sherpa-shipped ONNX Runtime via `ort` `load-dynamic` (spike-verified); Windows/macOS: bundle a pinned ORT dylib (B2 decided 2026-10-07) |
-| Overlay interferes with the page | pointer-events off except a small toolbar; Esc/menu dismiss |
+| Viewer occludes the page while open | intended (modal over a static snapshot); backdrop/Esc close, no page interaction needed |
 | OCR quality on stylized UI | VLM fallback later; report misses honestly |
 
 ## 7. Open questions
 
 1. OCR model set and license entry: `ppocrv6-tiny` is the provisional choice
    (README attribution entry pending; see §5.1).
-2. Iframe overlay strategy: top-frame vs per-frame rendering.
+2. 翻译此图片 matches `document.images` in the top frame; images inside
+   cross-origin iframes fall back to the full-viewport capture (or the result
+   page) — acceptable, revisit only if it hurts.
 3. PDF viewer (no content script): `result.html` panel fallback enough?
 4. Whether the response should also carry a whole-image reading (VLM) for
    documents, or stay block-only in v1.
+5. Desktop region screenshot (B): portal (Wayland) vs X11 selection, and
+   whether the card shows原文/译文 pairs or only the translation.
