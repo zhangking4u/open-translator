@@ -1008,11 +1008,23 @@ try {
              !button.classList.contains("ot-reading-pending")
                ? button.querySelector(".ot-reading-text").textContent
                : null;
-           return { head: head ? head.textContent : null, button: buttonText };
+           const link = document.querySelector("#footlinks li:last-child a");
+           const linkNode = link && link.nextElementSibling;
+           const linkText =
+             linkNode &&
+             linkNode.dataset.otReadingTranslation === "1" &&
+             !linkNode.classList.contains("ot-reading-pending")
+               ? linkNode.querySelector(".ot-reading-text").textContent
+               : null;
+           return {
+             head: head ? head.textContent : null,
+             button: buttonText,
+             link: linkText,
+           };
          })()`,
         { contextId: isolated.id }
       );
-      if (footerState && footerState.head && footerState.button) break;
+      if (footerState && footerState.head && footerState.button && footerState.link) break;
       footerState = null;
       await sleep(200);
     }

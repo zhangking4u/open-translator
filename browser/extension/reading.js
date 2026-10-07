@@ -20,8 +20,9 @@
   const PRIMARY =
     "h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, figcaption, dd, dt, summary";
   const CONTAINER = "div, section, article, main";
-  // Buttons are page UI labels everywhere; spans/links only inside nav/header
-  // (menu labels), so body links never split a paragraph.
+  // Buttons are page UI labels everywhere; spans/links only inside
+  // nav/header/footer (menu and footer link labels), so body links never
+  // split a paragraph and a single-link item is not mistaken for a UI cluster.
   const LABEL = "button, [role='button']";
   const CHROME_LABEL = "span, a, [role='link']";
   const SKIP_CLOSEST =
@@ -505,7 +506,7 @@
       if (walkCandidates(child)) claimed = true;
     }
 
-    const inChrome = element.closest("nav, header") !== null;
+    const inChrome = element.closest("nav, header, footer") !== null;
     const isPrimary =
       element.matches(PRIMARY) ||
       element.matches(LABEL) ||
