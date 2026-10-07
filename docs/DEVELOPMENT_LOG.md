@@ -2174,6 +2174,18 @@ dmg script takes `ORT_DYLIB`, and both dev install scripts fetch the runtime
 on first run (cached). The deb still reuses the sherpa-shipped
 `libonnxruntime.so`.
 
+Extension screenshot UX (2026-10-07, M2): the 截图翻译页面 context menu item and
+the `screenshot-translate` command (`Alt+Shift+S`) capture the visible tab
+(`activeTab` + `tabs.captureVisibleTab`), POST `/translate/image` and render
+the blocks through a click-through DOM overlay in the content script
+(`data-opentranslator="shot"`; toolbar 原文/译文 · 复制译文 · 关闭; scroll /
+resize / Esc dismiss; errors show a toast; no content script → `result.html`
+fallback). Blocks are positioned from their quads divided by
+`imageWidth / innerWidth`, covering DPR and page zoom. `web-ext lint` is clean
+and the Chrome e2e grew five checks against a mock `/translate/image`
+(fetch → deliver → overlay render/toggle/close, error toast); the
+`captureVisibleTab` gesture itself stays a manual check.
+
 
 ## Sprint 6
 

@@ -225,12 +225,35 @@ for `onnxruntime.dll`/`libonnxruntime.dylib` there, which is the hook the B2
 installer bundle will use. `translator-core` gained
 `paths::default_ocr_model_dir()` and the `ocr_model_dir` setting.
 
-Still pending: the extension capture/overlay UX (M2). The B2 runtime bundle
-landed 2026-10-07: the Windows zip and macOS dmg carry a pinned ONNX Runtime
-1.28.2 (SHA-256 verified in the release workflow) that the engine auto-loads
-next to the executable; the deb keeps reusing the sherpa-shipped
+The extension capture/overlay UX landed the same day (§5.5). The B2 runtime
+bundle landed 2026-10-07: the Windows zip and macOS dmg carry a pinned ONNX
+Runtime 1.28.2 (SHA-256 verified in the release workflow) that the engine
+auto-loads next to the executable; the deb keeps reusing the sherpa-shipped
 `libonnxruntime.so`, and the local install scripts fetch the runtime on first
 run.
+
+### 5.5 Extension UX landed (2026-10-07)
+
+- Trigger: the 截图翻译页面 context menu item and the `screenshot-translate`
+  command (`Alt+Shift+S`); both run from a user gesture, so the new
+  `activeTab` permission grants `tabs.captureVisibleTab`.
+- Background: `translateImage` POSTs the PNG data URL to
+  `/translate/image` with the stored source/target; `deliverImageResult`
+  sends `screenshot-result` to the content script or falls back to
+  `result.html` with the recognized text when no content script exists
+  (PDF viewer). Service errors (including `ocr_unavailable`) are mapped to
+  Chinese messages.
+- Content script: a click-through fixed overlay (`data-opentranslator="shot"`)
+  positions each block from its quad divided by `imageWidth / innerWidth`
+  (covers DPR and page zoom); the toolbar toggles 原文/译文, copies the
+  translations and closes; scroll, resize and Esc dismiss it (the screenshot
+  is stale); errors show a toast. `web-ext lint` reports zero warnings.
+- E2E: `browser/test-chrome.mjs` runs a mock `/translate/image` and asserts
+  fetch → deliver → overlay render/toggle/close and the error toast;
+  `captureVisibleTab` itself needs a user gesture and remains a manual check.
+
+Remaining for M2: a manual real-browser pass of the full capture gesture
+(including DRM/black-frame behavior) and Firefox parity.
 
 ## 6. Risks
 
