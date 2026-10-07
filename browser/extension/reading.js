@@ -1,0 +1,544 @@
+"use strict";
+
+// Bilingual reading mode (网页翻译): inserts a translation under each page
+// block while keeping the original text. Passive by design — it never opens
+// the selection/typing bubbles, never replaces the original, and never writes
+// translation history (record: false). Driven by the popup toggle
+// (`readingEnabled`) and the per-site opt-out (`disabledSites`); top frame
+// only in v1 (see docs/READING_TRANSLATION.md §5).
+
+(() => {
+  const api = globalThis.browser ?? globalThis.chrome;
+
+  const DEFAULTS = {
+    readingEnabled: false,
+    target: "zh",
+    disabledSites: [],
+  };
+
+  const SELECTOR = "h1, h2, h3, h4, h5, h6, p, li, blockquote, td, figcaption";
+  const SKIP_CLOSEST =
+    "[data-ot-reading], nav, footer, header, aside, pre, code, script, style, noscript, textarea, select, [contenteditable], [translate=no], .ot-reading-translation";
+  const MIN_CHARS = 12;
+  const MAX_NEW_PER_BATCH = 20;
+  const CJK_TARGET = /^(zh|ja|ko)/;
+
+  const STYLE_ID = "ot-reading-style";
+  const STYLE = `
+.ot-reading-translation {
+  display: block;
+  margin: 2px 0 10px;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid #4a90d9;
+  color: #3c3c40;
+  font-size: 0.96em;
+  line-height: 1.6;
+}
+.ot-reading-translation .ot-reading-actions {
+  margin-left: 8px;
+  opacity: 0;
+  transition: opacity .12s ease;
+  user-select: none;
+}
+.ot-reading-translation:hover .ot-reading-actions,
+.ot-reading-translation:focus-within .ot-reading-actions {
+  opacity: 1;
+}
+.ot-reading-translation .ot-reading-actions button {
+  font: inherit;
+  font-size: 0.85em;
+  margin-left: 4px;
+  padding: 1px 8px;
+  cursor: pointer;
+  color: #3c3c40;
+  background: rgba(120, 120, 128, .12);
+  border: 0;
+  border-radius: 7px;
+}
+.ot-reading-translation .ot-reading-actions button:hover {
+  background: rgba(120, 120, 128, .22);
+}
+.ot-reading-translation.ot-reading-pending {
+  color: #8e8e93;
+  border-left-color: #c7c7cc;
+}
+.ot-reading-translation.ot-reading-error {
+  color: #d70015;
+  border-left-color: #d70015;
+}
+.ot-reading-translation.ot-reading-error .ot-reading-text {
+  cursor: pointer;
+}
+@media (prefers-color-scheme: dark) {
+  .ot-reading-translation { color: #c9c9ce; border-left-color: #5b9bd5; }
+  .ot-reading-translation .ot-reading-actions button { color: #c9c9ce; background: rgba(235, 235, 245, .16); }
+  .ot-reading-translation .ot-reading-actions button:hover { background: rgba(235, 235, 245, .28); }
+  .ot-reading-translation.ot-reading-pending { color: #8e8e93; border-left-color: #48484a; }
+  .ot-reading-translation.ot-reading-error { color: #ff6961; border-left-color: #ff6961; }
+}
+`;
+
+  let enabled = DEFAULTS.readingEnabled;
+  let target = DEFAULTS.target;
+  let disabledSites = [];
+  let started = false;
+  let observer = null;
+  let intersection = null;
+
+  const cache = new Map();
+  const queue = [];
+  let queuedElements = new WeakSet();
+  const offscreen = new Map();
+  let inFlight = false;
+
+  const stats = {
+    queued: 0,
+    done: 0,
+    failed: 0,
+    cacheHits: 0,
+    pruned: 0,
+    batches: 0,
+  };
+
+  // Test hook (isolated world): the CDP e2e waits on these numbers.
+  globalThis.__OT_READING__ = {
+    stats,
+    get enabled() {
+      return enabled;
+    },
+    get active() {
+      return started;
+    },
+    get pending() {
+      return queue.length + (inFlight ? 1 : 0);
+    },
+  };
+
+  function siteDisabled() {
+    return disabledSites.includes(location.hostname);
+  }
+
+  function shouldRun() {
+    return enabled && !siteDisabled() && window.top === window;
+  }
+
+  function cjkRatio(text) {
+    const letters = text.match(/\p{Letter}/gu) || [];
+    if (letters.length === 0) return 0;
+    const cjk = text.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || [];
+    return cjk.length / letters.length;
+  }
+
+  function inViewport(element) {
+    const rect = element.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < window.innerHeight && rect.height > 0;
+  }
+
+  function targetLanguageBlock(element) {
+    const lang = (element.lang || document.documentElement.lang || "").toLowerCase();
+    if (!lang) return false;
+
+    const primary = target.toLowerCase().split(/[-_]/)[0];
+    return lang.split(/[-_]/)[0] === primary;
+  }
+
+  function nodeFor(element) {
+    if (element.tagName === "LI" || element.tagName === "TD") {
+      return (
+        [...element.children].find(
+          (child) => child.dataset.otReadingTranslation === "1"
+        ) || null
+      );
+    }
+
+    const next = element.nextElementSibling;
+    return next && next.dataset.otReadingTranslation === "1" ? next : null;
+  }
+
+  /// Creates the injection skeleton ("翻译中…") next to the block.
+  function skeletonFor(element) {
+    let node = nodeFor(element);
+    if (node) return node;
+
+    node = document.createElement("div");
+    node.className = "ot-reading-translation ot-reading-pending";
+    node.dataset.otReadingTranslation = "1";
+    node.lang = target;
+
+    const text = document.createElement("span");
+    text.className = "ot-reading-text";
+    text.textContent = "翻译中…";
+
+    const actions = document.createElement("span");
+    actions.className = "ot-reading-actions";
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.textContent = "复制";
+
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.textContent = "重译";
+
+    actions.append(copy, retry);
+    node.append(text, actions);
+
+    copy.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const translation = text.textContent;
+      if (!translation) return;
+      navigator.clipboard.writeText(translation).then(() => {
+        copy.textContent = "已复制";
+        setTimeout(() => {
+          copy.textContent = "复制";
+        }, 1200);
+      });
+    });
+    retry.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      retryEntry(element);
+    });
+
+    if (element.tagName === "LI" || element.tagName === "TD") {
+      element.appendChild(node);
+    } else {
+      element.after(node);
+    }
+
+    return node;
+  }
+
+  function retryEntry(element) {
+    const text = (element.innerText || "").replace(/\s+/g, " ").trim();
+    if (!text) return;
+
+    const node = nodeFor(element);
+    if (node) {
+      node.classList.remove("ot-reading-error");
+      node.classList.add("ot-reading-pending");
+      node.querySelector(".ot-reading-text").textContent = "翻译中…";
+    }
+
+    cache.delete(text);
+    queuedElements.add(element);
+    enqueue([
+      {
+        element,
+        text,
+        viewport: inViewport(element),
+        queuedAt: performance.now(),
+      },
+    ]);
+  }
+
+  /// Renders the final translation into the block's node.
+  function applyTranslation(element, text, translation) {
+    const node = skeletonFor(element);
+    node.dataset.otReadingSource = text;
+    node.classList.remove("ot-reading-pending", "ot-reading-error");
+    node.querySelector(".ot-reading-text").textContent = translation;
+  }
+
+  function applyError(element, message) {
+    const node = skeletonFor(element);
+    node.classList.remove("ot-reading-pending");
+    node.classList.add("ot-reading-error");
+    node.querySelector(".ot-reading-text").textContent =
+      "翻译失败" + (message ? "：" + message : "") + "（点击重译）";
+  }
+
+  /// Drops metadata the engine may copy from its own instructions.
+  function cleanTranslation(raw) {
+    const text = String(raw || "").trim();
+    if (!text) return text;
+
+    const lines = text.split("\n");
+    const cleaned = lines.filter((line, index) => {
+      const edge = index === 0 || index === lines.length - 1;
+      return !(edge && /^(术语表|必须使用以下术语|Terminology \()/.test(line.trim()));
+    });
+
+    const result = cleaned.join("\n").trim();
+    return result || text;
+  }
+
+  function noteSkip(reason) {
+    stats["skip_" + reason] = (stats["skip_" + reason] || 0) + 1;
+  }
+
+  /// Collects one block; null when skipped or already handled. Idempotent:
+  /// a block whose injected node no longer matches its text re-queues.
+  function consider(element) {
+    if (queuedElements.has(element)) return null;
+    if (element.closest(SKIP_CLOSEST)) {
+      noteSkip("ancestor");
+      return null;
+    }
+    if (element.offsetParent === null) {
+      noteSkip("hidden");
+      return null;
+    }
+
+    const text = (element.innerText || "").replace(/\s+/g, " ").trim();
+    if (!text) {
+      noteSkip("empty");
+      return null;
+    }
+    if (text.length < MIN_CHARS) {
+      noteSkip("short");
+      return null;
+    }
+    if (CJK_TARGET.test(target) && cjkRatio(text) > 0.5) {
+      noteSkip("target-language");
+      return null;
+    }
+    if (targetLanguageBlock(element)) {
+      noteSkip("target-language");
+      return null;
+    }
+
+    const existing = nodeFor(element);
+    if (existing && existing.dataset.otReadingSource === text) return null;
+
+    element.dataset.otReadingBlock = "1";
+    queuedElements.add(element);
+    return {
+      element,
+      text,
+      viewport: inViewport(element),
+      queuedAt: performance.now(),
+    };
+  }
+
+  function enqueue(entries) {
+    for (const entry of entries) {
+      queue.push(entry);
+      stats.queued += 1;
+    }
+    if (entries.length > 0 && !inFlight) worker();
+  }
+
+  /// Viewport blocks go first; the rest are picked up by the intersection
+  /// observer when they approach the viewport, so a long article never
+  /// queues everything at once (the engine is serialized).
+  function schedule(entry) {
+    if (entry.viewport) {
+      enqueue([entry]);
+      return;
+    }
+
+    offscreen.set(entry.element, entry);
+    intersection.observe(entry.element);
+  }
+
+  function scan(root) {
+    const elements = root.querySelectorAll(SELECTOR);
+
+    for (const element of elements) {
+      const entry = consider(element);
+      if (entry) schedule(entry);
+    }
+  }
+
+  function pruneOrphans() {
+    for (const node of document.querySelectorAll("[data-ot-reading-translation]")) {
+      const parent = node.parentElement;
+      const inside = parent && parent.dataset.otReadingBlock === "1";
+      const after =
+        node.previousElementSibling &&
+        node.previousElementSibling.dataset.otReadingBlock === "1";
+
+      if (!inside && !after) {
+        node.remove();
+        stats.pruned += 1;
+      }
+    }
+  }
+
+  async function worker() {
+    if (inFlight) return;
+    inFlight = true;
+
+    try {
+      while (started && queue.length > 0) {
+        const entry = queue.shift();
+
+        if (!entry.element.isConnected) {
+          queuedElements.delete(entry.element);
+          continue;
+        }
+
+        const cached = cache.get(entry.text);
+        if (cached !== undefined) {
+          stats.cacheHits += 1;
+          applyTranslation(entry.element, entry.text, cached);
+          queuedElements.delete(entry.element);
+          continue;
+        }
+
+        skeletonFor(entry.element);
+
+        let result = null;
+        try {
+          result = await api.runtime.sendMessage({
+            type: "translate",
+            text: entry.text,
+            record: false,
+          });
+        } catch (error) {
+          result = null;
+        }
+
+        if (!started) return;
+
+        if (!result || !result.ok || !result.translation) {
+          stats.failed += 1;
+          applyError(entry.element, result && result.error);
+          queuedElements.delete(entry.element);
+          continue;
+        }
+
+        const translation = cleanTranslation(result.translation);
+        cache.set(entry.text, translation);
+        stats.done += 1;
+        applyTranslation(entry.element, entry.text, translation);
+        queuedElements.delete(entry.element);
+      }
+    } finally {
+      inFlight = false;
+      if (started && queue.length > 0) worker();
+    }
+  }
+
+  function observe() {
+    observer = new MutationObserver((records) => {
+      stats.batches += 1;
+
+      const additions = [];
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          if (
+            node.dataset.otReadingTranslation === "1" ||
+            node.closest("[data-ot-reading-block]")
+          ) {
+            continue;
+          }
+          if (node.matches(SELECTOR)) additions.push(node);
+          additions.push(...node.querySelectorAll(SELECTOR));
+        }
+      }
+
+      let budget = MAX_NEW_PER_BATCH;
+      for (const element of additions) {
+        if (budget <= 0) break;
+        budget -= 1;
+        const entry = consider(element);
+        if (entry) schedule(entry);
+      }
+
+      if (records.length > 0) pruneOrphans();
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    intersection = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          intersection.unobserve(entry.target);
+          const item = offscreen.get(entry.target);
+          if (item) {
+            offscreen.delete(entry.target);
+            enqueue([item]);
+          }
+        }
+      },
+      { rootMargin: "300px 0px" }
+    );
+  }
+
+  function injectStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = STYLE;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function start() {
+    if (started || !shouldRun()) return;
+
+    started = true;
+    injectStyle();
+    observe();
+    scan(document.body);
+  }
+
+  function stop() {
+    if (!started) return;
+
+    started = false;
+
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    if (intersection) {
+      intersection.disconnect();
+      intersection = null;
+    }
+
+    queue.length = 0;
+    offscreen.clear();
+    queuedElements = new WeakSet();
+
+    for (const element of document.querySelectorAll("[data-ot-reading-block]")) {
+      delete element.dataset.otReadingBlock;
+    }
+    for (const node of document.querySelectorAll("[data-ot-reading-translation]")) {
+      node.remove();
+    }
+
+    const style = document.getElementById(STYLE_ID);
+    if (style) style.remove();
+
+    cache.clear();
+  }
+
+  async function loadSettings() {
+    const settings = await api.storage.local.get(DEFAULTS);
+    enabled = Boolean(settings.readingEnabled);
+    target = settings.target || DEFAULTS.target;
+    disabledSites = Array.isArray(settings.disabledSites) ? settings.disabledSites : [];
+  }
+
+  api.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+
+    let restart = false;
+
+    if (changes.readingEnabled) {
+      enabled = Boolean(changes.readingEnabled.newValue);
+      restart = true;
+    }
+    if (changes.target && changes.target.newValue) {
+      if (started && changes.target.newValue !== target) restart = true;
+      target = changes.target.newValue;
+    }
+    if (changes.disabledSites && Array.isArray(changes.disabledSites.newValue)) {
+      disabledSites = changes.disabledSites.newValue;
+      restart = true;
+    }
+
+    if (!restart) return;
+
+    stop();
+    start();
+  });
+
+  loadSettings().then(() => start());
+})();

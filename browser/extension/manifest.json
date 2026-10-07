@@ -42,6 +42,7 @@
         "languages.js",
         "tokens.js",
         "dropdown.js",
+        "reading.js",
         "content.js"
       ]
     }

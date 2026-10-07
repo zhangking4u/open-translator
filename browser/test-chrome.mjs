@@ -877,6 +877,79 @@ try {
       { contextId: isolated.id }
     );
 
+    // Reading mode: enable it and expect a bilingual block injected next to
+    // the visible paragraph; disabling it must remove every injection.
+    await evaluate(
+      pageSession,
+      `(async () => {
+         const api = globalThis.browser ?? globalThis.chrome;
+         await api.storage.local.set({ readingEnabled: true });
+         return true;
+       })()`,
+      { contextId: isolated.id }
+    );
+
+    let readingText = null;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      readingText = await evaluate(
+        pageSession,
+        `(() => {
+           const node = document.querySelector(".ot-reading-translation");
+           const text = node && node.querySelector(".ot-reading-text");
+           return text ? text.textContent : null;
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (
+        readingText &&
+        readingText !== "翻译中…" &&
+        !readingText.startsWith("翻译失败")
+      ) {
+        break;
+      }
+      await sleep(200);
+    }
+    check(
+      "reading mode injects a bilingual block",
+      Boolean(readingText) &&
+        readingText !== "翻译中…" &&
+        !readingText.startsWith("翻译失败"),
+      readingText ?? "<none>"
+    );
+
+    const readingStats = await evaluate(
+      pageSession,
+      `(() => {
+         const reading = globalThis.__OT_READING__;
+         return reading
+           ? { active: reading.active, done: reading.stats.done }
+           : null;
+       })()`,
+      { contextId: isolated.id }
+    );
+    check(
+      "reading mode reports state",
+      Boolean(readingStats) && readingStats.active === true && readingStats.done > 0,
+      JSON.stringify(readingStats)
+    );
+
+    await evaluate(
+      pageSession,
+      `(async () => {
+         const api = globalThis.browser ?? globalThis.chrome;
+         await api.storage.local.set({ readingEnabled: false });
+         return true;
+       })()`,
+      { contextId: isolated.id }
+    );
+    await sleep(400);
+    const readingGone = await evaluate(
+      pageSession,
+      `document.querySelector(".ot-reading-translation") === null`,
+      { contextId: isolated.id }
+    );
+    check("reading mode removes injections when disabled", readingGone === true);
+
     // Auto-translate: enable the setting, hide the bubble, select text and
     // dispatch a mouseup; the content script should translate after ~400ms.
     await evaluate(

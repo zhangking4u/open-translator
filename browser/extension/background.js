@@ -8,6 +8,7 @@ const DEFAULTS = {
   source: "auto",
   target: "zh",
   autoTranslate: false,
+  readingEnabled: false,
   disabledSites: [],
 };
 
@@ -584,7 +585,7 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "translate") {
-    translate(message.text).then((result) => sendResponse(result));
+    translate(message.text, message.record !== false).then((result) => sendResponse(result));
     return true;
   }
 
