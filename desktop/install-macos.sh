@@ -47,6 +47,31 @@ mkdir -p "$APP_DIR/Contents/MacOS"
 cp "$BIN" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$SCRIPT_DIR/../packaging/macos/Info.plist" "$APP_DIR/Contents/Info.plist"
 
+# Pinned ONNX Runtime for screenshot OCR, loaded from the directory next to
+# the binary at runtime. (ONNX Runtime 1.28.2 has no x86_64 macOS build.)
+ORT_VERSION="1.28.2"
+ORT_SHA256="c4fceacfc53765d0869dc9180c31ec91054d149017a99d1e80ffe28dc79596de"
+ORT_DYLIB="$APP_DIR/Contents/MacOS/libonnxruntime.dylib"
+ORT_ARCH="$(uname -m)"
+
+if [ ! -f "$ORT_DYLIB" ]; then
+    if [ "$ORT_ARCH" = "arm64" ]; then
+        echo "Downloading ONNX Runtime $ORT_VERSION for screenshot OCR..."
+        ORT_TMP="$(mktemp -d)"
+        ORT_ARCHIVE="$ORT_TMP/onnxruntime-osx-arm64-$ORT_VERSION.tgz"
+        curl -L -o "$ORT_ARCHIVE" "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/onnxruntime-osx-arm64-$ORT_VERSION.tgz"
+        echo "$ORT_SHA256  $ORT_ARCHIVE" | shasum -a 256 -c -
+        tar -xzf "$ORT_ARCHIVE" -C "$ORT_TMP"
+        for dylib in "$ORT_TMP/onnxruntime-osx-arm64-$ORT_VERSION/lib/libonnxruntime."*.dylib; do
+            cp "$dylib" "$ORT_DYLIB"
+            break
+        done
+        rm -rf "$ORT_TMP"
+    else
+        echo "warning: no ONNX Runtime build for macOS $ORT_ARCH at $ORT_VERSION; screenshot OCR stays unavailable"
+    fi
+fi
+
 mkdir -p "$HOME/Library/LaunchAgents"
 cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

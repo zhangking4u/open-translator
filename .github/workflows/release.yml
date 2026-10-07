@@ -25,6 +25,24 @@ jobs:
         env:
           OPEN_TRANSLATOR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: cargo build --release
+      - name: Bundle ONNX Runtime (OCR)
+        # Pinned runtime for screenshot OCR; the client loads it from the
+        # directory next to the executable.
+        shell: pwsh
+        env:
+          ORT_VERSION: "1.28.2"
+          ORT_SHA256: "c4eedd29489d5feca21866d054638416f3655bf6b18851b3b6b85c8313e95c35"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $archive = "onnxruntime-win-x64-$env:ORT_VERSION.zip"
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/$archive"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:ORT_SHA256) { throw "ONNX Runtime SHA-256 mismatch: $hash" }
+          Expand-Archive -Path $archive -DestinationPath ort
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item "ort\onnxruntime-win-x64-$env:ORT_VERSION\lib\onnxruntime.dll" package\
       - name: Package zip
         shell: pwsh
         run: |
@@ -106,6 +124,24 @@ jobs:
         env:
           OPEN_TRANSLATOR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: cargo build --release
+      - name: Bundle ONNX Runtime (OCR)
+        # Pinned runtime for screenshot OCR; the client loads it from the
+        # directory next to the binary inside the app bundle. 1.28.2 ships an
+        # arm64 macOS build only, matching the arm64 runner artifact.
+        env:
+          ORT_VERSION: "1.28.2"
+          ORT_SHA256: "c4fceacfc53765d0869dc9180c31ec91054d149017a99d1e80ffe28dc79596de"
+        run: |
+          set -euo pipefail
+          ARCH="$(uname -m)"
+          archive="onnxruntime-osx-$ARCH-$ORT_VERSION.tgz"
+          curl -L -o "$archive" "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$archive"
+          echo "$ORT_SHA256  $archive" | shasum -a 256 -c -
+          tar -xzf "$archive"
+          for dylib in onnxruntime-osx-$ARCH-$ORT_VERSION/lib/libonnxruntime.*.dylib; do
+            echo "ORT_DYLIB=$PWD/$dylib" >> "$GITHUB_ENV"
+            break
+          done
       - name: Package dmg
         env:
           VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}

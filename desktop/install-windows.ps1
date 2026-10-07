@@ -106,6 +106,27 @@ if (-not (Test-Path $Exe)) {
     throw "popup binary not found after build: $Exe"
 }
 
+# Pinned ONNX Runtime for screenshot OCR, next to the executable (the client
+# loads it from there). Downloaded once; release installers ship it already.
+$OrtVersion = "1.28.2"
+$OrtSha256 = "c4eedd29489d5feca21866d054638416f3655bf6b18851b3b6b85c8313e95c35"
+$OrtTarget = Join-Path $BuildDir "release\onnxruntime.dll"
+
+if (-not (Test-Path $OrtTarget)) {
+    Write-Host "Downloading ONNX Runtime $OrtVersion for screenshot OCR..."
+    $ProgressPreference = "SilentlyContinue"
+    $OrtArchive = Join-Path $env:TEMP "onnxruntime-win-x64-$OrtVersion.zip"
+    Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$OrtVersion/onnxruntime-win-x64-$OrtVersion.zip" -OutFile $OrtArchive
+    $hash = (Get-FileHash $OrtArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($hash -ne $OrtSha256) {
+        throw "ONNX Runtime SHA-256 mismatch: $hash"
+    }
+    $OrtExtract = Join-Path $env:TEMP "onnxruntime-win-x64-$OrtVersion"
+    Remove-Item $OrtExtract -Recurse -Force -ErrorAction SilentlyContinue
+    Expand-Archive -Path $OrtArchive -DestinationPath $OrtExtract
+    Copy-Item (Join-Path $OrtExtract "onnxruntime-win-x64-$OrtVersion\lib\onnxruntime.dll") $OrtTarget -Force
+}
+
 $ModelDir = Join-Path $env:LOCALAPPDATA "open-translator\models"
 $ModelFile = Join-Path $ModelDir "hy-mt1.5-1.8b-q4_k_m.gguf"
 

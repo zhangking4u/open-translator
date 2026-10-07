@@ -35,6 +35,16 @@ mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/OpenTranslator"
 cp "$REPO_ROOT/packaging/macos/Info.plist" "$APP/Contents/Info.plist"
 
+# Optional: the pinned ONNX Runtime used by screenshot OCR, loaded from the
+# directory next to the binary at runtime.
+if [ -n "${ORT_DYLIB:-}" ]; then
+    if [ ! -f "$ORT_DYLIB" ]; then
+        echo "ONNX Runtime dylib not found: $ORT_DYLIB" >&2
+        exit 1
+    fi
+    cp "$ORT_DYLIB" "$APP/Contents/MacOS/libonnxruntime.dylib"
+fi
+
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
 

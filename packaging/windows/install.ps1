@@ -54,6 +54,24 @@ if (Test-Path $LegacyExe) {
     Remove-Item $LegacyExe -Force -ErrorAction SilentlyContinue
 }
 
+# Screenshot-OCR runtime shipped next to the executable; a stopping process
+# can keep it loaded briefly, so retry like the binary copy above.
+$OrtSource = Join-Path $PSScriptRoot "onnxruntime.dll"
+if (Test-Path $OrtSource) {
+    $deadline = (Get-Date).AddSeconds(10)
+    while ($true) {
+        try {
+            Copy-Item $OrtSource (Join-Path $InstallDir "onnxruntime.dll") -Force -ErrorAction Stop
+            break
+        } catch {
+            if ((Get-Date) -ge $deadline) {
+                throw
+            }
+            Start-Sleep -Milliseconds 200
+        }
+    }
+}
+
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($Startup)
 $shortcut.TargetPath = $Exe
