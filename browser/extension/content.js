@@ -1531,51 +1531,48 @@ function onTypeInput(event) {
   }, typeDelay);
 }
 
-// Screenshot translation overlay: translated blocks laid over the captured
-// viewport. Coordinates arrive in image pixels; the capture is the viewport
-// at devicePixelRatio and page zoom, so dividing by imageWidth / innerWidth
-// maps them onto fixed CSS pixels without scroll math. The screenshot is a
-// moment in time, so scrolling or resizing dismisses the overlay.
+// Image translation viewer: the background captures the viewport for a
+// right-clicked image; this script crops the capture to the image's rectangle
+// (canvas keeps the data URL untainted) and opens a modal viewer that draws
+// each translation over the text's original position — the camera-translation
+// metaphor users expect from a static image. A list mode serves long
+// documents; hovering a box shows its original text in the footer.
 
-let shotHost = null;
-let shotBlocks = null;
-let shotImageWidth = 0;
-let shotShowOriginal = false;
-let shotToastTimer = null;
+let imageViewerHost = null;
+let imageViewerCrop = null;
+let imageViewerBlocks = null;
+let imageViewerShowOriginal = false;
+let imageViewerListMode = false;
+let imageViewerToastTimer = null;
 
-function ensureShotHost() {
-  if (shotHost) return shotHost.shadowRoot;
+function ensureImageViewer() {
+  if (imageViewerHost) return imageViewerHost.shadowRoot;
 
-  shotHost = document.createElement("div");
-  shotHost.dataset.opentranslator = "shot";
-  shotHost.style.position = "fixed";
-  shotHost.style.inset = "0";
-  shotHost.style.zIndex = "2147483647";
-  shotHost.style.pointerEvents = "none";
-  shotHost.style.display = "none";
+  imageViewerHost = document.createElement("div");
+  imageViewerHost.dataset.opentranslator = "image-viewer";
+  imageViewerHost.style.position = "fixed";
+  imageViewerHost.style.inset = "0";
+  imageViewerHost.style.zIndex = "2147483647";
+  imageViewerHost.style.display = "none";
 
-  const shadow = shotHost.attachShadow({ mode: "open" });
+  const shadow = imageViewerHost.attachShadow({ mode: "open" });
 
   const style = document.createElement("style");
   style.textContent = [
     (globalThis.OT_TOKENS_CSS || ""),
-    ".shot-layer { position: absolute; inset: 0; overflow: hidden; }",
-    ".shot-box { position: absolute; padding: 1px 5px; border-radius: 4px;",
-    "  background: rgba(15, 17, 21, .78); color: #fff; font-family: var(--ot-font);",
-    "  line-height: 1.3; white-space: pre-wrap; word-break: break-word;",
-    "  width: max-content; max-width: 60vw;",
-    "  box-shadow: 0 0 0 .5px rgba(255, 255, 255, .25); }",
-    ".shot-toolbar { position: fixed; top: 12px; right: 12px; display: flex;",
-    "  align-items: center; gap: 4px; padding: 4px 6px; border-radius: 10px;",
-    "  background: var(--ot-bg-solid); color: var(--ot-label);",
-    "  font-family: var(--ot-font); font-size: 12.5px;",
-    "  box-shadow: inset 0 0 0 .5px var(--ot-hairline), var(--ot-shadow);",
-    "  pointer-events: auto; }",
+    ".viewer-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .72);",
+    "  cursor: zoom-out; }",
+    ".viewer-shell { position: absolute; inset: 0; display: flex; flex-direction: column;",
+    "  align-items: center; justify-content: center; gap: 10px; padding: 20px;",
+    "  pointer-events: none; }",
+    ".viewer-toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 6px;",
+    "  border-radius: 10px; background: var(--ot-bg-solid); color: var(--ot-label);",
+    "  font-family: var(--ot-font); font-size: 12.5px; pointer-events: auto;",
+    "  box-shadow: inset 0 0 0 .5px var(--ot-hairline), var(--ot-shadow); }",
     "@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {",
-    "  .shot-toolbar { background: var(--ot-bg-material); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }",
+    "  .viewer-toolbar { background: var(--ot-bg-material); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); }",
     "}",
-    ".shot-toolbar[hidden] { display: none; }",
-    ".shot-title { color: var(--ot-label-2); padding: 0 4px 0 2px; }",
+    ".viewer-title { color: var(--ot-label-2); padding: 0 4px 0 2px; }",
     "button { font: inherit; font-size: 12.5px; padding: 3px 8px; min-height: 24px;",
     "  border: 0; border-radius: var(--ot-radius-sm); background: none; cursor: pointer;",
     "  color: var(--ot-label-2); display: inline-flex; align-items: center; gap: 6px;",
@@ -1583,72 +1580,134 @@ function ensureShotHost() {
     "button:hover { background: var(--ot-fill); }",
     "button:active { background: var(--ot-fill-hover); }",
     "button:focus-visible { outline: 2px solid var(--ot-accent); outline-offset: 1px; }",
-    ".shot-toast { position: fixed; top: 12px; right: 12px; max-width: 340px;",
+    ".viewer-stage { position: relative; line-height: 0; pointer-events: auto;",
+    "  box-shadow: 0 12px 48px rgba(0, 0, 0, .45); }",
+    ".viewer-image { display: block; max-width: min(92vw, 1200px); max-height: 72vh; }",
+    ".viewer-boxes { position: absolute; inset: 0; pointer-events: none; }",
+    ".viewer-box { position: absolute; padding: 1px 5px; border-radius: 4px;",
+    "  background: rgba(15, 17, 21, .85); color: #fff; font-family: var(--ot-font);",
+    "  line-height: 1.3; white-space: pre-wrap; word-break: break-word;",
+    "  width: max-content; max-width: 70vw; pointer-events: auto; cursor: copy; }",
+    ".viewer-box:hover { outline: 2px solid var(--ot-accent); outline-offset: 1px; }",
+    ".viewer-footer { min-height: 18px; max-width: min(92vw, 900px);",
+    "  color: rgba(255, 255, 255, .92); font-family: var(--ot-font); font-size: 12.5px;",
+    "  line-height: 1.4; text-align: center; pointer-events: none;",
+    "  text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }",
+    ".viewer-list { display: none; width: min(92vw, 420px); max-height: 42vh; overflow: auto;",
+    "  padding: 10px 12px; border-radius: var(--ot-radius); background: var(--ot-bg-solid);",
+    "  color: var(--ot-label); font-family: var(--ot-font); font-size: 13px;",
+    "  pointer-events: auto;",
+    "  box-shadow: inset 0 0 0 .5px var(--ot-hairline), var(--ot-shadow); }",
+    ".viewer-list.open { display: flex; flex-direction: column; gap: 8px; }",
+    ".image-item { display: flex; flex-direction: column; gap: 2px; }",
+    ".image-translation { font-size: 13.5px; line-height: 1.45; white-space: pre-wrap;",
+    "  word-break: break-word; }",
+    ".image-original { color: var(--ot-label-2); font-size: 12px; line-height: 1.4;",
+    "  opacity: .8; white-space: pre-wrap; word-break: break-word; }",
+    ".image-toast { position: fixed; top: 16px; right: 16px; max-width: 340px;",
     "  padding: 8px 12px; border-radius: 10px; background: var(--ot-bg-solid);",
     "  color: var(--ot-label); font-family: var(--ot-font); font-size: 13px;",
     "  line-height: 1.5; cursor: pointer; pointer-events: auto;",
     "  box-shadow: inset 0 0 0 .5px var(--ot-hairline), var(--ot-shadow); }",
-    ".shot-toast[hidden] { display: none; }",
+    ".image-toast[hidden] { display: none; }",
     "@media (prefers-reduced-motion: reduce) { button { transition: none; } }",
   ].join("\n");
 
-  const layer = document.createElement("div");
-  layer.className = "shot-layer";
+  const backdrop = document.createElement("div");
+  backdrop.className = "viewer-backdrop";
+  backdrop.addEventListener("click", hideImageViewer);
+
+  const shell = document.createElement("div");
+  shell.className = "viewer-shell";
 
   const toolbar = document.createElement("div");
-  toolbar.className = "shot-toolbar";
+  toolbar.className = "viewer-toolbar";
 
   const title = document.createElement("span");
-  title.className = "shot-title";
-  title.textContent = "截图翻译";
+  title.className = "viewer-title";
+  title.textContent = "图片翻译";
 
-  const toggleButton = document.createElement("button");
-  toggleButton.className = "shot-toggle";
-  toggleButton.textContent = "显示原文";
-  toggleButton.addEventListener("click", () => {
-    shotShowOriginal = !shotShowOriginal;
-    toggleButton.textContent = shotShowOriginal ? "显示译文" : "显示原文";
-    renderShotBlocks();
+  const modeButton = document.createElement("button");
+  modeButton.className = "viewer-mode";
+  modeButton.textContent = "显示原文";
+  modeButton.addEventListener("click", () => {
+    imageViewerShowOriginal = !imageViewerShowOriginal;
+    modeButton.textContent = imageViewerShowOriginal ? "显示译文" : "显示原文";
+    renderImageViewerBoxes();
+  });
+
+  const listButton = document.createElement("button");
+  listButton.className = "viewer-list-toggle";
+  listButton.textContent = "列表";
+  listButton.addEventListener("click", () => {
+    setImageViewerList(!imageViewerListMode);
   });
 
   const copyButton = document.createElement("button");
-  copyButton.className = "shot-copy";
+  copyButton.className = "viewer-copy";
   const copyLabel = document.createElement("span");
   copyLabel.textContent = "复制译文";
   copyButton.append(createIcon("copy"), copyLabel);
   copyButton.addEventListener("click", () => {
-    const text = (shotBlocks || [])
+    const text = (imageViewerBlocks || [])
       .map((block) => block.translation || "")
       .filter(Boolean)
       .join("\n");
 
     navigator.clipboard.writeText(text).then(() => {
-      const label = copyButton.querySelector("span");
-      if (!label) return;
-      label.textContent = "已复制";
+      copyLabel.textContent = "已复制";
       setTimeout(() => {
-        label.textContent = "复制译文";
+        copyLabel.textContent = "复制译文";
       }, 1200);
     });
   });
 
   const closeButton = document.createElement("button");
-  closeButton.className = "shot-close";
+  closeButton.className = "viewer-close";
   closeButton.append(createIcon("close"));
   closeButton.title = "关闭";
-  closeButton.addEventListener("click", hideShotOverlay);
+  closeButton.addEventListener("click", hideImageViewer);
 
-  toolbar.append(title, toggleButton, copyButton, closeButton);
+  toolbar.append(title, modeButton, listButton, copyButton, closeButton);
+
+  const stage = document.createElement("div");
+  stage.className = "viewer-stage";
+
+  const image = document.createElement("img");
+  image.className = "viewer-image";
+  image.alt = "待翻译的图片";
+
+  const boxes = document.createElement("div");
+  boxes.className = "viewer-boxes";
+
+  stage.append(image, boxes);
+
+  const footer = document.createElement("div");
+  footer.className = "viewer-footer";
+
+  const list = document.createElement("div");
+  list.className = "viewer-list";
 
   const toast = document.createElement("div");
-  toast.className = "shot-toast";
+  toast.className = "image-toast";
   toast.hidden = true;
-  toast.addEventListener("click", hideShotOverlay);
+  toast.addEventListener("click", hideImageViewer);
 
-  shadow.append(style, layer, toolbar, toast);
-  document.documentElement.append(shotHost);
+  shell.append(toolbar, stage, footer, list);
+  shadow.append(style, backdrop, shell, toast);
+  document.documentElement.append(imageViewerHost);
 
   return shadow;
+}
+
+function setImageViewerList(open) {
+  imageViewerListMode = open;
+
+  const shadow = ensureImageViewer();
+  shadow.querySelector(".viewer-list").classList.toggle("open", open);
+
+  const button = shadow.querySelector(".viewer-list-toggle");
+  button.textContent = open ? "贴图" : "列表";
 }
 
 function quadBoundingBox(quad) {
@@ -1673,78 +1732,183 @@ function quadBoundingBox(quad) {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-function renderShotBlocks() {
-  const shadow = ensureShotHost();
-  const layer = shadow.querySelector(".shot-layer");
-  layer.textContent = "";
+// Visible part of the image element matching `srcUrl`, in viewport CSS pixels.
+function imageElementRect(srcUrl) {
+  if (!srcUrl) return null;
 
-  const scale =
-    shotImageWidth > 0 && window.innerWidth > 0 ? shotImageWidth / window.innerWidth : 1;
+  const target = [...document.images].find(
+    (image) => image.currentSrc === srcUrl || image.src === srcUrl
+  );
+  if (!target) return null;
 
-  for (const block of shotBlocks || []) {
+  const rect = target.getBoundingClientRect();
+  const left = Math.max(0, rect.left);
+  const top = Math.max(0, rect.top);
+  const right = Math.min(window.innerWidth, rect.right);
+  const bottom = Math.min(window.innerHeight, rect.bottom);
+  if (right - left < 1 || bottom - top < 1) return null;
+
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+// Crops the captured viewport to `rect` (CSS pixels) and returns a PNG data
+// URL. The capture is the viewport at devicePixelRatio and page zoom, so the
+// scale is bitmap width / innerWidth.
+async function cropToImage(dataUrl, rect) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const bitmap = await createImageBitmap(blob);
+
+  const scale = window.innerWidth > 0 ? bitmap.width / window.innerWidth : 1;
+  const x = Math.max(0, Math.round(rect.x * scale));
+  const y = Math.max(0, Math.round(rect.y * scale));
+  const width = Math.min(Math.max(1, Math.round(rect.width * scale)), bitmap.width - x);
+  const height = Math.min(Math.max(1, Math.round(rect.height * scale)), bitmap.height - y);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext("2d").drawImage(bitmap, x, y, width, height, 0, 0, width, height);
+  if (bitmap.close) bitmap.close();
+
+  return canvas.toDataURL("image/png");
+}
+
+function showImageViewerFooter(block) {
+  const shadow = ensureImageViewer();
+  const footer = shadow.querySelector(".viewer-footer");
+  const other = imageViewerShowOriginal ? block.translation : block.text;
+
+  footer.textContent = other
+    ? (imageViewerShowOriginal ? "译文：" : "原文：") + other
+    : "";
+}
+
+function renderImageViewerBoxes() {
+  const shadow = ensureImageViewer();
+  const image = shadow.querySelector(".viewer-image");
+  const boxes = shadow.querySelector(".viewer-boxes");
+  boxes.textContent = "";
+
+  if (!image.clientWidth || !image.naturalWidth) return;
+
+  const scale = image.clientWidth / image.naturalWidth;
+
+  for (const block of imageViewerBlocks || []) {
     const box = quadBoundingBox(block.quad);
     if (!box) continue;
 
     const element = document.createElement("div");
-    element.className = "shot-box";
+    element.className = "viewer-box";
 
-    const height = Math.max(12, box.height / scale);
-    element.style.left = box.x / scale + "px";
-    element.style.top = box.y / scale + "px";
+    const height = Math.max(10, box.height * scale);
+    element.style.left = box.x * scale + "px";
+    element.style.top = box.y * scale + "px";
     element.style.minHeight = height + "px";
-    element.style.fontSize = Math.min(Math.max(10, height * 0.7), 20) + "px";
-    element.textContent = shotShowOriginal
+    element.style.fontSize = Math.min(Math.max(11, height * 0.68), 20) + "px";
+    element.textContent = imageViewerShowOriginal
       ? block.text || ""
       : block.translation || "";
 
-    layer.append(element);
+    element.addEventListener("mouseenter", () => showImageViewerFooter(block));
+    element.addEventListener("click", () => {
+      navigator.clipboard.writeText(block.translation || "").then(() => {
+        const footer = imageViewerHost.shadowRoot.querySelector(".viewer-footer");
+        footer.textContent = "已复制译文";
+        setTimeout(() => showImageViewerFooter(block), 900);
+      });
+    });
+
+    boxes.append(element);
   }
 }
 
-function showScreenshotOverlay(payload) {
-  shotBlocks = Array.isArray(payload.blocks) ? payload.blocks : [];
-  shotImageWidth = payload.image && payload.image.width ? payload.image.width : 0;
-  shotShowOriginal = false;
+function renderImageViewerList() {
+  const shadow = ensureImageViewer();
+  const list = shadow.querySelector(".viewer-list");
+  list.textContent = "";
 
-  const shadow = ensureShotHost();
-  const toggleButton = shadow.querySelector(".shot-toggle");
-  toggleButton.textContent = "显示原文";
+  for (const block of imageViewerBlocks || []) {
+    const item = document.createElement("div");
+    item.className = "image-item";
 
-  shadow.querySelector(".shot-toast").hidden = true;
-  shadow.querySelector(".shot-toolbar").hidden = false;
+    const translation = document.createElement("div");
+    translation.className = "image-translation";
+    translation.textContent = block.translation || "";
 
-  renderShotBlocks();
-  shotHost.style.display = "block";
+    const original = document.createElement("div");
+    original.className = "image-original";
+    original.textContent = block.text || "";
+
+    item.append(translation, original);
+    list.append(item);
+  }
 }
 
-function showScreenshotError(message) {
-  const shadow = ensureShotHost();
+function showImageResult(payload) {
+  imageViewerBlocks = Array.isArray(payload.blocks) ? payload.blocks : [];
+  imageViewerShowOriginal = false;
 
-  shadow.querySelector(".shot-toolbar").hidden = true;
+  const shadow = ensureImageViewer();
+  const image = shadow.querySelector(".viewer-image");
 
-  const toast = shadow.querySelector(".shot-toast");
-  toast.textContent = message || "截图翻译失败。";
+  shadow.querySelector(".viewer-mode").textContent = "显示原文";
+  shadow.querySelector(".viewer-footer").textContent = "";
+  shadow.querySelector(".image-toast").hidden = true;
+  setImageViewerList(false);
+
+  imageViewerHost.style.display = "block";
+
+  const render = () => {
+    renderImageViewerBoxes();
+    renderImageViewerList();
+  };
+
+  if (imageViewerCrop) {
+    image.style.display = "";
+
+    if (image.src === imageViewerCrop && image.complete) {
+      render();
+    } else {
+      image.onload = render;
+      image.src = imageViewerCrop;
+    }
+  } else {
+    // No crop available: fall back to the list only.
+    image.style.display = "none";
+    setImageViewerList(true);
+    renderImageViewerList();
+  }
+}
+
+function showImageError(message) {
+  const shadow = ensureImageViewer();
+
+  shadow.querySelector(".viewer-shell").style.display = "none";
+
+  const toast = shadow.querySelector(".image-toast");
+  toast.textContent = message || "图片翻译失败。";
   toast.hidden = false;
 
-  shotHost.style.display = "block";
+  imageViewerHost.style.display = "block";
 
-  clearTimeout(shotToastTimer);
-  shotToastTimer = setTimeout(hideShotOverlay, 5000);
+  clearTimeout(imageViewerToastTimer);
+  imageViewerToastTimer = setTimeout(hideImageViewer, 5000);
 }
 
-function hideShotOverlay() {
-  if (!shotHost) return;
+function hideImageViewer() {
+  if (!imageViewerHost) return;
 
-  shotHost.style.display = "none";
+  imageViewerHost.style.display = "none";
 
-  const shadow = shotHost.shadowRoot;
+  const shadow = imageViewerHost.shadowRoot;
   if (shadow) {
-    shadow.querySelector(".shot-layer").textContent = "";
-    shadow.querySelector(".shot-toast").hidden = true;
+    shadow.querySelector(".viewer-shell").style.display = "";
+    shadow.querySelector(".viewer-footer").textContent = "";
+    shadow.querySelector(".viewer-boxes").textContent = "";
+    shadow.querySelector(".image-toast").hidden = true;
   }
 
-  shotBlocks = null;
-  clearTimeout(shotToastTimer);
+  clearTimeout(imageViewerToastTimer);
 }
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1756,10 +1920,21 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     translateClipboard();
   } else if (message && message.type === "cycle-target") {
     cycleTypeTarget();
-  } else if (message && message.type === "screenshot-result") {
-    showScreenshotOverlay(message);
-  } else if (message && message.type === "screenshot-error") {
-    showScreenshotError(message.message);
+  } else if (message && message.type === "image-translate-rect") {
+    sendResponse({ rect: imageElementRect(message.srcUrl) });
+  } else if (message && message.type === "image-translate-crop") {
+    cropToImage(message.dataUrl, message.rect).then(
+      (dataUrl) => {
+        if (dataUrl) imageViewerCrop = dataUrl;
+        sendResponse({ dataUrl });
+      },
+      () => sendResponse({ dataUrl: null })
+    );
+    return true;
+  } else if (message && message.type === "image-result") {
+    showImageResult(message);
+  } else if (message && message.type === "image-error") {
+    showImageError(message.message);
   }
 });
 
@@ -1771,8 +1946,8 @@ document.addEventListener(
       typeSelectController.close();
       return;
     }
-    if (shotHost && shotHost.style.display !== "none") {
-      hideShotOverlay();
+    if (imageViewerHost && imageViewerHost.style.display !== "none") {
+      hideImageViewer();
       return;
     }
     typeHide();
@@ -1916,14 +2091,18 @@ document.addEventListener(
   () => {
     queueReposition();
     typeQueueReposition();
-    hideShotOverlay();
   },
   true
 );
 window.addEventListener("resize", () => {
   queueReposition();
   typeQueueReposition();
-  hideShotOverlay();
+
+  // The viewer is a modal over a snapshot; re-fit the boxes when the image
+  // changes size with the window.
+  if (imageViewerHost && imageViewerHost.style.display !== "none") {
+    renderImageViewerBoxes();
+  }
 });
 
 loadSettings();

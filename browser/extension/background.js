@@ -301,10 +301,11 @@ async function sendOneShot(port, requestId, text, record = true) {
   }
 }
 
-// Reads the visible tab, recognizes its text through the local service and
-// hands the blocks to the page overlay. The service can be slow on the first
-// request (OCR model download); the content script shows nothing until the
-// result arrives.
+// Right-click an image: the background captures the viewport, the content
+// script crops it to the image's on-screen rectangle (canvas keeps the data
+// URL untainted) and the local service recognizes the text. The result is a
+// panel next to the image — never an overlay covering the page. The service
+// can be slow on the first request (OCR model download).
 async function translateImage(image) {
   const settings = await getSettings();
   const url = baseUrl(settings.serviceUrl) + "/translate/image";
@@ -340,35 +341,70 @@ async function translateImage(image) {
 
   return {
     ok: true,
-    image: payload.image || null,
     blocks: Array.isArray(payload.blocks) ? payload.blocks : [],
   };
 }
 
-async function sendScreenshotError(tab, message) {
+async function sendImageError(tab, message) {
   try {
-    await api.tabs.sendMessage(tab.id, { type: "screenshot-error", message });
+    await api.tabs.sendMessage(tab.id, { type: "image-error", message });
   } catch (error) {
-    console.warn("[OpenTranslator] screenshot error:", message);
+    console.warn("[OpenTranslator] image translation error:", message);
   }
 }
 
-async function deliverImageResult(tab, result) {
+async function translateImageElement(tab, srcUrl) {
+  if (!tab || tab.id === undefined) return;
+
+  let rect = null;
+  try {
+    const response = await api.tabs.sendMessage(tab.id, {
+      type: "image-translate-rect",
+      srcUrl,
+    });
+    rect = response && response.rect ? response.rect : null;
+  } catch (error) {
+    rect = null;
+  }
+
+  let image = null;
+  try {
+    image = await api.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  } catch (error) {
+    await sendImageError(tab, "截图失败：无法捕获当前页面。");
+    return;
+  }
+
+  if (rect) {
+    try {
+      const cropped = await api.tabs.sendMessage(tab.id, {
+        type: "image-translate-crop",
+        dataUrl: image,
+        rect,
+      });
+      if (cropped && cropped.dataUrl) image = cropped.dataUrl;
+    } catch (error) {
+      // Crop failed; send the full capture instead.
+    }
+  }
+
+  const result = await translateImage(image);
+
   if (!result.ok) {
-    await sendScreenshotError(tab, result.error);
+    await sendImageError(tab, result.error);
     return;
   }
 
   if (!result.blocks.length) {
-    await sendScreenshotError(tab, "没有识别到可翻译的文字。");
+    await sendImageError(tab, "没有识别到可翻译的文字。");
     return;
   }
 
   try {
     await api.tabs.sendMessage(tab.id, {
-      type: "screenshot-result",
-      image: result.image,
+      type: "image-result",
       blocks: result.blocks,
+      anchor: rect,
     });
   } catch (error) {
     // No content script (PDF viewer, browser pages): fall back to the result
@@ -379,20 +415,6 @@ async function deliverImageResult(tab, result) {
       .join("\n");
     if (text) openResultPage(text);
   }
-}
-
-async function screenshotTranslate(tab) {
-  if (!tab || tab.id === undefined) return;
-
-  let image = null;
-  try {
-    image = await api.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-  } catch (error) {
-    await sendScreenshotError(tab, "截图失败：无法捕获当前页面。");
-    return;
-  }
-
-  await deliverImageResult(tab, await translateImage(image));
 }
 
 async function checkHealth() {
@@ -483,9 +505,9 @@ api.runtime.onInstalled.addListener((details) => {
       contexts: ["selection"],
     });
     api.contextMenus.create({
-      id: "screenshot-translate",
-      title: "截图翻译页面（OpenTranslator）",
-      contexts: ["page"],
+      id: "translate-image",
+      title: "翻译此图片（OpenTranslator）",
+      contexts: ["image"],
     });
   });
 
@@ -511,8 +533,8 @@ if (api.alarms && api.alarms.onAlarm) {
 }
 
 api.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === "screenshot-translate") {
-    await screenshotTranslate(tab);
+  if (info.menuItemId === "translate-image") {
+    await translateImageElement(tab, info.srcUrl);
     return;
   }
 
@@ -533,14 +555,6 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 api.commands.onCommand.addListener((command) => {
-  if (command === "screenshot-translate") {
-    api.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
-      const tab = tabs[0];
-      if (tab) screenshotTranslate(tab);
-    });
-    return;
-  }
-
   let type = null;
 
   if (command === "translate-selection") {

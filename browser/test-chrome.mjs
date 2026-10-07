@@ -1041,9 +1041,50 @@ try {
       JSON.stringify(menuPlacement)
     );
 
-    // --- Screenshot translation ---------------------------------------------
+    // --- Image translation ---------------------------------------------------
     const originalSettings = JSON.parse(
       await evaluate(workerSession, `(async () => JSON.stringify(await getSettings()))()`)
+    );
+
+    // Crop helper: a 200x100 bitmap; the crop is requested in CSS pixels and
+    // must follow the captured viewport scale.
+    const cropped = JSON.parse(
+      await evaluate(
+        pageSession,
+        `(async () => {
+           const canvas = document.createElement("canvas");
+           canvas.width = 200;
+           canvas.height = 100;
+           const context = canvas.getContext("2d");
+           context.fillStyle = "#ff0000";
+           context.fillRect(0, 0, 100, 100);
+           context.fillStyle = "#0000ff";
+           context.fillRect(100, 0, 100, 100);
+
+           const full = canvas.toDataURL("image/png");
+           const rect = { x: 0, y: 0, width: 50, height: 40 };
+           const croppedUrl = await cropToImage(full, rect);
+           const image = new Image();
+           await new Promise((resolve) => {
+             image.onload = resolve;
+             image.src = croppedUrl;
+           });
+
+           const scale = 200 / window.innerWidth;
+           return JSON.stringify({
+             width: image.width,
+             height: image.height,
+             expectedWidth: Math.round(rect.width * scale),
+             expectedHeight: Math.round(rect.height * scale),
+           });
+         })()`,
+        { contextId: isolated.id }
+      )
+    );
+    check(
+      "image crop follows the viewport scale",
+      cropped.width === cropped.expectedWidth && cropped.height === cropped.expectedHeight,
+      JSON.stringify(cropped)
     );
 
     await evaluate(
@@ -1058,80 +1099,121 @@ try {
         workerSession,
         `(async () => {
            const tabs = await api.tabs.query({ active: true, currentWindow: true });
+           // A valid 1x1 PNG: the flow stores the cropped capture for the
+           // viewer before the service runs.
+           await api.tabs.sendMessage(tabs[0].id, {
+             type: "image-translate-crop",
+             dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+             rect: { x: 0, y: 0, width: 1, height: 1 },
+           });
            const result = await translateImage("data:image/png;base64,AAAA");
-           await deliverImageResult(tabs[0], result);
+           await api.tabs.sendMessage(tabs[0].id, {
+             type: "image-result",
+             blocks: result.blocks,
+           });
            return JSON.stringify({ ok: result.ok, blocks: (result.blocks || []).length });
          })()`
       )
     );
     check(
-      "screenshot image translated via the service",
+      "image translated via the service",
       delivered.ok === true && delivered.blocks === 1,
       JSON.stringify(delivered)
     );
 
-    let shot = null;
+    let viewer = null;
     for (let attempt = 0; attempt < 50; attempt++) {
-      shot = await evaluate(
+      viewer = await evaluate(
         pageSession,
         `(() => {
-           const host = document.querySelector('[data-opentranslator="shot"]');
+           const host = document.querySelector('[data-opentranslator="image-viewer"]');
            if (!host || host.style.display === "none") return null;
            const root = host.shadowRoot;
-           const boxes = [...root.querySelectorAll(".shot-box")];
+           const boxes = [...root.querySelectorAll(".viewer-box")];
            return {
              boxes: boxes.length,
              text: boxes[0] ? boxes[0].textContent : null,
-             toolbar: !root.querySelector(".shot-toolbar").hidden,
+             hasImage: Boolean(root.querySelector(".viewer-image").src),
+             hasCopy: Boolean(root.querySelector(".viewer-copy")),
            };
          })()`,
         { contextId: isolated.id }
       );
-      if (shot) break;
+      if (viewer && viewer.boxes > 0) break;
       await sleep(100);
     }
     check(
-      "screenshot overlay renders the translated block",
-      Boolean(shot) && shot.boxes === 1 && shot.text === "开始游戏" && shot.toolbar,
-      JSON.stringify(shot)
+      "image viewer overlays the translation on the image",
+      Boolean(viewer) &&
+        viewer.boxes === 1 &&
+        viewer.text === "开始游戏" &&
+        viewer.hasImage &&
+        viewer.hasCopy,
+      JSON.stringify(viewer)
     );
 
     await evaluate(
       pageSession,
       `(() => {
-         document.querySelector('[data-opentranslator="shot"]').shadowRoot.querySelector(".shot-toggle").click();
+         document.querySelector('[data-opentranslator="image-viewer"]').shadowRoot.querySelector(".viewer-mode").click();
          return true;
        })()`,
       { contextId: isolated.id }
     );
-    const originalShot = await evaluate(
+    const originalBox = await evaluate(
       pageSession,
       `(() => {
-         const box = document.querySelector('[data-opentranslator="shot"]').shadowRoot.querySelector(".shot-box");
-         return box ? box.textContent : null;
+         const root = document.querySelector('[data-opentranslator="image-viewer"]').shadowRoot;
+         return root.querySelector(".viewer-box").textContent;
        })()`,
       { contextId: isolated.id }
     );
     check(
-      "screenshot overlay toggles the original",
-      originalShot === "START GAME",
-      originalShot ?? "<none>"
+      "image viewer toggles the original text",
+      originalBox === "START GAME",
+      originalBox ?? "<none>"
     );
 
     await evaluate(
       pageSession,
       `(() => {
-         document.querySelector('[data-opentranslator="shot"]').shadowRoot.querySelector(".shot-close").click();
+         document.querySelector('[data-opentranslator="image-viewer"]').shadowRoot.querySelector(".viewer-list-toggle").click();
          return true;
        })()`,
       { contextId: isolated.id }
     );
-    const shotClosed = await evaluate(
+    const viewerList = await evaluate(
       pageSession,
-      `document.querySelector('[data-opentranslator="shot"]').style.display`,
+      `(() => {
+         const root = document.querySelector('[data-opentranslator="image-viewer"]').shadowRoot;
+         const node = root.querySelector(".viewer-list");
+         return {
+           open: node.classList.contains("open"),
+           items: node.querySelectorAll(".image-item").length,
+         };
+       })()`,
       { contextId: isolated.id }
     );
-    check("screenshot overlay closes", shotClosed === "none", shotClosed);
+    check(
+      "image viewer list mode shows the pairs",
+      viewerList.open === true && viewerList.items === 1,
+      JSON.stringify(viewerList)
+    );
+
+    await evaluate(
+      pageSession,
+      `(() => {
+         document.querySelector('[data-opentranslator="image-viewer"]').shadowRoot.querySelector(".viewer-close").click();
+         return true;
+       })()`,
+      { contextId: isolated.id }
+    );
+    const viewerClosed = await evaluate(
+      pageSession,
+      `document.querySelector('[data-opentranslator="image-viewer"]').style.display`,
+      { contextId: isolated.id }
+    );
+    check("image viewer closes", viewerClosed === "none", viewerClosed);
 
     // Error path: an unreachable service surfaces as a toast instead of a
     // silent failure.
@@ -1144,7 +1226,7 @@ try {
       `(async () => {
          const tabs = await api.tabs.query({ active: true, currentWindow: true });
          const result = await translateImage("data:image/png;base64,AAAA");
-         await deliverImageResult(tabs[0], result);
+         await sendImageError(tabs[0], result.error);
          return true;
        })()`
     );
@@ -1154,9 +1236,9 @@ try {
       toast = await evaluate(
         pageSession,
         `(() => {
-           const host = document.querySelector('[data-opentranslator="shot"]');
+           const host = document.querySelector('[data-opentranslator="image-viewer"]');
            if (!host || host.style.display === "none") return null;
-           const node = host.shadowRoot.querySelector(".shot-toast");
+           const node = host.shadowRoot.querySelector(".image-toast");
            return node && !node.hidden ? node.textContent : null;
          })()`,
         { contextId: isolated.id }
@@ -1165,7 +1247,7 @@ try {
       await sleep(100);
     }
     check(
-      "screenshot errors surface as a toast",
+      "image errors surface as a toast",
       typeof toast === "string" && toast.includes("无法连接本地翻译服务"),
       toast ?? "<none>"
     );
