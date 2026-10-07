@@ -111,6 +111,15 @@
   const offscreen = new Map();
   let inFlight = false;
 
+  // Cross-page cache: short UI text (menus, footers, buttons) repeats across
+  // a site, so successful translations are persisted in storage.local and
+  // replayed instantly on the next page or visit.
+  const PERSIST_CAP = 1200;
+  const PERSIST_MAX_TEXT = 200;
+  let persistCache = {};
+  let persistDirty = false;
+  let persistTimer = null;
+
   // Streaming transport: one `translate` port shared by the serialized queue.
   // Deltas render into the pending block; the port falls back to the one-shot
   // message when the background cannot stream.
@@ -123,6 +132,7 @@
     done: 0,
     failed: 0,
     cacheHits: 0,
+    persistHits: 0,
     pruned: 0,
     batches: 0,
   };
@@ -372,6 +382,52 @@
     stats["skip_" + reason] = (stats["skip_" + reason] || 0) + 1;
   }
 
+  function persistKey(text) {
+    return target + "\u0000" + text;
+  }
+
+  function loadPersistCache() {
+    return api.storage.local
+      .get({ readingCache: {} })
+      .then((stored) => {
+        const value = stored.readingCache;
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          persistCache = value;
+        }
+      })
+      .catch(() => {});
+  }
+
+  function persistLookup(text) {
+    const entry = persistCache[persistKey(text)];
+    return entry && typeof entry.t === "string" ? entry.t : null;
+  }
+
+  function persistStore(text, translation) {
+    if (text.length > PERSIST_MAX_TEXT) return;
+
+    persistCache[persistKey(text)] = { t: translation, at: Date.now() };
+    persistDirty = true;
+
+    if (!persistTimer) persistTimer = setTimeout(flushPersistCache, 2000);
+  }
+
+  function flushPersistCache() {
+    persistTimer = null;
+    if (!persistDirty) return;
+    persistDirty = false;
+
+    const keys = Object.keys(persistCache);
+    if (keys.length > PERSIST_CAP) {
+      keys.sort((a, b) => (persistCache[a].at || 0) - (persistCache[b].at || 0));
+      for (const key of keys.slice(0, keys.length - PERSIST_CAP)) {
+        delete persistCache[key];
+      }
+    }
+
+    api.storage.local.set({ readingCache: persistCache }).catch(() => {});
+  }
+
   /// Collects one block; null when skipped or already handled. Idempotent:
   /// a block whose injected node no longer matches its text re-queues.
   function consider(element) {
@@ -594,6 +650,15 @@
           continue;
         }
 
+        const persisted = persistLookup(entry.text);
+        if (persisted !== null) {
+          cache.set(entry.text, persisted);
+          stats.persistHits += 1;
+          applyTranslation(entry.element, entry.text, persisted);
+          queuedElements.delete(entry.element);
+          continue;
+        }
+
         skeletonFor(entry.element);
 
         const result = await translateEntry(entry);
@@ -609,6 +674,7 @@
 
         const translation = cleanTranslation(result.translation);
         cache.set(entry.text, translation);
+        persistStore(entry.text, translation);
         stats.done += 1;
         applyTranslation(entry.element, entry.text, translation);
         queuedElements.delete(entry.element);
@@ -725,6 +791,11 @@
       clearTimeout(rescanTimer);
       rescanTimer = null;
     }
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    flushPersistCache();
 
     if (stream) {
       const pending = stream;
@@ -783,5 +854,7 @@
     start();
   });
 
-  loadSettings().then(() => start());
+  loadSettings()
+    .then(loadPersistCache)
+    .then(() => start());
 })();
