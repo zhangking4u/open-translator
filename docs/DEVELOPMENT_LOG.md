@@ -2478,6 +2478,19 @@ a page-context checkbox menu (网页翻译（双语对照）, kept in sync with
 `readingEnabled` through the background storage listener; the popup row was
 removed).
 
+Reading-mode footer/button coverage and viewport fallback (2026-10-07): the
+spring.io footer pass showed the whole footer skipped — footer/aside were
+excluded wholesale. Both are now translated (compact style for footer link
+columns), buttons (`button`/`[role=button]`, 4 chars) translate everywhere,
+and `nav`/`header` menu labels keep working. While verification, the headless
+run exposed that IntersectionObserver callbacks (and scroll events) never
+arrive in occluded/headless renderers, so the off-screen backlog now uses a
+throttled scroll/resize check plus a 1.5 s safety interval instead of IO; a
+manually created IO in the page also never fired, confirming the environment.
+The fixture gained a footer (heading, link list, button) and the targeted
+run passes end to end (nav / short heading / div text / footer heading +
+button / cleanup, 9 blocks, 0 failures).
+
 
 ## Sprint 6
 

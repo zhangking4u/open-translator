@@ -203,10 +203,12 @@ script on all pages, inert until enabled):
   only in v1.
 - Block set and skip heuristics as specced (paragraphs/headings/lists/quotes/
   cells; hidden, code, editable, target-language and short blocks skipped).
-- Viewport-first single-flight queue with an IntersectionObserver for the
-  off-screen backlog (a long article never queues everything at once), a
-  MutationObserver for dynamic pages, a per-page text cache, idempotent
-  injection and orphan pruning — the lifecycle verified in S2.
+- Viewport-first single-flight queue: off-screen blocks wait in a pending map
+  and are picked up by a throttled scroll/resize check when they come near
+  (with a 1.5 s safety interval for renderers that throttle scroll events),
+  so a long article never queues everything at once; a MutationObserver for
+  dynamic pages, a per-page text cache, idempotent injection and orphan
+  pruning — the lifecycle verified in S2.
 - Per-block requests (the spike's default), hover controls 复制 / 重译, no
   history writes (`record: false`), no original replacement (仅译文 deferred
   per §7 open question 3).
@@ -228,6 +230,12 @@ script on all pages, inert until enabled):
   labels from 4 chars with a compact injection style, also treating spans,
   links and button roles inside nav/header as labels (spring.io menus live in
   `span[role=button]`), while footer/aside stay skipped and paragraphs keep 12.
+  A third pass dropped the footer/aside skip entirely (the spring.io footer
+  was the next gap), translated buttons everywhere (`button`/`[role=button]`
+  at 4 chars) and made the footer's link columns compact, and replaced the
+  IntersectionObserver backlog with the deterministic scroll check described
+  above — headless/occluded renderers throttle IO callbacks (and scroll
+  events) indefinitely, which also kept the e2e from seeing the footer.
 - Not in v1: joined batches (S3), extension-side glossary
   (the extension has no glossary storage yet; the shared glossary stays a
   desktop-side feature until the output guard lands), iframes, shadow DOM.
