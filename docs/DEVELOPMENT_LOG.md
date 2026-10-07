@@ -2144,6 +2144,16 @@ endpoint (translation, data URLs, line-mismatch fallback, 400/501 paths); a
 download entries and the desktop wiring wait on the Windows/macOS ORT bundle
 decision.
 
+OCR adapter (2026-10-07, A2+B2): `vendor/rapidocr-core` (0.2.2, Apache-2.0)
+vendored with one manifest change — `ort` builds with `load-dynamic`
+(std/ndarray/api-28), so no build-time download, no linking and no OpenSSL;
+`RapidOcrEngine` in `core/ocr` wraps it (`load` downloads missing ModelScope
+assets, `load_offline` fails instead; PP-OCRv6-tiny default; 4 intra-op
+threads) and loads the host-provided runtime (Linux: the sherpa-shipped
+`libonnxruntime.so`). Re-verified end-to-end on the M0 fixture through the
+adapter: 41 blocks, 273 ms at 1280×800. Windows/macOS installers will carry
+a pinned ORT dylib (B2); model download and desktop wiring are next.
+
 
 ## Sprint 6
 

@@ -143,9 +143,12 @@ Runtime selection (verified on the Linux dev machine):
   `DEFAULT_ALPHABET` has no CJK — and no Chinese recognition model exists);
   `ort` default features (add a second ONNX Runtime and need OpenSSL headers
   at build time).
-- Remaining packaging item: Windows/macOS ship no ONNX Runtime today
-  (`translator-asr` is Linux-only), so the OCR provider needs a bundled ORT
-  dylib there (or the same `load-dynamic` trick against one it ships).
+- Remaining packaging item (decision 2026-10-07, option B2): Windows/macOS
+  do not ship an ONNX Runtime, so their installers will carry a pinned
+  `onnxruntime.dll`/`.dylib` next to the binary; Linux keeps reusing the
+  sherpa-shipped one. The dependency side uses a vendored patched
+  `rapidocr-core` (option A2, `vendor/rapidocr-core`) until upstream exposes
+  the ort features.
 
 Fixture: a Chrome-rendered 1280×800 page with ~30 mixed zh/en blocks on dark
 and light panels (`/tmp/kilo/ocr-spike/fixture.html`), captured at DPR 1 and
@@ -179,7 +182,8 @@ The service side of M1 landed:
 
 - `core/ocr` (crate `translator-ocr`): the engine-agnostic `OcrEngine` surface
   (`recognize(pixels, width, height) -> Vec<OcrBlock>` with `OcrBlock { text,
-  score, quad }` and a `Quad::bounding_box` helper). No adapter yet.
+  score, quad }` and a `Quad::bounding_box` helper). The adapter followed the
+  next day (§5.3).
 - `translator-service`: `POST /translate/image` — base64 or data-URL
   PNG/JPEG input, OCR through the injected provider (`AppState::with_ocr`),
   one joined translation request per page with a per-block fallback when the
@@ -188,9 +192,23 @@ The service side of M1 landed:
   bytes never logged. 10 integration tests cover translation, data URLs, the
   fallback, and the 400/501 paths.
 
-Still pending: the RapidOCR adapter (blocked on the Windows/macOS runtime
-bundle decision), model download through `translator-core::models`, and the
-desktop wiring (`server.rs` + extension API).
+Still pending: model download through `translator-core::models`, the desktop
+wiring (`server.rs` + extension API), and the B2 runtime bundle for
+Windows/macOS installers.
+
+### 5.3 Adapter landed (2026-10-07)
+
+Per the A2+B2 decision:
+
+- `vendor/rapidocr-core` (0.2.2, Apache-2.0) with one manifest change — `ort`
+  builds with `load-dynamic` (std/ndarray/api-28), so nothing is downloaded or
+  linked at build time and OpenSSL is not required.
+- `core/ocr::RapidOcrEngine` (`load` downloads missing ModelScope assets,
+  `load_offline` fails instead) maps RapidOCR quads/scores onto `OcrBlock`
+  and runs on the host-provided ONNX Runtime; on Linux that is the
+  sherpa-shipped `libonnxruntime.so`.
+- Re-verified end-to-end on the M0 fixture through the new adapter:
+  41 blocks, 273 ms at 4 threads (PP-OCRv6-tiny, 1280×800).
 
 ## 6. Risks
 
@@ -199,7 +217,7 @@ desktop wiring (`server.rs` + extension API).
 | DRM/protected video captures black | detect and say so; do not pretend |
 | Coordinate mapping bugs (DPR, zoom, scroll, iframes) | unit-test the math; start with the top frame |
 | Firefox capture API parity | spike before building the UX |
-| OCR runtime packaging | Linux: reuse the sherpa-shipped ONNX Runtime via `ort` `load-dynamic` (spike-verified); Windows/macOS: bundle an ORT dylib (decision pending) |
+| OCR runtime packaging | Linux: reuse the sherpa-shipped ONNX Runtime via `ort` `load-dynamic` (spike-verified); Windows/macOS: bundle a pinned ORT dylib (B2 decided 2026-10-07) |
 | Overlay interferes with the page | pointer-events off except a small toolbar; Esc/menu dismiss |
 | OCR quality on stylized UI | VLM fallback later; report misses honestly |
 

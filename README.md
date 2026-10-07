@@ -160,10 +160,12 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 | HY-MT1.5-1.8B（腾讯混元） | 文本翻译模型（从 ModelScope 下载） | 遵循模型仓库的 Hunyuan 社区许可 |
 | **SenseVoiceSmall**（FunASR，阿里巴巴通义实验室） | 实时字幕的语音识别（从 hf-mirror 下载） | [FunASR Model License](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE)：可免费使用/修改/分享，需注明出处与模型名称 |
 | Silero VAD（Silero Team） | 语音端点检测 | MIT |
-| sherpa-onnx / onnxruntime | 语音识别运行时 | Apache-2.0 / MIT |
+| **PP-OCRv6**（PaddleOCR，百度） | 截图翻译的文字识别（从 ModelScope 下载） | Apache-2.0 |
+| rapidocr-core | OCR 实现（源码内置 `vendor/rapidocr-core`，仅调整 ONNX Runtime 构建方式） | Apache-2.0 |
+| sherpa-onnx / onnxruntime | 语音识别与截图 OCR 运行时 | Apache-2.0 / MIT |
 | llama.cpp | 本地推理运行时 | MIT |
 
-语音识别基于 FunASR 的 **SenseVoiceSmall** 模型，经 sherpa-onnx 项目转换为 ONNX 格式；模型权重不随安装包分发，由客户端首次使用时下载。
+语音识别基于 FunASR 的 **SenseVoiceSmall** 模型，经 sherpa-onnx 项目转换为 ONNX 格式；截图翻译使用 PaddleOCR 的 **PP-OCRv6** 模型。模型权重不随安装包分发，由客户端首次使用时下载。
 
 ## 仓库结构
 
