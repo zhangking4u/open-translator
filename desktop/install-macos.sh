@@ -37,7 +37,7 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-MODEL_FILE="$HOME/Library/Application Support/open-translator/models/hy-mt1.5-1.8b-q4_k_m.gguf"
+MODEL_FILE="$HOME/Library/Application Support/open-translator/models/hy-mt2-1.8b-q4_k_m.gguf"
 if [ ! -f "$MODEL_FILE" ]; then
     echo "warning: model not found at $MODEL_FILE"
     echo "         place a .gguf there, or set model_path in ~/Library/Application Support/open-translator/config"

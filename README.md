@@ -146,7 +146,7 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 | 浏览器扩展 | ✅ | ✅ | ✅ |
 | 桌面划词 | ✅ Tauri（deb；Wayland 会话走 XWayland） | ✅ Tauri（zip/install.ps1，真机验证通过） | ✅ Tauri（dmg，CI 构建，未真机验证） |
 
-- Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 构建**内嵌模型推理**的 Tauri 客户端（`translator-popup-tauri.exe`）并加入开机启动；把 GGUF 放到 `%LOCALAPPDATA%\open-translator\models\hy-mt1.5-1.8b-q4_k_m.gguf`（或配置 `model_path`）。选中文字按 `Ctrl+Alt+T`（模拟 `Ctrl+C` + 剪贴板取词）；托盘菜单提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。运行期间在 `127.0.0.1:17890` 提供 HTTP 供浏览器扩展；客户端内「立即更新」会下载 `OpenTranslator-windows-x64.zip`、解压并运行其中的 `install.ps1`（会先关闭运行中的旧版）。
+- Windows 桌面划词：`powershell -ExecutionPolicy Bypass -File desktop\install-windows.ps1` 构建**内嵌模型推理**的 Tauri 客户端（`translator-popup-tauri.exe`）并加入开机启动；把 GGUF 放到 `%LOCALAPPDATA%\open-translator\models\hy-mt2-1.8b-q4_k_m.gguf`（或配置 `model_path`）。选中文字按 `Ctrl+Alt+T`（模拟 `Ctrl+C` + 剪贴板取词）；托盘菜单提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。运行期间在 `127.0.0.1:17890` 提供 HTTP 供浏览器扩展；客户端内「立即更新」会下载 `OpenTranslator-windows-x64.zip`、解压并运行其中的 `install.ps1`（会先关闭运行中的旧版）。
 - macOS 桌面划词：发布包为 dmg（把 `OpenTranslator.app` 拖入「应用程序」）；源码安装 `./desktop/install-macos.sh` 构建内嵌推理的 Tauri 客户端到 `~/Applications/OpenTranslator.app` 并注册 LaunchAgent 开机启动。模型放到 `~/Library/Application Support/open-translator/models/`（或配置 `model_path`）。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」允许 OpenTranslator（模拟 `Cmd+C` 取词所需）；菜单栏图标提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出（更新在浏览器打开 release 页）。
 - Linux 桌面划词：发布包为 deb（安装后运行一次 `open-translator-setup` 注册快捷键与开机自启）。客户端优先使用 X11（XWayland）：复制写入 X11 剪贴板（Wayland 应用可粘贴），取词读 `wl-paste --primary` 并以 X11 PRIMARY 兜底（纯 Xorg 会话可用），替换原文对 X11/XWayland 源窗口可用（原生 Wayland 应用受协议限制不提供），朗读经 speech-dispatcher（`spd-say`）。客户端内「更新到 v…」下载 deb 后调用 `pkexec apt-get install` 安装并自动重启；缺少 pkexec/apt 时回退为打开 release 页。
 - 桌面客户端配置（Windows `%APPDATA%\open-translator\config`、macOS `~/Library/Application Support/open-translator/config`）：`model_path`、`prompt_style`（默认 `hymt`）、`serve_extension`（默认 `true`）、`auto_download`（默认 `true`，首启自动从 ModelScope 下载模型，支持断点续传与 SHA-256 校验）、`check_updates`（默认 `true`，启动时检查 GitHub 新版本并在窗口/托盘提示）、`hotkey`、`source`（默认 `auto`，自动识别源语言）、`target`；环境变量 `TRANSLATOR_MODEL_PATH` / `TRANSLATOR_PROMPT_STYLE` / `TRANSLATOR_HOTKEY` / `TRANSLATOR_CHECK_UPDATES` 可临时覆盖。
@@ -165,7 +165,7 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 
 | 组件 | 用途 | 许可 |
 | --- | --- | --- |
-| HY-MT1.5-1.8B（腾讯混元） | 文本翻译模型（从 ModelScope 下载） | 遵循模型仓库的 Hunyuan 社区许可 |
+| Hy-MT2-1.8B（腾讯混元） | 文本翻译模型（从 ModelScope 下载） | 遵循模型仓库的 Hunyuan 社区许可 |
 | **SenseVoiceSmall**（FunASR，阿里巴巴通义实验室） | 实时字幕的语音识别（从 hf-mirror 下载） | [FunASR Model License](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE)：可免费使用/修改/分享，需注明出处与模型名称 |
 | Silero VAD（Silero Team） | 语音端点检测 | MIT |
 | **PP-OCRv6**（PaddleOCR，百度） | 截图翻译的文字识别（从 ModelScope 下载） | Apache-2.0 |

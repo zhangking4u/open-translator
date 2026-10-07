@@ -1,4 +1,4 @@
----
+﻿---
 name: local-verify
 description: Build the OpenTranslator Windows Tauri client from the current working tree, stop the installed instance, replace it and relaunch for real-machine verification. Use when the user asks for 本地编译/真机验证/停掉旧实例启动新实例/在本机试试最新改动, or to try a code change in the desktop client on this Windows dev machine.
 ---
@@ -16,7 +16,7 @@ macOS/Linux: this skill is Windows-only (the dev machine is Windows). For macOS 
 | Crate | `desktop/translator-popup-tauri` (run cargo from the repo root) |
 | Build output | `%LOCALAPPDATA%\OpenTranslator\build\release\translator-popup-tauri.exe` |
 | Installed copy (what the Startup shortcut points at) | `%LOCALAPPDATA%\Programs\OpenTranslator\translator-popup-tauri.exe` |
-| Model | `%LOCALAPPDATA%\open-translator\models\hy-mt1.5-1.8b-q4_k_m.gguf` (or `model_path` in `%APPDATA%\open-translator\config`) |
+| Model | `%LOCALAPPDATA%\open-translator\models\hy-mt2-1.8b-q4_k_m.gguf` (or `model_path` in `%APPDATA%\open-translator\config`) |
 
 The short `%LOCALAPPDATA%\OpenTranslator\build` target dir is mandatory: `llama-cpp-sys-2` fails with MSB6003/FileTracker when the repo path plus `<target>\release\build\llama-cpp-sys-2-*\out\build\CMakeScratch\...` is too deep.
 
@@ -26,7 +26,7 @@ The short `%LOCALAPPDATA%\OpenTranslator\build` target dir is mandatory: `llama-
 cargo --version
 cmake --version
 $env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"   # if unset; needs libclang.dll there
-Test-Path "$env:LOCALAPPDATA\open-translator\models\hy-mt1.5-1.8b-q4_k_m.gguf"
+Test-Path "$env:LOCALAPPDATA\open-translator\models\hy-mt2-1.8b-q4_k_m.gguf"
 Get-Process translator-popup-tauri, translator-popup-desktop -ErrorAction SilentlyContinue |
     Select-Object Id, StartTime, Path
 ```

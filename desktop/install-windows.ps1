@@ -128,7 +128,7 @@ if (-not (Test-Path $OrtTarget)) {
 }
 
 $ModelDir = Join-Path $env:LOCALAPPDATA "open-translator\models"
-$ModelFile = Join-Path $ModelDir "hy-mt1.5-1.8b-q4_k_m.gguf"
+$ModelFile = Join-Path $ModelDir "hy-mt2-1.8b-q4_k_m.gguf"
 
 if (-not (Test-Path $ModelFile)) {
     Write-Host "warning: model not found at $ModelFile" -ForegroundColor Yellow

@@ -5,10 +5,10 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
-pub const DEFAULT_MODEL_URL: &str = "https://modelscope.cn/models/Tencent-Hunyuan/HY-MT1.5-1.8B-GGUF/resolve/master/HY-MT1.5-1.8B-Q4_K_M.gguf";
+pub const DEFAULT_MODEL_URL: &str = "https://modelscope.cn/models/Tencent-Hunyuan/Hy-MT2-1.8B-GGUF/resolve/master/Hy-MT2-1.8B-Q4_K_M.gguf";
 pub const DEFAULT_MODEL_SHA256: &str =
-    "4383ac0c3c8e476de98ff979c2a3f069f8c4fb385e7860cf2d28da896cc477c7";
-pub const DEFAULT_MODEL_SIZE: u64 = 1_133_080_512;
+    "dc5f44fcf1fa496ee7ad725982c0c8c553a4de00259b53af84c4b89fb0c06699";
+pub const DEFAULT_MODEL_SIZE: u64 = 1_133_080_448;
 
 /// One file of a downloadable model set.
 pub struct ModelFile {

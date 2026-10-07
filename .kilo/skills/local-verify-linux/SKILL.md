@@ -1,4 +1,4 @@
----
+﻿---
 name: local-verify-linux
 description: Build the OpenTranslator Linux Tauri client from the current working tree, package the deb, install it through pkexec and relaunch it so the user can verify by hand. Use when the user asks for Linux 本地编译/真机验证/上手验证/装 deb 验证/在本机试试最新改动, or to prepare the Ubuntu dev machine for a manual check of desktop-client changes.
 ---
@@ -19,7 +19,7 @@ The Windows flow is the `local-verify` skill; for macOS use `desktop/install-mac
 | Installed binary | `/usr/lib/open-translator/translator-popup` (+ `/usr/bin/translator-popup` symlink) |
 | Config | `~/.config/open-translator/config` |
 | History (do not clobber) | `~/.config/open-translator/history.json` |
-| Model | `~/.local/share/open-translator/models/hy-mt1.5-1.8b-q4_k_m.gguf` |
+| Model | `~/.local/share/open-translator/models/hy-mt2-1.8b-q4_k_m.gguf` |
 | Health | `http://127.0.0.1:17890/health` |
 
 ## 1. Preflight
@@ -27,7 +27,7 @@ The Windows flow is the `local-verify` skill; for macOS use `desktop/install-mac
 ```bash
 git log -1 --oneline
 PATH="$HOME/.local/opt/cmake/bin:$PATH" cmake --version   # llama-cpp-sys builds with cmake
-test -f "$HOME/.local/share/open-translator/models/hy-mt1.5-1.8b-q4_k_m.gguf" && echo "model ok"
+test -f "$HOME/.local/share/open-translator/models/hy-mt2-1.8b-q4_k_m.gguf" && echo "model ok"
 pgrep -a -f 'translator-popup' | grep -v pgrep || echo "no client running"
 ```
 

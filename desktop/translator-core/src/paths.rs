@@ -77,7 +77,7 @@ pub fn state_dir() -> PathBuf {
     base.join("open-translator")
 }
 
-pub const DEFAULT_MODEL_FILE: &str = "hy-mt1.5-1.8b-q4_k_m.gguf";
+pub const DEFAULT_MODEL_FILE: &str = "hy-mt2-1.8b-q4_k_m.gguf";
 
 /// Directory (under `models_dir`) that holds the SenseVoice ASR model, the
 /// Silero VAD model and `tokens.txt`.
