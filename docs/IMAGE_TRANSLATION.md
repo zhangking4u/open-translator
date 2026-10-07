@@ -210,6 +210,22 @@ Per the A2+B2 decision:
 - Re-verified end-to-end on the M0 fixture through the new adapter:
   41 blocks, 273 ms at 4 threads (PP-OCRv6-tiny, 1280×800).
 
+### 5.4 Desktop wiring landed (2026-10-07)
+
+The client now serves the image endpoint: when the extension interface starts
+(`serve_extension`), it loads a `RapidOcrEngine` from `ocr_model_dir` (config
+key, default `models/ocr/`), downloading PP-OCRv6-tiny from ModelScope on
+first use, and injects it into the service state. A load failure only logs —
+the server still starts and `/translate/image` answers 501, so a missing model
+or runtime never blocks the normal text path. On Linux the `libonnxruntime.so`
+shipped next to the binary is picked up automatically; the engine also looks
+for `onnxruntime.dll`/`libonnxruntime.dylib` there, which is the hook the B2
+installer bundle will use. `translator-core` gained
+`paths::default_ocr_model_dir()` and the `ocr_model_dir` setting.
+
+Still pending: the extension capture/overlay UX (M2) and the B2 runtime
+bundle in the Windows/macOS installers.
+
 ## 6. Risks
 
 | Risk | Mitigation |

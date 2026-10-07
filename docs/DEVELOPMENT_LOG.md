@@ -2154,6 +2154,17 @@ threads) and loads the host-provided runtime (Linux: the sherpa-shipped
 adapter: 41 blocks, 273 ms at 1280×800. Windows/macOS installers will carry
 a pinned ORT dylib (B2); model download and desktop wiring are next.
 
+Desktop OCR wiring (2026-10-07): the client's extension server
+(`serve_extension`) now loads a `RapidOcrEngine` when it starts, from
+`ocr_model_dir` (new setting; default `models/ocr/` via
+`translator-core::paths::default_ocr_model_dir`), downloading PP-OCRv6-tiny
+from ModelScope on first use and injecting it into `AppState::with_ocr`; a
+load failure logs and leaves `/translate/image` at 501 without blocking the
+text path. `core/ocr` auto-detects a bundled runtime next to the executable
+(`libonnxruntime.so`/`onnxruntime.dll`/`libonnxruntime.dylib`) through
+`ort::init_from`, which is also the B2 installer hook on Windows/macOS.
+Tests: translator-core 76, translator-ocr 7, client 20 green.
+
 
 ## Sprint 6
 
