@@ -198,8 +198,9 @@ prerequisites.
 The bilingual reading mode shipped as the extension's `reading.js` (a content
 script on all pages, inert until enabled):
 
-- Popup toggle 网页翻译 (`readingEnabled`) plus the existing per-site opt-out
-  (`disabledSites`); top frame only in v1.
+- Context-menu checkbox 网页翻译（双语对照）, backed by the `readingEnabled`
+  setting, plus the existing per-site opt-out (`disabledSites`); top frame
+  only in v1.
 - Block set and skip heuristics as specced (paragraphs/headings/lists/quotes/
   cells; hidden, code, editable, target-language and short blocks skipped).
 - Viewport-first single-flight queue with an IntersectionObserver for the
@@ -223,9 +224,10 @@ script on all pages, inert until enabled):
   `lang`-based target skip now applies to non-CJK targets only — for zh/ja/ko
   the script-ratio heuristic is enough, so English blocks on a `lang="zh"`
   page are no longer skipped. A follow-up pass lowered the thresholds:
-  headings (h1–h6, th, summary, dt, figcaption) from 3 chars, `nav`/`header`
-  labels from 4 chars (compact injection style), while footer/aside stay
-  skipped and paragraphs keep 12.
+  headings (h1–h6, th, summary, dt, figcaption) from 3 chars and `nav`/`header`
+  labels from 4 chars with a compact injection style, also treating spans,
+  links and button roles inside nav/header as labels (spring.io menus live in
+  `span[role=button]`), while footer/aside stay skipped and paragraphs keep 12.
 - Not in v1: joined batches (S3), extension-side glossary
   (the extension has no glossary storage yet; the shared glossary stays a
   desktop-side feature until the output guard lands), iframes, shadow DOM.

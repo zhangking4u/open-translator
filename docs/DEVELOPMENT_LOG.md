@@ -2469,6 +2469,15 @@ aside stay skipped); fixtures gained a nav list and a short heading and the
 targeted run passes (为什么是春天 / 云 / div 段落 / 清理). The extension in
 `browser/dist/chrome` was rebuilt for the manual retest.
 
+Reading-mode menu labels and context-menu toggle (2026-10-07): the spring.io
+navbar still missed because its labels are `span[role=button]` outside the
+candidate set — spans, links and button roles inside `nav`/`header` are now
+label candidates (body links stay out so paragraphs never split), and the
+targeted run passes. The 网页翻译 toggle also moved from the toolbar popup to
+a page-context checkbox menu (网页翻译（双语对照）, kept in sync with
+`readingEnabled` through the background storage listener; the popup row was
+removed).
+
 
 ## Sprint 6
 
