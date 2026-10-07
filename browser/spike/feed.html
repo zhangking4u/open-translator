@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Reading translation spike feed</title>
+    <style>
+      body {
+        max-width: 720px;
+        margin: 0 auto;
+        font: 16px/1.6 -apple-system, "Segoe UI", sans-serif;
+        color: #222;
+        padding: 0 16px;
+      }
+      article {
+        border-bottom: 1px solid #eee;
+        padding: 14px 0;
+      }
+      h3 {
+        margin: 0 0 6px;
+        font-size: 15px;
+        color: #555;
+      }
+      .ot-spike-translation {
+        display: block;
+        margin: 2px 0 6px;
+        padding-left: 10px;
+        border-left: 3px solid #4a90d9;
+        color: #333;
+        font-size: 0.95em;
+        line-height: 1.55;
+      }
+      #bar {
+        position: sticky;
+        top: 0;
+        background: #fff;
+        padding: 10px 0;
+        border-bottom: 1px solid #ddd;
+      }
+      button {
+        font: inherit;
+        padding: 4px 10px;
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <button id="rerender">重新渲染</button>
+      <button id="retext">替换正文</button>
+      <span id="count">0</span> posts
+    </div>
+    <main id="feed"></main>
+
+    <script>
+      // Dynamic feed fixture for S2: append-on-scroll (capped), duplicate
+      // texts (cache), hidden and short items, and two re-render buttons that
+      // stress orphan pruning and stale-sibling replacement.
+      const pool = [
+        "Every translation product eventually has to decide where the model runs. The cloud route is easy to start and hard to leave, while local inference trades convenience for control.",
+        "A quantized model can fit comfortably in four gigabytes of RAM, but the context window is what usually blows the budget. Attention cost grows with sequence length.",
+        "We keep the default context window modest and make it configurable. Users who translate longer documents raise it deliberately, and everyone else keeps the fast path.",
+        "Instruction-tuned models are sensitive to prompt shape. Mixing a translation request with a JSON request in one string invites very confusing failure modes.",
+        "Streaming does not make the model faster. It changes when the user sees the first useful token, and that number dominates perceived quality on the web.",
+        "Product names and UI terms are where generic translation falls apart. Injecting the terms into every prompt is cheap, reversible, and works with any model.",
+        "The practical limit is memory bandwidth. A model that fits entirely in cache behaves very differently from one that streams weights from system memory on every token.",
+        "Local inference means shipping a runtime, and shipping a runtime means dealing with platforms. Dynamic loading turns a build error into a runtime error.",
+        "We would measure end-to-end latency before choosing a model size. A smaller model with a tighter prompt beats a larger model with a sprawling prompt.",
+        "We would also keep the translation cache persistent from day one. A session cache helps, but a disk cache survives the page reloads that are the norm.",
+        "Version pinning is not glamorous. It is the difference between a release that reproduces on a user's machine and a support thread that never ends.",
+        "The glossary file uses one source=target pair per line, capped at fifty entries. That cap is a prompt-budget decision, not a technical one.",
+        "Local translation is not a feature you add at the end of a product. It is an architectural decision that shapes prompts, packaging and updates.",
+        "Attention cost grows with sequence length, and every extra token of prompt is paid on every request. Caching the prompt prefix is the usual first optimization.",
+      ];
+
+      const MAX_ITEMS = 40;
+      const container = document.getElementById("feed");
+      const countLabel = document.getElementById("count");
+      let index = 0;
+      let items = 0;
+
+      function addItem() {
+        if (items >= MAX_ITEMS) return;
+        items += 1;
+
+        const article = document.createElement("article");
+        const heading = document.createElement("h3");
+        heading.textContent = `Post ${items}`;
+
+        const paragraph = document.createElement("p");
+        paragraph.textContent =
+          items % 9 === 4 ? "Update." : pool[(index + items) % pool.length];
+
+        article.append(heading, paragraph);
+
+        if (items % 11 === 5) {
+          article.style.display = "none";
+        }
+
+        container.appendChild(article);
+        countLabel.textContent = String(items);
+      }
+
+      function addBatch(n) {
+        for (let i = 0; i < n; i++) addItem();
+      }
+
+      document.getElementById("rerender").addEventListener("click", () => {
+        // SPA-style navigation: everything is replaced with fresh nodes. The
+        // item budget restarts so the feed keeps growing after the reset.
+        container.replaceChildren();
+        index += 3;
+        items = 0;
+        addBatch(6);
+      });
+
+      document.getElementById("retext").addEventListener("click", () => {
+        // Framework-style partial update: fresh <p> nodes replace the old
+        // ones in place, so the old injected sibling becomes an orphan.
+        let replaced = 0;
+        for (const paragraph of [...container.querySelectorAll("p")]) {
+          if (replaced >= 6) break;
+          const fresh = document.createElement("p");
+          fresh.textContent = pool[(index + 7 + replaced) % pool.length];
+          paragraph.replaceWith(fresh);
+          replaced += 1;
+        }
+        index += 5;
+      });
+
+      let lastAppend = 0;
+      window.addEventListener("scroll", () => {
+        const now = Date.now();
+        if (now - lastAppend < 1500) return;
+        if (window.scrollY + window.innerHeight >= document.body.scrollHeight - 200) {
+          lastAppend = now;
+          addBatch(4);
+        }
+      });
+
+      addBatch(6);
+
+      window.__FEED__ = {
+        get items() {
+          return items;
+        },
+      };
+    </script>
+    <script src="/reading-spike.js"></script>
+  </body>
+</html>

@@ -28,6 +28,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const BATCH = args.batch === "join" ? "join" : "block";
 const MAX_CHARS = String(args["max-chars"] || 1200);
 const SERVICE = args.service || "http://127.0.0.1:17890";
+const PAGE = args.page === "feed" ? "feed" : "article";
+const SCROLL_SECONDS = Number(args["scroll-seconds"] || 120);
 const BROWSER_PATH =
   args["browser-path"] || "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const OUT_DIR = args["out-dir"] || join(tmpdir(), "ot-spike");
@@ -37,6 +39,7 @@ const CDP_PORT = 9223;
 mkdirSync(OUT_DIR, { recursive: true });
 
 const article = await readFile(join(here, "article.html"));
+const feed = await readFile(join(here, "feed.html"));
 const spike = await readFile(join(here, "reading-spike.js"));
 
 // Static page plus a same-origin /translate proxy to the desktop client.
@@ -44,6 +47,11 @@ const server = http.createServer((request, response) => {
   if (request.method === "GET" && request.url.startsWith("/article.html")) {
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     response.end(article);
+    return;
+  }
+  if (request.method === "GET" && request.url.startsWith("/feed.html")) {
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    response.end(feed);
     return;
   }
   if (request.method === "GET" && request.url === "/reading-spike.js") {
@@ -82,7 +90,8 @@ const server = http.createServer((request, response) => {
 });
 
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-const pageUrl = `http://127.0.0.1:${server.address().port}/article.html?batch=${BATCH}&maxChars=${MAX_CHARS}&delayMs=1500`;
+const pageName = PAGE === "feed" ? "feed.html" : "article.html";
+const pageUrl = `http://127.0.0.1:${server.address().port}/${pageName}?batch=${BATCH}&maxChars=${MAX_CHARS}&delayMs=1500`;
 
 // --- headless Edge ---
 const profileDir = join(OUT_DIR, `profile-${Date.now()}`);
@@ -177,6 +186,57 @@ try {
   await send("Runtime.enable", {}, sessionId);
   await send("Page.enable", {}, sessionId);
 
+  // Feed-mode audit: duplicates, missing, orphans and stale siblings.
+  const AUDIT_EXPRESSION = `(() => {
+    const blocks = [...document.querySelectorAll("[data-ot-spike-block]")];
+    let duplicates = 0;
+    let missing = 0;
+    for (const block of blocks) {
+      let count = 0;
+      if (block.tagName === "LI" || block.tagName === "TD") {
+        count = [...block.children].filter(
+          (child) => child.dataset.otSpikeTranslation === "1"
+        ).length;
+      } else {
+        const next = block.nextElementSibling;
+        if (next && next.dataset.otSpikeTranslation === "1") count = 1;
+      }
+      if (count === 0) missing += 1;
+      if (count > 1) duplicates += 1;
+    }
+    const notes = [...document.querySelectorAll("[data-ot-spike-translation]")];
+    let orphans = 0;
+    let stale = 0;
+    for (const note of notes) {
+      const parent = note.parentElement;
+      const inside = parent && parent.dataset.otSpikeBlock === "1";
+      const after =
+        note.previousElementSibling &&
+        note.previousElementSibling.dataset.otSpikeBlock === "1";
+      if (!inside && !after) orphans += 1;
+      const source = inside ? parent : note.previousElementSibling;
+      if (source) {
+        const clone = source.cloneNode(true);
+        for (const injected of clone.querySelectorAll("[data-ot-spike-translation]")) {
+          injected.remove();
+        }
+        const text = (clone.innerText || clone.textContent || "")
+          .replace(/\\s+/g, " ")
+          .trim();
+        if (text !== note.dataset.otSpikeSource) stale += 1;
+      }
+    }
+    return {
+      posts: window.__FEED__ ? window.__FEED__.items : null,
+      markedBlocks: blocks.length,
+      translations: notes.length,
+      duplicates,
+      missing,
+      orphans,
+      stale,
+    };
+  })()`;
+
   // "Before" screenshot: the spike waits delayMs before collecting.
   await sleep(900);
   const before = await send(
@@ -188,13 +248,58 @@ try {
 
   const deadline = Date.now() + TIMEOUT_MS;
   let done = false;
-  while (Date.now() < deadline) {
-    done = await evaluate(
-      sessionId,
-      "Boolean(window.__OT_SPIKE__ && window.__OT_SPIKE__.done_flag)"
-    );
-    if (done) break;
-    await sleep(1000);
+
+  if (PAGE === "feed") {
+    // Scrolling phase: append-on-scroll plus two re-render stress clicks.
+    const endAt = Date.now() + SCROLL_SECONDS * 1000;
+    let clickedRetext = false;
+    let clickedRerender = false;
+
+    while (Date.now() < endAt) {
+      const progress = 1 - (endAt - Date.now()) / (SCROLL_SECONDS * 1000);
+      await evaluate(sessionId, "window.scrollTo(0, document.body.scrollHeight), true");
+
+      if (!clickedRetext && progress >= 0.4) {
+        clickedRetext = true;
+        await evaluate(sessionId, "document.getElementById('retext').click(), true");
+      }
+      if (!clickedRerender && progress >= 0.7) {
+        clickedRerender = true;
+        await evaluate(sessionId, "document.getElementById('rerender').click(), true");
+      }
+
+      await sleep(2000);
+    }
+
+    // Settle: the queue drains and stays drained for 3 s.
+    while (Date.now() < deadline) {
+      const pending = await evaluate(
+        sessionId,
+        "window.__OT_SPIKE__ ? window.__OT_SPIKE__.pending() : 0"
+      );
+      if (pending === 0) {
+        await sleep(3000);
+        const again = await evaluate(
+          sessionId,
+          "window.__OT_SPIKE__ ? window.__OT_SPIKE__.pending() : 0"
+        );
+        if (again === 0) {
+          done = true;
+          break;
+        }
+      } else {
+        await sleep(1000);
+      }
+    }
+  } else {
+    while (Date.now() < deadline) {
+      done = await evaluate(
+        sessionId,
+        "Boolean(window.__OT_SPIKE__ && window.__OT_SPIKE__.done_flag)"
+      );
+      if (done) break;
+      await sleep(1000);
+    }
   }
 
   if (done) {
@@ -213,7 +318,10 @@ try {
 
   const parsed = JSON.parse(report);
   parsed.timedOut = !done;
-  writeFileSync(join(OUT_DIR, `s1-${BATCH}.json`), JSON.stringify(parsed, null, 2));
+  if (PAGE === "feed") {
+    parsed.audit = await evaluate(sessionId, AUDIT_EXPRESSION);
+  }
+  writeFileSync(join(OUT_DIR, `s1-${PAGE}-${BATCH}.json`), JSON.stringify(parsed, null, 2));
 
   const statuses = {};
   for (const block of parsed.blocks) {
@@ -248,6 +356,8 @@ try {
           max: latencies.at(-1) ?? null,
         },
         layout: parsed.layout,
+        observer: parsed.observer,
+        audit: parsed.audit ?? null,
         glossaryHits: parsed.blocks
           .filter((block) => block.glossaryHits.length > 0)
           .map((block) => block.glossaryHits),

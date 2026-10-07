@@ -1,8 +1,9 @@
-// S1 spike prototype: paragraph-level bilingual reading translation.
+// S1/S2 spike prototype: paragraph-level bilingual reading translation.
 //
-// Loaded directly by the spike's test page (not shipped in the extension); the
+// Loaded directly by the spike's test pages (not shipped in the extension); the
 // page server proxies POST /translate to the local desktop client, so the
-// scheduler/layout questions are measured without touching the extension build.
+// scheduler/layout/lifecycle questions are measured without touching the
+// extension build.
 //
 // URL parameters:
 //   batch=block|join   per-block requests or consecutive blocks joined up to maxChars
@@ -10,7 +11,13 @@
 //   minChars=12        blocks shorter than this are skipped
 //   delayMs=0          wait before collecting (lets the harness screenshot "before")
 //
-// Results are exposed on window.__OT_SPIKE__ (done flag included) for the CDP driver.
+// Dynamic pages (S2): a MutationObserver collects blocks added later, a
+// per-node marker plus an in-memory cache prevents duplicate work, injections
+// are idempotent (a stale sibling is replaced when the source text changed)
+// and orphaned injections are pruned after every mutation batch.
+//
+// Results are exposed on window.__OT_SPIKE__ (done flag and pending()
+// included) for the CDP driver.
 
 (() => {
   const params = new URLSearchParams(location.search);
@@ -47,12 +54,16 @@
     blocks: [],
     errors: [],
     layout: {},
+    observer: { batches: 0, added: 0, skippedBudget: 0, pruned: 0 },
   });
 
   const cache = new Map();
   const queue = [];
+  const queuedElements = new WeakSet();
   let viewportRemaining = 0;
   let modelInFlight = false;
+
+  metrics.pending = () => queue.length + (modelInFlight ? 1 : 0);
 
   function noteSkip(reason) {
     metrics.skipped[reason] = (metrics.skipped[reason] || 0) + 1;
@@ -70,12 +81,29 @@
     return rect.bottom > 0 && rect.top < window.innerHeight && rect.height > 0;
   }
 
+  function injectedNode(element) {
+    if (element.tagName === "LI" || element.tagName === "TD") {
+      return (
+        [...element.children].find(
+          (child) => child.dataset.otSpikeTranslation === "1"
+        ) || null
+      );
+    }
+    const next = element.nextElementSibling;
+    return next && next.dataset.otSpikeTranslation === "1" ? next : null;
+  }
+
   function inject(element, text, translation) {
-    const node = document.createElement("div");
+    const existing = injectedNode(element);
+    const node = existing || document.createElement("div");
+
     node.className = "ot-spike-translation";
     node.dataset.otSpikeTranslation = "1";
+    node.dataset.otSpikeSource = text;
     node.lang = "zh-Hans";
     node.textContent = translation;
+
+    if (existing) return node;
 
     if (element.tagName === "LI" || element.tagName === "TD") {
       element.appendChild(node);
@@ -85,54 +113,127 @@
     return node;
   }
 
-  function collect() {
-    metrics.layout.before = snapshotLayout();
-
-    const elements = [...document.querySelectorAll(SELECTOR)];
-    const viewportOrder = [];
-    const restOrder = [];
-
-    for (const element of elements) {
-      if (element.closest(SKIP_CLOSEST)) {
-        noteSkip("ancestor");
-        continue;
-      }
-      if (element.offsetParent === null) {
-        noteSkip("hidden");
-        continue;
-      }
-
-      const text = (element.innerText || "").replace(/\s+/g, " ").trim();
-      if (!text) {
-        noteSkip("empty");
-        continue;
-      }
-      if (text.length < MIN_CHARS) {
-        noteSkip("short");
-        continue;
-      }
-      if (cjkRatio(text) > 0.5) {
-        noteSkip("target-language");
-        continue;
-      }
-
-      element.dataset.otSpikeBlock = "1";
-      const entry = {
-        element,
-        text,
-        chars: text.length,
-        viewport: inViewport(element),
-        queuedAt: performance.now(),
-      };
-      (entry.viewport ? viewportOrder : restOrder).push(entry);
+  /// Collects one block, or null when it is skipped/marked. Idempotent: a
+  /// marked block whose injected sibling no longer matches its text is
+  /// re-queued (the sibling stays until the new translation lands).
+  function consider(element) {
+    if (queuedElements.has(element)) return null;
+    if (element.closest(SKIP_CLOSEST)) {
+      noteSkip("ancestor");
+      return null;
+    }
+    if (element.offsetParent === null) {
+      noteSkip("hidden");
+      return null;
     }
 
-    for (const entry of [...viewportOrder, ...restOrder]) {
+    const text = (element.innerText || "").replace(/\s+/g, " ").trim();
+    if (!text) {
+      noteSkip("empty");
+      return null;
+    }
+    if (text.length < MIN_CHARS) {
+      noteSkip("short");
+      return null;
+    }
+    if (cjkRatio(text) > 0.5) {
+      noteSkip("target-language");
+      return null;
+    }
+
+    const existing = injectedNode(element);
+    if (existing && existing.dataset.otSpikeSource === text) return null;
+
+    element.dataset.otSpikeBlock = "1";
+    const entry = {
+      element,
+      text,
+      chars: text.length,
+      viewport: inViewport(element),
+      queuedAt: performance.now(),
+    };
+    queuedElements.add(element);
+    return entry;
+  }
+
+  function enqueue(entries) {
+    for (const entry of entries) {
       queue.push(entry);
       metrics.queued += 1;
     }
+    if (entries.length > 0 && !modelInFlight) worker();
+  }
+
+  function collect() {
+    metrics.layout.before = snapshotLayout();
+
+    const viewportOrder = [];
+    const restOrder = [];
+
+    for (const element of document.querySelectorAll(SELECTOR)) {
+      const entry = consider(element);
+      if (!entry) continue;
+      (entry.viewport ? viewportOrder : restOrder).push(entry);
+    }
+
+    enqueue([...viewportOrder, ...restOrder]);
     viewportRemaining = viewportOrder.length;
     return viewportOrder.length + restOrder.length;
+  }
+
+  /// Drops injections whose source block is gone (React-style re-renders).
+  function pruneOrphans() {
+    for (const note of document.querySelectorAll("[data-ot-spike-translation]")) {
+      const parent = note.parentElement;
+      const inside = parent && parent.dataset.otSpikeBlock === "1";
+      const after =
+        note.previousElementSibling &&
+        note.previousElementSibling.dataset.otSpikeBlock === "1";
+
+      if (!inside && !after) {
+        note.remove();
+        metrics.observer.pruned += 1;
+      }
+    }
+  }
+
+  const MAX_NEW_PER_BATCH = 20;
+
+  function observe() {
+    const observer = new MutationObserver((records) => {
+      metrics.observer.batches += 1;
+      const additions = [];
+
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          if (
+            node.dataset.otSpikeTranslation === "1" ||
+            node.closest("[data-ot-spike-block]")
+          ) {
+            continue;
+          }
+          if (node.matches(SELECTOR)) additions.push(node);
+          additions.push(...node.querySelectorAll(SELECTOR));
+        }
+      }
+
+      const entries = [];
+      for (const element of additions) {
+        if (entries.length >= MAX_NEW_PER_BATCH) {
+          metrics.observer.skippedBudget += 1;
+          continue;
+        }
+        metrics.observer.added += 1;
+        const entry = consider(element);
+        if (entry) entries.push(entry);
+      }
+
+      if (entries.length > 0) enqueue(entries);
+      if (records.length > 0) pruneOrphans();
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   function snapshotLayout() {
@@ -165,15 +266,16 @@
   function recordBlock(entry, translation, elapsed, extra = {}) {
     const doneAt = performance.now();
     inject(entry.element, entry.text, translation);
+    queuedElements.delete(entry.element);
 
     if (metrics.done === 0) {
       metrics.firstBlockMs = Math.round(doneAt - metrics.startedAt);
     }
     metrics.done += 1;
 
-    if (entry.viewport) {
+    if (entry.viewport && metrics.firstViewportMs === null) {
       viewportRemaining -= 1;
-      if (viewportRemaining === 0) {
+      if (viewportRemaining <= 0) {
         metrics.firstViewportMs = Math.round(doneAt - metrics.startedAt);
       }
     }
@@ -313,6 +415,8 @@
     if (DELAY_MS > 0) {
       await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
     }
+    observe();
+
     const count = collect();
     if (count === 0) {
       metrics.layout.after = snapshotLayout();
