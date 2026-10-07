@@ -222,7 +222,10 @@ script on all pages, inert until enabled):
   `document.documentElement` (SPA frameworks replace `document.body`); the
   `lang`-based target skip now applies to non-CJK targets only — for zh/ja/ko
   the script-ratio heuristic is enough, so English blocks on a `lang="zh"`
-  page are no longer skipped.
+  page are no longer skipped. A follow-up pass lowered the thresholds:
+  headings (h1–h6, th, summary, dt, figcaption) from 3 chars, `nav`/`header`
+  labels from 4 chars (compact injection style), while footer/aside stay
+  skipped and paragraphs keep 12.
 - Not in v1: joined batches (S3), extension-side glossary
   (the extension has no glossary storage yet; the shared glossary stays a
   desktop-side feature until the output guard lands), iframes, shadow DOM.

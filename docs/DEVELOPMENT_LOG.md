@@ -2460,6 +2460,15 @@ gained a div-only paragraph and the e2e checks it; the targeted run passes
 inconclusive locally because the restricted network leaves that page
 unhydrated; real-page retest pending.
 
+Reading-mode heading/nav thresholds (2026-10-07): the spring.io pass showed
+short headings and the top menu still untranslated — headings under 12 chars
+were skipped and `nav`/`header` regions were excluded wholesale. Headings
+(h1–h6, th, summary, dt, figcaption) now translate from 3 chars and
+`nav`/`header` labels from 4 chars with a compact injection style (footer and
+aside stay skipped); fixtures gained a nav list and a short heading and the
+targeted run passes (为什么是春天 / 云 / div 段落 / 清理). The extension in
+`browser/dist/chrome` was rebuilt for the manual retest.
+
 
 ## Sprint 6
 
