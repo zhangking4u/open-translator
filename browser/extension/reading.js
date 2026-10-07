@@ -91,6 +91,13 @@
   const offscreen = new Map();
   let inFlight = false;
 
+  // Streaming transport: one `translate` port shared by the serialized queue.
+  // Deltas render into the pending block; the port falls back to the one-shot
+  // message when the background cannot stream.
+  let port = null;
+  let portSeq = 0;
+  let stream = null;
+
   const stats = {
     queued: 0,
     done: 0,
@@ -249,6 +256,79 @@
       "翻译失败" + (message ? "：" + message : "") + "（点击重译）";
   }
 
+  function ensurePort() {
+    if (port) return port;
+
+    try {
+      port = api.runtime.connect({ name: "translate" });
+    } catch (error) {
+      port = null;
+      return null;
+    }
+
+    port.onMessage.addListener(onPortMessage);
+    port.onDisconnect.addListener(() => {
+      port = null;
+
+      if (stream) {
+        const pending = stream;
+        stream = null;
+        pending.resolve({ ok: false, error: null });
+      }
+    });
+
+    return port;
+  }
+
+  function onPortMessage(message) {
+    if (!message || !stream || message.requestId !== stream.requestId) return;
+
+    if (message.type === "delta") {
+      stream.buffer += message.delta || "";
+      const node = skeletonFor(stream.entry.element);
+      node.querySelector(".ot-reading-text").textContent = stream.buffer;
+    } else if (message.type === "done") {
+      const pending = stream;
+      stream = null;
+      pending.resolve({
+        ok: true,
+        translation: message.translation || pending.buffer,
+      });
+    } else if (message.type === "error") {
+      const pending = stream;
+      stream = null;
+      pending.resolve({ ok: false, error: message.message });
+    }
+  }
+
+  /// Resolves `{ok, translation?, error?}`; streams deltas into the block when
+  /// the port is available, otherwise falls back to the one-shot message.
+  function translateEntry(entry) {
+    if (!ensurePort()) {
+      return api.runtime
+        .sendMessage({ type: "translate", text: entry.text, record: false })
+        .catch(() => null)
+        .then((result) => result || { ok: false, error: null });
+    }
+
+    return new Promise((resolve) => {
+      const requestId = ++portSeq;
+      stream = { requestId, entry, buffer: "", resolve };
+
+      try {
+        port.postMessage({
+          type: "translate",
+          requestId,
+          text: entry.text,
+          record: false,
+        });
+      } catch (error) {
+        stream = null;
+        resolve({ ok: false, error: null });
+      }
+    });
+  }
+
   /// Drops metadata the engine may copy from its own instructions.
   function cleanTranslation(raw) {
     const text = String(raw || "").trim();
@@ -380,16 +460,7 @@
 
         skeletonFor(entry.element);
 
-        let result = null;
-        try {
-          result = await api.runtime.sendMessage({
-            type: "translate",
-            text: entry.text,
-            record: false,
-          });
-        } catch (error) {
-          result = null;
-        }
+        const result = await translateEntry(entry);
 
         if (!started) return;
 
@@ -495,6 +566,19 @@
     queue.length = 0;
     offscreen.clear();
     queuedElements = new WeakSet();
+
+    if (stream) {
+      const pending = stream;
+      stream = null;
+      pending.resolve({ ok: false, error: null });
+    }
+    if (port) {
+      try {
+        port.postMessage({ type: "cancel" });
+      } catch (error) {
+        port = null;
+      }
+    }
 
     for (const element of document.querySelectorAll("[data-ot-reading-block]")) {
       delete element.dataset.otReadingBlock;

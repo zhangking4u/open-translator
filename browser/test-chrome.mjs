@@ -891,29 +891,33 @@ try {
 
     let readingText = null;
     for (let attempt = 0; attempt < 150; attempt++) {
-      readingText = await evaluate(
+      const snapshot = await evaluate(
         pageSession,
         `(() => {
            const node = document.querySelector(".ot-reading-translation");
            const text = node && node.querySelector(".ot-reading-text");
-           return text ? text.textContent : null;
+           if (!node || !text) return null;
+           return {
+             text: text.textContent,
+             pending: node.classList.contains("ot-reading-pending"),
+           };
          })()`,
         { contextId: isolated.id }
       );
       if (
-        readingText &&
-        readingText !== "翻译中…" &&
-        !readingText.startsWith("翻译失败")
+        snapshot &&
+        !snapshot.pending &&
+        snapshot.text &&
+        !snapshot.text.startsWith("翻译失败")
       ) {
+        readingText = snapshot.text;
         break;
       }
       await sleep(200);
     }
     check(
       "reading mode injects a bilingual block",
-      Boolean(readingText) &&
-        readingText !== "翻译中…" &&
-        !readingText.startsWith("翻译失败"),
+      Boolean(readingText),
       readingText ?? "<none>"
     );
 
