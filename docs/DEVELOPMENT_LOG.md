@@ -2389,6 +2389,23 @@ should default to per-block until the prompt is fixed. Results and the MVP
 decision proposal are in `docs/READING_TRANSLATION.md` §9; S2 (dynamic
 feed) is next.
 
+Glossary prompt fix (2026-10-07): the reading spike's glossary echo was
+traced to `hunyuan_mt_prompt` placing the standalone hint line
+(`术语表（必须使用以下译法）：…`) between the instruction and the text, which
+HY-MT continues instead of translating (short inputs returned only the hint;
+joined requests gained an extra line). A temporary probe example over a
+12-text corpus compared three layouts: standalone terms before the
+instruction 7/12 commentary, after the text 1/12, inline in the instruction
+0/12 (and terms still applied), so the terms are now folded into the
+instruction paragraph (`…不要额外解释。必须使用以下术语译法：…`) while the
+empty-glossary shape stays unchanged; `glossary_terms` is shared with the
+other styles' hint. Unit tests updated (35 lib tests green). Rebuild +
+real-machine rerun: isolation clean, per-block p50 3.5 s / full page 123 s
+of 40 blocks, no glossary echoes (one residual: a heading about glossaries
+still returns the term list, 1/40), join ≤600 now splits 26/40 blocks
+joined with 3/24 fallback requests — still no throughput win, so per-block
+stays the MVP default.
+
 
 ## Sprint 6
 

@@ -136,17 +136,29 @@ fn translategemma_auto_prompt(request: &TranslationRequest, target: &str) -> Str
 }
 
 fn hunyuan_mt_prompt(request: &TranslationRequest, target: &str) -> String {
-    format!(
-        "将以下文本翻译为{}，注意只需要输出翻译后的结果，不要额外解释：{}\n\n{}",
-        display_name_zh(target),
-        glossary_hint(request, true),
-        request.text
-    )
+    let instruction = format!(
+        "将以下文本翻译为{}，注意只需要输出翻译后的结果，不要额外解释",
+        display_name_zh(target)
+    );
+    let terms = glossary_terms(request);
+
+    if terms.is_empty() {
+        format!("{instruction}：\n\n{}", request.text)
+    } else {
+        // The terms are folded into the instruction paragraph. As a standalone
+        // line (before or after the instruction) HY-MT continues/comments on
+        // the glossary instead of translating — reproduced on a 12-text
+        // corpus, see docs/READING_TRANSLATION.md §9.
+        format!(
+            "{instruction}。必须使用以下术语译法：{}\n\n{}",
+            terms.join("；"),
+            request.text
+        )
+    }
 }
 
-/// Renders the glossary as a prompt suffix; empty when there are no usable terms.
-fn glossary_hint(request: &TranslationRequest, chinese: bool) -> String {
-    let terms: Vec<String> = request
+fn glossary_terms(request: &TranslationRequest) -> Vec<String> {
+    request
         .glossary
         .iter()
         .filter_map(|term| {
@@ -154,7 +166,12 @@ fn glossary_hint(request: &TranslationRequest, chinese: bool) -> String {
             let target = term.target.trim();
             (!source.is_empty() && !target.is_empty()).then(|| format!("{source}={target}"))
         })
-        .collect();
+        .collect()
+}
+
+/// Renders the glossary as a prompt suffix; empty when there are no usable terms.
+fn glossary_hint(request: &TranslationRequest, chinese: bool) -> String {
+    let terms = glossary_terms(request);
 
     if terms.is_empty() {
         return String::new();
@@ -292,11 +309,36 @@ mod tests {
         };
 
         let hymt = translation_prompt(PromptStyle::HunYuanMt, &request).unwrap();
-        assert!(hymt.contains("术语表（必须使用以下译法）：settings=设置"));
+        assert!(hymt.contains("必须使用以下术语译法：settings=设置"));
+        assert!(!hymt.contains("术语表（必须使用以下译法）"));
         assert!(!hymt.contains("ignored"));
 
         let generic = translation_prompt(PromptStyle::Generic, &request).unwrap();
         assert!(generic.contains("Terminology (use these translations exactly): settings=设置"));
+    }
+
+    #[test]
+    fn hymt_folds_the_glossary_into_the_instruction() {
+        let request = TranslationRequest {
+            text: "Open the settings page".to_string(),
+            source: "en".to_string(),
+            target: "zh".to_string(),
+            glossary: vec![GlossaryTerm {
+                source: "settings".to_string(),
+                target: "设置".to_string(),
+            }],
+        };
+
+        let prompt = translation_prompt(PromptStyle::HunYuanMt, &request).unwrap();
+        let instruction_at = prompt.find("将以下文本翻译为中文").unwrap();
+        let terms_at = prompt.find("必须使用以下术语译法：settings=设置").unwrap();
+        let text_at = prompt.find("Open the settings page").unwrap();
+
+        // Inline layout: a standalone glossary line gets continued by HY-MT
+        // instead of translating.
+        assert!(instruction_at < terms_at, "prompt: {prompt}");
+        assert!(terms_at < text_at, "prompt: {prompt}");
+        assert_eq!(prompt.matches('\n').count(), 2, "prompt: {prompt}");
     }
 
     #[test]
@@ -307,6 +349,7 @@ mod tests {
             .unwrap();
 
         assert!(!generic.contains("Terminology"));
-        assert!(!hymt.contains("术语表"));
+        assert!(!hymt.contains("术语"));
+        assert!(hymt.contains("不要额外解释：\n\nhello"));
     }
 }

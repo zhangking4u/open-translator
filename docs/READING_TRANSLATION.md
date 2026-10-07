@@ -108,62 +108,55 @@ layout check below is the actual acceptance).
 
 - 40/40 blocks translated, 0 failures; the skip rules caught exactly the
   intended set (short, hidden, target-language, footer).
-- Per-block latency p50 4.9 s, p90 6.4 s, max 6.6 s (200–300-char
-  paragraphs); first block 4.7 s; the 5 viewport blocks finished at 26.6 s;
-  the full page took 175 s.
+- Per-block latency p50 3.5 s, p90 5.1 s, max 5.7 s (200–300-char
+  paragraphs) on the post-fix run; the viewport blocks settle first and the
+  full page took 123 s (pre-fix runs measured p50 4.9 s and 175–249 s for the
+  same page; engine state and prompt size dominate the spread).
 - Layout: `scrollWidth == clientWidth` before and after (no horizontal
-  overflow); body height 3176 → 5679 px. Translations render as muted
+  overflow); body height 3176 → 5232 px. Translations render as muted
   left-bordered siblings; lists/tables keep their structure.
-- Quality (glossary aside, see below): fluent and accurate on the sampled
-  paragraphs, numbers and product names preserved.
+- Quality: fluent and accurate on the sampled paragraphs, numbers and
+  product names preserved, and the glossary terms are applied.
 
 ### S3 — batching comparison
 
 | strategy | requests | p50 | full page | outcome |
 | --- | --- | --- | --- | --- |
-| per-block | 40 | 4.9 s | 175 s | 40/40 ok |
+| per-block | 40 | 3.5 s | 123 s | 40/40 ok |
 | join ≤ 1200 chars | — | — | — | every request 504: joined generation exceeds the service's 30 s non-streaming timeout on this machine |
-| join ≤ 600 chars | 9 joined + 41 single | 8.4 s | 523 s | every joined group came back one line too many → line-count mismatch → full per-block fallback (slower than plain per-block) |
+| join ≤ 600 chars (pre-fix) | 9 joined + 41 single | 8.4 s | 523 s | every joined group split mismatched (glossary echo) → full per-block fallback |
+| join ≤ 600 chars (post-fix) | 24 (9 joined) | 10.7 s | 158 s | 26 blocks joined, 14 fell back from 3 mismatched groups; no throughput win over per-block |
 
-Joined requests themselves are promising when they fit (3–7 blocks in
-18–29 s, i.e. better throughput than the per-block sum), but the 30 s
-timeout caps the join budget on this machine, and the only reason the line
-contract failed is finding 1 below.
+Joined requests fit 3–7 blocks in 18–29 s, better throughput than the
+per-block sum, but the model's line discipline is not reliable enough yet
+(3/24 requests came back with the wrong line count) and the 30 s timeout
+caps the budget.
 
-### Quality findings (blocking and non-blocking)
+### Glossary prompt fix (landed with this spike)
 
-1. **Glossary echo — a product bug, not a spike bug.** With any non-empty
-   `glossary` the HY-MT output starts with the raw hint line
-   (`术语表（必须使用以下译法）：上下文窗口=上下文窗口…`); with two terms and a
-   short sentence the response is *only* that line, with no translation.
-   Isolation: the same sentence without a glossary translates correctly.
-   Cause: the hymt prompt places the terms between the instruction and the
-   text (`将以下文本翻译为…：\n术语表（必须使用以下译法）：…\n\n{text}`), and the
-   base-style model continues that fragment instead of translating. This
-   affects every glossary consumer (captions, extension, a future reading
-   mode) and must be fixed before reading mode can share the glossary.
-   Candidate fixes: end the prompt with the text and put terms after it, or
-   on their own instruction line before the main instruction, with a clear
-   cue before the text; needs prompt experiments and prompt unit tests.
-2. The joined line contract breaks on the same preamble; a tolerant splitter
-   (strip a leading glossary line) or streaming-based batching would be
-   needed on top of finding 1.
-3. Non-streaming joins are bounded by `TRANSLATOR_TIMEOUT_MS` (30 s in the
-   shipped client); batching must budget by expected generation time, not
-   only by `max_chars` — or run the joined request over the streaming path,
-   whose idle timeout restarts per delta.
+Finding: with a non-empty `glossary`, HY-MT continued the standalone hint
+line (`术语表（必须使用以下译法）：…`) instead of translating — every response
+started with it, short inputs returned only it, and joined requests gained an
+extra line. Isolation: the same sentence without a glossary was clean.
+
+Fix: fold the terms into the instruction paragraph (`…不要额外解释。必须使用
+以下术语译法：context window=上下文窗口；量化=量化`) in `hunyuan_mt_prompt`
+(`core/translator-service/src/domain/prompt.rs`); the empty-glossary shape is
+unchanged. A 12-text corpus matrix picked the layout: standalone terms before
+the instruction 7/12 commentary, after the text 1/12, inline 0/12. The
+40-block rerun shows no glossary echoes; one residual remains — a heading
+*about* glossaries ("Glossaries beat fine-tuning") still returns the term list
+(1/40). Generic/translategemma keep their existing hint placement (their
+trailing instruction line already prevents the continuation).
 
 ### Decision proposal for the MVP
 
-- Default to per-block requests with viewport-first ordering: on this
-  machine a paragraph settles in ~5 s and the visible screen fills
-  progressively; that matches the current desktop/extension latency budget.
-- Keep a small join (2–3 short blocks, well under 600 chars) only after the
-  glossary prompt fix and with a per-request budget below the service
-  timeout; re-measure on the Linux dev machine (whose paragraph latency was
-  measured much lower) before fixing the default.
-- The glossary prompt fix is a prerequisite for any glossary-carrying mode
-  and is worth landing as a standalone fix (it affects captions today).
+- Default to per-block requests with viewport-first ordering (p50 ~3.5 s on
+  this machine; the visible screen fills progressively).
+- Keep joining out of v1: line discipline needs a tolerant splitter, and the
+  join budget must respect the non-streaming timeout — or batching moves to
+  the streaming path. Re-measure on the Linux dev machine before revisiting.
+- Reuse the fixed glossary prompt for the reading mode (terms apply).
 
-Next: S2 (dynamic feed + MutationObserver) has not been exercised yet; the
-glossary prompt fix should precede the MVP scope decision.
+Next: S2 (dynamic feed + MutationObserver) has not been exercised yet.
+
