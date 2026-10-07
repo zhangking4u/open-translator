@@ -16,11 +16,15 @@
     disabledSites: [],
   };
 
-  const SELECTOR = "h1, h2, h3, h4, h5, h6, p, li, blockquote, td, figcaption";
+  const PRIMARY =
+    "h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, figcaption, dd, dt, summary";
+  const CONTAINER = "div, section, article, main";
   const SKIP_CLOSEST =
     "[data-ot-reading], nav, footer, header, aside, pre, code, script, style, noscript, textarea, select, [contenteditable], [translate=no], .ot-reading-translation";
   const MIN_CHARS = 12;
+  const MAX_BLOCK_CHARS = 1200;
   const MAX_NEW_PER_BATCH = 20;
+  const LINK_DENSITY = 0.6;
   const CJK_TARGET = /^(zh|ja|ko)/;
 
   const STYLE_ID = "ot-reading-style";
@@ -370,12 +374,16 @@
       noteSkip("short");
       return null;
     }
-    if (CJK_TARGET.test(target) && cjkRatio(text) > 0.5) {
+    if (text.length > MAX_BLOCK_CHARS) {
+      noteSkip("too-long");
+      return null;
+    }
+    if (CJK_TARGET.test(target) ? cjkRatio(text) > 0.5 : targetLanguageBlock(element)) {
       noteSkip("target-language");
       return null;
     }
-    if (targetLanguageBlock(element)) {
-      noteSkip("target-language");
+    if (element.matches(CONTAINER) && linkDensity(element, text) > LINK_DENSITY) {
+      noteSkip("links");
       return null;
     }
 
@@ -390,6 +398,19 @@
       viewport: inViewport(element),
       queuedAt: performance.now(),
     };
+  }
+
+  /// Share of the block's text that lives in links; containers that are mostly
+  /// link clusters (menus, card grids) are UI, not prose.
+  function linkDensity(element, text) {
+    if (!text) return 0;
+
+    let linkChars = 0;
+    for (const anchor of element.querySelectorAll("a")) {
+      linkChars += (anchor.innerText || "").length;
+    }
+
+    return linkChars / text.length;
   }
 
   function enqueue(entries) {
@@ -413,13 +434,62 @@
     intersection.observe(entry.element);
   }
 
-  function scan(root) {
-    const elements = root.querySelectorAll(SELECTOR);
-
-    for (const element of elements) {
-      const entry = consider(element);
-      if (entry) schedule(entry);
+  /// Post-order walk: innermost blocks are claimed first, so a container is
+  /// translated as a whole only when no descendant block was claimed. This
+  /// covers tag-soup pages without semantic paragraphs (div-based text) while
+  /// never injecting twice into the same text.
+  function walkCandidates(element) {
+    let claimed = false;
+    for (const child of element.children) {
+      if (walkCandidates(child)) claimed = true;
     }
+
+    const isPrimary = element.matches(PRIMARY);
+    const isContainer = !isPrimary && element.matches(CONTAINER);
+    if (!isPrimary && !isContainer) return claimed;
+    if (claimed) return true;
+
+    const text = (element.innerText || "").replace(/\s+/g, " ").trim();
+    const existing = nodeFor(element);
+    if (existing && existing.dataset.otReadingSource === text) return true;
+
+    const entry = consider(element);
+    if (entry) {
+      schedule(entry);
+      return true;
+    }
+
+    return false;
+  }
+
+  function scan(root) {
+    if (root instanceof HTMLElement && root !== document.body) {
+      walkCandidates(root);
+      return;
+    }
+    if (document.body) walkCandidates(document.body);
+  }
+
+  // CSS-only visibility changes (tabs, accordions, lazy skins) leave the DOM
+  // untouched, so a debounced rescan of the nearest block ancestor picks the
+  // newly visible text up.
+  let rescanRoots = new Set();
+  let rescanTimer = null;
+
+  function scheduleRescan(root) {
+    rescanRoots.add(root);
+
+    if (rescanTimer) return;
+    rescanTimer = setTimeout(() => {
+      rescanTimer = null;
+      const roots = [...rescanRoots];
+      rescanRoots = new Set();
+
+      if (!started) return;
+      for (const item of roots) {
+        if (item.isConnected) walkCandidates(item);
+      }
+    }, 300);
   }
 
   function pruneOrphans() {
@@ -489,6 +559,19 @@
 
       const additions = [];
       for (const record of records) {
+        if (record.type === "attributes") {
+          const target = record.target;
+          if (!(target instanceof HTMLElement)) continue;
+          if (target.closest(SKIP_CLOSEST)) continue;
+
+          const selector = PRIMARY + ", " + CONTAINER;
+          const root = target.matches(selector)
+            ? target
+            : target.closest(selector);
+          if (root) scheduleRescan(root);
+          continue;
+        }
+
         for (const node of record.addedNodes) {
           if (!(node instanceof HTMLElement)) continue;
           if (
@@ -497,8 +580,7 @@
           ) {
             continue;
           }
-          if (node.matches(SELECTOR)) additions.push(node);
-          additions.push(...node.querySelectorAll(SELECTOR));
+          additions.push(node);
         }
       }
 
@@ -506,14 +588,20 @@
       for (const element of additions) {
         if (budget <= 0) break;
         budget -= 1;
-        const entry = consider(element);
-        if (entry) schedule(entry);
+        walkCandidates(element);
       }
 
       if (records.length > 0) pruneOrphans();
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    // Observe the document element: SPA frameworks (GitHub Turbo included)
+    // replace `document.body`, which would orphan an observer attached there.
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "hidden"],
+    });
 
     intersection = new IntersectionObserver(
       (entries) => {
@@ -566,6 +654,12 @@
     queue.length = 0;
     offscreen.clear();
     queuedElements = new WeakSet();
+    rescanRoots = new Set();
+
+    if (rescanTimer) {
+      clearTimeout(rescanTimer);
+      rescanTimer = null;
+    }
 
     if (stream) {
       const pending = stream;

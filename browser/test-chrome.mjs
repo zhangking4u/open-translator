@@ -921,6 +921,31 @@ try {
       readingText ?? "<none>"
     );
 
+    // Tag-soup pages: a div-only text block must be claimed by the leaf walk.
+    let divText = null;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      divText = await evaluate(
+        pageSession,
+        `(() => {
+           const block = document.getElementById("divtext");
+           const node = block && block.nextElementSibling;
+           if (!node || node.dataset.otReadingTranslation !== "1") return null;
+           if (node.classList.contains("ot-reading-pending")) return null;
+           const text = node.querySelector(".ot-reading-text");
+           return text ? text.textContent : null;
+         })()`,
+        { contextId: isolated.id }
+      );
+      if (divText && !divText.startsWith("翻译失败")) break;
+      divText = null;
+      await sleep(200);
+    }
+    check(
+      "reading mode translates div-based blocks",
+      Boolean(divText),
+      divText ?? "<none>"
+    );
+
     const readingStats = await evaluate(
       pageSession,
       `(() => {
