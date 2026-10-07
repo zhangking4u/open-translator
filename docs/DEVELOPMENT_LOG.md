@@ -2512,6 +2512,27 @@ without engine calls on the next page or visit; the reload verification shows
 `persistHits: 3, engineCalls: 0`. Raw throughput for long articles remains
 model/CPU-bound (a smaller model or a multi-context engine are the levers).
 
+LFM2.5 translation model evaluation (2026-10-07): tried Liquid AI's LFM2.5
+family per the user's request, same prompts/paragraphs as the shipped HY-MT
+pipeline, same machine, llama.cpp in-process:
+
+- **LFM2.5-2.6B (Q4_K_M): unusable for translation.** The model card says it
+  is a pure reasoning model — every request runs a `<think>` chain. One short
+  sentence burned the 512-token budget mid-reasoning at ~4.9 tok/s (T1:
+  105 s, no finished thought, no clean translation).
+- **LFM2.5-1.2B-Instruct (Q4_K_M): works, slightly faster, worse quality.**
+  Four test texts totalled 12.5 s / 60 tokens (4.8 tok/s) vs HY-MT
+  1.5-1.8B's 13.7 s / 55 tokens (4.0 tok/s) — ~15-20 % faster wall time,
+  but terminology and short labels regress: "context window" → "讨论空间",
+  "Why Spring" → "为什么春", occasionally clipped phrasing. HY-MT keeps the
+  right terms (上下文窗口) and reads more naturally.
+- Verdict: keep HY-MT 1.5-1.8B as the translation model; the LFM2.5 family
+  is not an upgrade here. The measured per-token speed (~4-5 tok/s for both)
+  confirms the 4-core i5-10210U is bandwidth-bound — model size barely moves
+  throughput, so the remaining speed lever is hardware (or a smaller
+  translation-tuned model), not a general instruct model. Probe and the two
+  GGUF downloads were temporary and removed.
+
 
 ## Sprint 6
 
