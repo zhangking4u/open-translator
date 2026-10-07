@@ -21,6 +21,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/translator-popup-tauri
+      - name: Rebuild the sherpa-onnx prebuilt libraries
+        # rust-cache restores sherpa-onnx-sys fingerprints without the
+        # extracted lib directory, so cargo skips the build script. Remove its
+        # build outputs so the script downloads and extracts again.
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/*/build/sherpa-onnx-sys-* -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force target/*/.fingerprint/sherpa-onnx-sys-* -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force target/sherpa-onnx-prebuilt -ErrorAction SilentlyContinue
       - name: Build
         env:
           OPEN_TRANSLATOR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
@@ -48,6 +57,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path package | Out-Null
           Copy-Item target/release/translator-popup-tauri.exe package/
+          Copy-Item target/release/*.dll package/
+          if (-not (Test-Path package/onnxruntime.dll)) { throw "onnxruntime.dll missing from the build output" }
           Copy-Item ../../packaging/windows/install.ps1 package/
           Copy-Item ../../packaging/windows/README.txt package/
           Compress-Archive -Path package/* -DestinationPath OpenTranslator-windows-x64.zip -Force

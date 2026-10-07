@@ -5927,9 +5927,10 @@ dependencies = [
  "translator-asr",
  "translator-core",
  "translator-ocr",
- "translator-service",
- "url",
- "windows 0.61.3",
+  "translator-service",
+  "url",
+  "wasapi",
+  "windows 0.61.3",
  "windows-sys 0.59.0",
  "x11rb",
 ]
@@ -6152,6 +6153,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfa7760aed19e106de2c7c0b581b509f2f25d3dacaf737cb82ac61bc6d760b0e"
 dependencies = [
  "try-lock",
+]
+
+[[package]]
+name = "wasapi"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5225a7c681bdaf6a63aa0ffc287adba7fd5a04b592a2730643869ce45641da99"
+dependencies = [
+ "log",
+ "num-integer",
+ "thiserror 2.0.21",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]

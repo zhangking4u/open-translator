@@ -54,14 +54,14 @@ if (Test-Path $LegacyExe) {
     Remove-Item $LegacyExe -Force -ErrorAction SilentlyContinue
 }
 
-# Screenshot-OCR runtime shipped next to the executable; a stopping process
-# can keep it loaded briefly, so retry like the binary copy above.
-$OrtSource = Join-Path $PSScriptRoot "onnxruntime.dll"
-if (Test-Path $OrtSource) {
+# Live captions and screenshot OCR need the sherpa-onnx/onnxruntime DLLs next
+# to the exe; newer packages carry them, older ones simply have nothing to
+# copy. A stopping process can keep a DLL loaded briefly, so retry per file.
+Get-ChildItem -Path $PSScriptRoot -Filter *.dll -File | ForEach-Object {
     $deadline = (Get-Date).AddSeconds(10)
     while ($true) {
         try {
-            Copy-Item $OrtSource (Join-Path $InstallDir "onnxruntime.dll") -Force -ErrorAction Stop
+            Copy-Item $_.FullName (Join-Path $InstallDir $_.Name) -Force -ErrorAction Stop
             break
         } catch {
             if ((Get-Date) -ge $deadline) {

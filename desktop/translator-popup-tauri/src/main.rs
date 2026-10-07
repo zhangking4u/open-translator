@@ -2054,7 +2054,7 @@ fn open_glossary_file() {
         let _ = std::fs::write(&path, GLOSSARY_TEMPLATE);
     }
 
-    open_in_default_app(&path);
+    open_path(&path);
 }
 
 /// Opens the directory that holds the per-session caption transcripts.
@@ -2065,21 +2065,7 @@ fn open_captions_dir() {
     };
 
     let _ = std::fs::create_dir_all(&dir);
-    open_in_default_app(&dir);
-}
-
-fn open_in_default_app(path: &std::path::Path) {
-    #[cfg(target_os = "linux")]
-    {
-        if let Err(error) = std::process::Command::new("xdg-open").arg(path).spawn() {
-            notify::show("OpenTranslator", &format!("打开失败：{error}"));
-        }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        notify::show("OpenTranslator", &path.display().to_string());
-    }
+    open_path(&dir);
 }
 
 /// Puts the caption overlay back at its bottom-center default.
@@ -2108,15 +2094,15 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         None::<&str>,
     )?;
     let update_item = MenuItem::with_id(app, "update", "正在检查更新…", false, None::<&str>)?;
-    // 实时字幕 is Linux-only for now; the items stay visible but disabled
-    // elsewhere so the feature is discoverable.
+    // 实时字幕 is Linux/Windows-only for now; the items stay visible but
+    // disabled elsewhere so the feature is discoverable.
     let caption_on = app.state::<AppState>().caption.is_active();
     let caption_layout = caption::layout();
     let caption_toggle = CheckMenuItem::with_id(
         app,
         "caption-toggle",
         "开启实时字幕",
-        cfg!(target_os = "linux"),
+        cfg!(any(target_os = "linux", target_os = "windows")),
         caption_on,
         None::<&str>,
     )?;
@@ -2148,28 +2134,28 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         app,
         "caption-glossary",
         "编辑术语表…",
-        cfg!(target_os = "linux"),
+        cfg!(any(target_os = "linux", target_os = "windows")),
         None::<&str>,
     )?;
     let caption_transcripts_item = MenuItem::with_id(
         app,
         "caption-transcripts",
         "打开字幕记录",
-        cfg!(target_os = "linux"),
+        cfg!(any(target_os = "linux", target_os = "windows")),
         None::<&str>,
     )?;
     let caption_move_item = MenuItem::with_id(
         app,
         "caption-move",
         "移动字幕条…",
-        cfg!(target_os = "linux"),
+        cfg!(any(target_os = "linux", target_os = "windows")),
         None::<&str>,
     )?;
     let caption_reset_item = MenuItem::with_id(
         app,
         "caption-reset",
         "重置字幕位置",
-        cfg!(target_os = "linux"),
+        cfg!(any(target_os = "linux", target_os = "windows")),
         None::<&str>,
     )?;
     let caption_menu = Submenu::with_items(

@@ -1,11 +1,11 @@
 # Live Subtitle Translation (实时字幕翻译) — Research & Design Intent
 
-Status: design intent, 2026-10-04; M0–M3 implemented and accepted
-(2026-10-05, see §7). Microphone mode was decided on 2026-10-06 as the second
-capture source (§6.8) and the driver for extracting a shared audio pipeline.
-Scope was decided with the maintainer on 2026-10-04: **single-direction
-comprehension, overlay captions, strictly local, Linux first**. This document
-is the reference for the feature.
+Status: research and design intent, 2026-10-04; implemented through 2026-10-05
+(M0–M3 on Linux, W0–W3 on Windows). Microphone mode was decided on 2026-10-06
+as the second capture source (§6.8) and the driver for extracting a shared
+audio pipeline. Scope was decided with the maintainer on 2026-10-04:
+**single-direction comprehension, overlay captions, strictly local, Linux
+first (Windows followed)**. This document is the reference for the feature.
 
 
 ## 1. Goal
@@ -249,14 +249,17 @@ the GTK widget is not realized yet.
   decoding does not need the boxed-future shape of `TranslationEngine`, and
   the simpler trait is easier to test. A separate crate keeps the heavy
   sherpa/onnxruntime dependency out of `translator-core`, whose tests run on
-  all three CI platforms. The desktop depends on it Linux-only
-  (`[target.'cfg(target_os = "linux")'.dependencies]`) so Windows/macOS builds
-  do not link onnxruntime.
-- Captions live in the desktop client: `src/caption.rs` owns the `pw-record`
-  child, the VAD/ASR workers and the `caption-segment` / `caption-status`
-  events; `ui/caption.{html,css,js}` renders them. New window labels must be
-  added to `capabilities/default.json` or their `listen()` calls are rejected
-  by the Tauri ACL — this was the M1 bug that made events invisible.
+  all three CI platforms. The desktop depends on it on Linux and Windows
+  (`[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]`;
+  Windows ships the sherpa/onnxruntime DLLs) so the macOS build does not link
+  onnxruntime.
+- Captions live in the desktop client: `src/caption.rs` owns the capture
+  module (the `pw-record` child on Linux, a single-thread WASAPI loopback
+  session on Windows), the VAD/ASR workers and the `caption-segment` /
+  `caption-status` events; `ui/caption.{html,css,js}` renders them. New window
+  labels must be added to `capabilities/default.json` or their `listen()` calls
+  are rejected by the Tauri ACL — this was the M1 bug that made events
+  invisible.
   Caption translation runs in the same module: a single-flight worker streams
   `caption-translation` deltas from the embedded llama.cpp engine (newest text
   wins) and `caption-config` carries the layout; the glossary file
@@ -436,6 +439,7 @@ extraction (D2 of the multimodal roadmap):
 | M1 captions — **done 2026-10-05** | Subtitle window showing source-language captions | Real-machine verified: captions render, click-through works, no focus steal, tray toggle works. Position is bottom-center (config override, no drag UI yet); the 30-minute soak remains part of normal daily use |
 | M2 translation — **done 2026-10-05** | Second line via HY-MT streaming | Real-machine verified: translation line streams, bilingual/translation-only/source layouts switch from the tray, and `glossary.txt` terms reach the request. Measured 411–606 ms to first translated token and 1.16–2.49 s per segment (from ASR completion) |
 | M3 trust — **done 2026-10-05** | Provisional/final states, user corrections, personal glossary, history export | Real-machine verified: `···` placeholder while waiting, dimmed streaming → solid final translation, tray 编辑术语表… (creates/opens `glossary.txt`, applied live), tray 打开字幕记录 (per-session transcript under `~/.local/share/open-translator/captions/`). The 30-minute experiential soak continues as daily use |
+| W0–W3 Windows — **done 2026-10-05** | WASAPI loopback capture feeding the same VAD/ASR/MT/overlay pipeline on Windows | Real-machine verified (Windows 11): captions on system audio, layouts, overlay drag, glossary and transcript items; `cargo test --release` 17/17 on Windows |
 
 M0 result (2026-10-04, Linux dev machine, spike scripts in `/tmp/kilo`): a
 real-speech clip produced two VAD segments with 384 ms endpointing, 415–446 ms
@@ -510,6 +514,25 @@ a `workflow_dispatch` run (all four packages built; the deb carries the shared
 sherpa/onnxruntime libraries and `pipewire-bin`); the release itself is
 deferred.
 
+W0–W3 result (2026-10-05, Windows 11 real machine, same i5-14400 class CPU):
+the W0 spike proved that `AUDCLNT_STREAMFLAGS_LOOPBACK` + `AUTOCONVERTPCM` on
+the default render endpoint delivers exactly 16 kHz mono f32, so the common
+path needs no resampler; because sherpa's Silero VAD hard-exits
+(`SHERPA_ONNX_EXIT(-1)`) on any other sample rate, the capture layer always
+requests that format and keeps an in-repo box-filter/linear converter as a
+fallback when a driver rejects the combination. The implementation uses the
+`wasapi` crate (MIT): setup, capture and teardown run on one blocking thread
+because the client types are `!Send`; a device switch invalidates the stream
+and the loop rebuilds a fresh client (up to 5 consecutive failures); idle
+render endpoints simply deliver no packets, so silence costs nothing.
+`translator-asr` is now enabled for Windows, the release zip carries
+`sherpa-onnx-c-api.dll`/`sherpa-onnx-cxx-api.dll`/`onnxruntime.dll`/
+`onnxruntime_providers_shared.dll` and `install.ps1` copies them next to the
+exe. Real-machine checks passed for source captions, the translation line and
+layouts, overlay placement/drag, and the glossary/transcript tray items.
+Windows-specific limits follow the OS: apps holding the endpoint in exclusive
+mode and some DRM-protected streams are not loopback-capturable.
+
 
 ## 8. Risks
 
@@ -519,6 +542,7 @@ deferred.
 | Wayland-native keep-above/placement limits | Keep the X11-preferred policy; document the limitation |
 | ASR + MT together on CPU (heat, fan, battery). M0 measured MT at ~3.3 CPU-seconds per ~100-character request vs ~0.09 CPU-seconds per audio-second for ASR | VAD gating (both models idle on silence), thread-count tuning, quantization, optional GPU offload |
 | PipeWire monitor discoverability (headset vs speakers) | Device selector + health check; microphone mode as a separate future feature |
+| Windows loopback limits (exclusive-mode audio, some DRM streams) | Default-render-endpoint loopback covers regular apps; per-process loopback is a future option |
 | Model download size | First-use download through the existing downloader |
 | Existence risk (OS vendors ship the same thing) | The four constraints in §4.5 are the product; if they stop mattering, stop building |
 
@@ -527,9 +551,10 @@ deferred.
 
 1. ASR model distribution — **done 2026-10-05**: `translator-core::models`
    carries `ASR_MODEL_FILES` (SenseVoice int8 + `tokens.txt` from
-   `hf-mirror.com`, Silero VAD from the sherpa-onnx GitHub release with a
-   gh-proxy fallback) with SHA-256 verification, resume and skip-if-valid; the
-   caption start downloads missing files and streams progress to the overlay.
+   `hf-mirror.com`, Silero VAD from an hf-mirror copy of the exact k2-fsa
+   export, then the sherpa-onnx GitHub release and its gh-proxy fallback) with
+   SHA-256 verification, resume and skip-if-valid; the caption start downloads
+   missing files and streams progress to the overlay.
 2. Overlay placement — **done 2026-10-05**: the click-through overlay stays
    non-interactive by default; the tray 移动字幕条… item turns click-through
    off for 30 seconds (or until the drag ends), the overlay gets a dashed

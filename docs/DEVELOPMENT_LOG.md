@@ -2086,7 +2086,58 @@ reference is `docs/LIVE_SUBTITLE_TRANSLATION.md`.
 - Release packaging verified 2026-10-05 with a `workflow_dispatch` run
   (`Release`, run 37263196039): Windows/macOS/browser/Linux all built; the deb
   carries the binary + `libsherpa-onnx-{c-api,cxx-api}.so` + `libonnxruntime.so`
-  and depends on `pipewire-bin`. Tagging `v0.7.0` is deferred by the maintainer.
+  and depends on `pipewire-bin`. Tagging `v0.7.0` was deferred at the time; the
+  tag was pushed later the same day (release run 37266548836, all four packages
+  green, five assets attached, notes rewritten) and v0.7.0 is the current
+  `releases/latest`.
+- Windows live captions (W0–W3, 2026-10-05): see the dedicated section below.
+
+
+## Windows Live Captions (2026-10-05)
+
+- W0 spike (scratch crate in `%TEMP%`): proved on the Windows 11 dev machine
+  that `AUDCLNT_STREAMFLAGS_LOOPBACK` + `AUTOCONVERTPCM | SRC_DEFAULT_QUALITY`
+  on the default render endpoint delivers exactly 16 kHz mono f32 (spike
+  captured SAPI speech, peak 0.31 / RMS 0.03). Findings that shaped the
+  implementation: `wasapi` client types are `!Send`, so setup/capture/teardown
+  must share one thread; idle endpoints deliver no packets (VAD gating is
+  free); sherpa's Silero VAD hard-exits on any sample rate other than 16 kHz,
+  so the capture layer always requests that format.
+- W1 landed: `translator-asr` is now a dependency on Linux and Windows
+  (`Cargo.toml` target-gated), plus `wasapi` 0.25 (MIT) on Windows. New
+  `caption.rs` `mod windows` runs the whole WASAPI lifecycle on one blocking
+  thread, requests 16 kHz mono f32 via autoconvert, falls back to the device
+  mix format plus an in-repo box-filter/linear resampler (`FormatConverter`,
+  unit-tested), rebuilds the session after a device switch (up to 5 consecutive
+  failures) and feeds the same Silero VAD → SenseVoice → single-flight MT
+  pipeline. Shared helpers (model check/download/load, transcription worker,
+  failure handling) were factored out of the Linux module, which keeps its
+  `pw-record` path behaviour unchanged.
+- Tray 实时字幕 items are enabled on Windows (`cfg!(any(target_os = "linux",
+  target_os = "windows"))`); the caption overlay reuses the existing
+  transparent/click-through window and needed no changes.
+- W3 packaging: the Windows release zip now ships
+  `sherpa-onnx-c-api.dll`/`sherpa-onnx-cxx-api.dll`/`onnxruntime.dll`/
+  `onnxruntime_providers_shared.dll` and `install.ps1` copies them next to the
+  exe (one-click updates run the new installer, so they carry the DLLs too).
+  CI gained an `asr-windows` job (`core/asr` tests on windows-latest) and the
+  Windows Tauri job got the same sherpa cache workaround as Linux.
+- Real-machine verification (Windows 11): captions on system audio, the
+  translation line and layouts, overlay placement/drag all passed. One bug
+  found: 编辑术语表… and 打开字幕记录 used `open_in_default_app`, a Linux-only
+  helper that merely showed a notification elsewhere; they now reuse the
+  working `open_path` (cmd start / open / xdg-open) and open correctly.
+  `cargo test --release` on Windows: 17/17.
+- Model download mirrors (2026-10-05): a proxy-off re-run showed the only
+  unreachable source was the Silero VAD GitHub release (connect timeout, then
+  ~50 s through gh-proxy); an hf-mirror copy of the exact k2-fsa export
+  (byte-identical, SHA-256 verified) is now tried first in `ASR_MODEL_FILES`,
+  then GitHub, then gh-proxy. Empty-cache re-run: 240 MB downloaded and
+  captions `listening` in 74 s (the VAD mirror took under a second).
+- v0.8.0 released 2026-10-05 (tag `cb4d18d`, release run 37273967262): first
+  real run of the DLL packaging — the Windows package job took 5m13s, the zip
+  (15.4 MB) carries the four runtime DLLs, and five assets landed; v0.7.0
+  users can one-click update because the updater runs the new installer.
 
 
 ## Multimodal Roadmap (2026-10-06)

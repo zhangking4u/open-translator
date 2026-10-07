@@ -21,14 +21,17 @@ pub struct ModelFile {
 
 /// SenseVoice (zh/en/ja/ko/yue) + Silero VAD for live captions. The files are
 /// served through the Hugging Face mirror (`hf-mirror.com`); ModelScope has no
-/// mirror of this sherpa-onnx conversion. The VAD file comes from the
-/// sherpa-onnx GitHub release with a gh-proxy fallback.
+/// mirror of this sherpa-onnx conversion. The VAD file prefers an hf-mirror
+/// copy of the exact k2-fsa export (the pinned SHA-256 keeps any mirror
+/// honest), then falls back to the GitHub release and its gh-proxy copy.
 pub const SENSE_VOICE_MODEL_URL: &str = "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx";
 pub const SENSE_VOICE_MODEL_SHA256: &str =
     "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51";
 pub const SENSE_VOICE_TOKENS_URL: &str = "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt";
 pub const SENSE_VOICE_TOKENS_SHA256: &str =
     "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc";
+pub const SILERO_VAD_MIRROR_URL: &str =
+    "https://hf-mirror.com/R4kSo1997/sherpa-onnx-silero-vad-v5/resolve/main/silero_vad.onnx";
 pub const SILERO_VAD_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx";
 pub const SILERO_VAD_FALLBACK_URL: &str =
@@ -51,7 +54,7 @@ pub const ASR_MODEL_FILES: [ModelFile; 3] = [
     },
     ModelFile {
         name: "silero_vad.onnx",
-        urls: &[SILERO_VAD_URL, SILERO_VAD_FALLBACK_URL],
+        urls: &[SILERO_VAD_MIRROR_URL, SILERO_VAD_URL, SILERO_VAD_FALLBACK_URL],
         sha256: SILERO_VAD_SHA256,
         size: 643_854,
     },
