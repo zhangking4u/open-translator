@@ -16,9 +16,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ashpd::desktop::screenshot::Screenshot;
 use base64::Engine as _;
 use serde::Serialize;
-use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
+#[cfg(target_os = "linux")]
+use tauri::{LogicalPosition, LogicalSize};
 
 use translator_core::history::HistoryEntry;
 use translator_service::engine::{EngineRef, TimeoutEngine};
@@ -99,6 +99,16 @@ pub(crate) struct Selection {
     pub y: u32,
     pub width: u32,
     pub height: u32,
+}
+
+/// A screen capture in the form each platform hands it back: the Linux portal
+/// returns PNG bytes, while the Windows Graphics Capture path keeps the raw
+/// frame so the whole monitor never PNG round-trips through `crop_region`.
+enum Capture {
+    #[cfg(target_os = "linux")]
+    Encoded(Vec<u8>),
+    #[cfg(target_os = "windows")]
+    Rgba(image::RgbaImage),
 }
 
 #[derive(Clone, Serialize)]
@@ -276,7 +286,7 @@ pub fn region_selected(
         // Let the compositor remove the selector before capturing.
         tokio::time::sleep(HIDE_SETTLE).await;
 
-        let (png, capture_width, capture_height) = match capture_screen(monitor).await {
+        let (capture, capture_width, capture_height) = match capture_screen(monitor).await {
             Ok(capture) => capture,
             Err(message) => {
                 crate::notify::show("OpenTranslator", &message);
@@ -297,7 +307,7 @@ pub fn region_selected(
             slice.width, slice.height, slice.scale
         );
 
-        run_region(&app, &png, selection, slice, monitor).await;
+        run_region(&app, &capture, selection, slice, monitor).await;
     });
 
     Ok(())
@@ -322,7 +332,7 @@ pub fn refresh(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let (region, monitor) = stored;
 
-        let (png, capture_width, capture_height) = match capture_screen(monitor).await {
+        let (capture, capture_width, capture_height) = match capture_screen(monitor).await {
             Ok(capture) => capture,
             Err(message) => {
                 crate::notify::show("OpenTranslator", &message);
@@ -343,7 +353,7 @@ pub fn refresh(app: AppHandle) {
             return;
         }
 
-        run_region(&app, &png, region, slice, monitor).await;
+        run_region(&app, &capture, region, slice, monitor).await;
     });
 }
 
@@ -363,6 +373,12 @@ pub fn close(app: &AppHandle) {
     }
 }
 
+/// Fractional physical-pixel movement not applied yet, per axis, so a slow
+/// drag at fractional DPI does not drift from the pointer (each event delta
+/// is otherwise rounded independently, biasing the window ahead of the
+/// cursor on 125%/150%/175% displays).
+static VIEWER_DRAG_CARRY: Mutex<(f64, f64)> = Mutex::new((0.0, 0.0));
+
 /// Moves the viewer by a logical-pixel screen delta (its drag handler; the
 /// Windows move loop does not engage for this tool window, so the drag is
 /// applied from the page like the docked ball).
@@ -376,8 +392,26 @@ pub fn move_viewer_by(app: &AppHandle, dx: f64, dy: f64) {
     };
 
     let scale = viewer.scale_factor().unwrap_or(1.0);
-    let x = position.x + (dx * scale).round() as i32;
-    let y = position.y + (dy * scale).round() as i32;
+
+    let (step_x, step_y) = {
+        let mut carry = VIEWER_DRAG_CARRY.lock().unwrap();
+        carry.0 += dx * scale;
+        carry.1 += dy * scale;
+
+        let step_x = carry.0.round();
+        let step_y = carry.1.round();
+        carry.0 -= step_x;
+        carry.1 -= step_y;
+
+        (step_x as i32, step_y as i32)
+    };
+
+    if step_x == 0 && step_y == 0 {
+        return;
+    }
+
+    let x = position.x + step_x;
+    let y = position.y + step_y;
 
     let _ = viewer.set_position(tauri::PhysicalPosition::new(x, y));
 }
@@ -390,12 +424,12 @@ fn viewer_visible(app: &AppHandle) -> bool {
 
 async fn run_region(
     app: &AppHandle,
-    png: &[u8],
+    capture: &Capture,
     region: Selection,
     slice: Slice,
     monitor: MonitorBox,
 ) {
-    let (image, cropped) = match crop_region(png, region, slice) {
+    let (image, cropped) = match crop_region(capture, region, slice) {
         Ok(value) => value,
         Err(message) => {
             crate::notify::show("OpenTranslator", &message);
@@ -407,8 +441,10 @@ async fn run_region(
     // analysis (private content; only with TRANSLATOR_SHOT_DEBUG=1).
     if shot_debug() {
         let dir = std::env::temp_dir();
-        let _ = std::fs::write(dir.join("open-translator-shot-full.png"), png);
-        let _ = std::fs::write(dir.join("open-translator-shot-crop.png"), &cropped);
+        if let Some(png) = capture_png(capture) {
+            write_debug_dump(&dir.join("open-translator-shot-full.png"), &png);
+        }
+        write_debug_dump(&dir.join("open-translator-shot-crop.png"), &cropped);
     }
 
     let payload = match translate_cropped(app, &cropped).await {
@@ -558,10 +594,35 @@ fn show_viewer(
     let was_visible = viewer.is_visible().unwrap_or(false);
 
     let _ = viewer.show();
-    if !was_visible {
-        let _ = viewer.set_position(LogicalPosition::new(x, y));
+
+    // Windows converts logical geometry with the window's current scale
+    // factor (the viewer is created on the primary monitor), so a viewer
+    // opened on a different-scale monitor would land misplaced; the selector
+    // is placed physically for the same reason.
+    #[cfg(target_os = "windows")]
+    {
+        if !was_visible {
+            let _ = viewer.set_position(tauri::PhysicalPosition::new(
+                (x * monitor.scale).round() as i32,
+                (y * monitor.scale).round() as i32,
+            ));
+        }
+
+        let _ = viewer.set_size(tauri::PhysicalSize::new(
+            (width * monitor.scale).round() as u32,
+            (height * monitor.scale).round() as u32,
+        ));
     }
-    let _ = viewer.set_size(LogicalSize::new(width, height));
+
+    #[cfg(target_os = "linux")]
+    {
+        if !was_visible {
+            let _ = viewer.set_position(LogicalPosition::new(x, y));
+        }
+
+        let _ = viewer.set_size(LogicalSize::new(width, height));
+    }
+
     let _ = viewer.set_always_on_top(true);
     let _ = viewer.set_focus();
     let _ = app.emit_to(VIEWER_LABEL, "shot-result", payload);
@@ -599,14 +660,15 @@ fn record_history(app: &AppHandle, source_text: String, translation_text: String
     translator_core::history::save(&history);
 }
 
-/// Captures the screen into PNG bytes plus its dimensions in capture pixels.
+/// Captures the screen into the platform's frame representation plus its
+/// dimensions in capture pixels.
 ///
 /// Linux asks the XDG portal, which returns the whole virtual desktop or one
 /// monitor; Windows captures the target monitor through the Windows Graphics
 /// Capture API (`xcap`), so a mixed-DPI multi-monitor desktop never needs
 /// stitching.
 #[cfg(target_os = "linux")]
-async fn capture_screen(_target: MonitorBox) -> Result<(Vec<u8>, u32, u32), String> {
+async fn capture_screen(_target: MonitorBox) -> Result<(Capture, u32, u32), String> {
     let request = Screenshot::request()
         .interactive(false)
         .send()
@@ -633,7 +695,7 @@ async fn capture_screen(_target: MonitorBox) -> Result<(Vec<u8>, u32, u32), Stri
         .into_dimensions()
         .map_err(|error| format!("截图失败：{error}"))?;
 
-    Ok((bytes, width, height))
+    Ok((Capture::Encoded(bytes), width, height))
 }
 
 /// Windows capture through the Windows Graphics Capture API. Tauri reports
@@ -641,14 +703,16 @@ async fn capture_screen(_target: MonitorBox) -> Result<(Vec<u8>, u32, u32), Stri
 /// so the target monitor is found by rect (with the primary monitor as a
 /// fallback). Capturing only that monitor keeps the mixed-DPI geometry out.
 #[cfg(target_os = "windows")]
-async fn capture_screen(target: MonitorBox) -> Result<(Vec<u8>, u32, u32), String> {
-    tokio::task::spawn_blocking(move || capture_monitor_windows(target))
+async fn capture_screen(target: MonitorBox) -> Result<(Capture, u32, u32), String> {
+    let (image, width, height) = tokio::task::spawn_blocking(move || capture_monitor_windows(target))
         .await
-        .map_err(|error| format!("截图失败：{error}"))?
+        .map_err(|error| format!("截图失败：{error}"))??;
+
+    Ok((Capture::Rgba(image), width, height))
 }
 
 #[cfg(target_os = "windows")]
-fn capture_monitor_windows(target: MonitorBox) -> Result<(Vec<u8>, u32, u32), String> {
+fn capture_monitor_windows(target: MonitorBox) -> Result<(image::RgbaImage, u32, u32), String> {
     // WinRT needs an apartment on the calling thread; blocking-pool threads
     // are reused, so S_FALSE / RPC_E_CHANGED_MODE just mean it is already set.
     unsafe {
@@ -681,12 +745,7 @@ fn capture_monitor_windows(target: MonitorBox) -> Result<(Vec<u8>, u32, u32), St
         .map_err(|error| format!("截图失败：{error}"))?;
     let (width, height) = (image.width(), image.height());
 
-    let mut png = Vec::new();
-    image::DynamicImage::ImageRgba8(image)
-        .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
-        .map_err(|error| format!("截图编码失败：{error}"))?;
-
-    Ok((png, width, height))
+    Ok((image, width, height))
 }
 
 #[cfg(target_os = "windows")]
@@ -861,22 +920,41 @@ pub(crate) fn map_selection(
 }
 
 /// Crops the selection out of the full capture and returns a data URL plus
-/// the encoded PNG for OCR.
-fn crop_region(png: &[u8], region: Selection, slice: Slice) -> Result<(String, Vec<u8>), String> {
-    let full = image::load_from_memory(png).map_err(|error| format!("截图解析失败：{error}"))?;
-    let rgb = full.to_rgb8();
-
+/// the encoded PNG for OCR. The Windows path crops the raw frame, so the full
+/// monitor is never PNG round-tripped.
+fn crop_region(capture: &Capture, region: Selection, slice: Slice) -> Result<(String, Vec<u8>), String> {
     let x = slice.x + region.x;
     let y = slice.y + region.y;
 
-    if x + region.width > rgb.width() || y + region.height > rgb.height() {
-        return Err("选区超出屏幕范围".to_string());
-    }
+    let cropped = match capture {
+        #[cfg(target_os = "linux")]
+        Capture::Encoded(png) => {
+            let full = image::load_from_memory(png)
+                .map_err(|error| format!("截图解析失败：{error}"))?
+                .to_rgb8();
 
-    let cropped = image::imageops::crop_imm(&rgb, x, y, region.width, region.height).to_image();
+            if x + region.width > full.width() || y + region.height > full.height() {
+                return Err("选区超出屏幕范围".to_string());
+            }
+
+            let cropped =
+                image::imageops::crop_imm(&full, x, y, region.width, region.height).to_image();
+            image::DynamicImage::ImageRgb8(cropped)
+        }
+        #[cfg(target_os = "windows")]
+        Capture::Rgba(rgba) => {
+            if x + region.width > rgba.width() || y + region.height > rgba.height() {
+                return Err("选区超出屏幕范围".to_string());
+            }
+
+            let cropped =
+                image::imageops::crop_imm(rgba, x, y, region.width, region.height).to_image();
+            image::DynamicImage::ImageRgba8(cropped)
+        }
+    };
+
     let mut encoded = Vec::new();
-
-    image::DynamicImage::ImageRgb8(cropped)
+    cropped
         .write_to(&mut Cursor::new(&mut encoded), image::ImageFormat::Png)
         .map_err(|error| format!("截图编码失败：{error}"))?;
 
@@ -886,6 +964,49 @@ fn crop_region(png: &[u8], region: Selection, slice: Slice) -> Result<(String, V
     );
 
     Ok((image, encoded))
+}
+
+/// PNG bytes of a capture for the debug dump; the Windows frame is encoded
+/// only here, never on the normal path.
+fn capture_png(capture: &Capture) -> Option<Vec<u8>> {
+    match capture {
+        #[cfg(target_os = "linux")]
+        Capture::Encoded(png) => Some(png.clone()),
+        #[cfg(target_os = "windows")]
+        Capture::Rgba(rgba) => {
+            use image::ImageEncoder as _;
+
+            let mut png = Vec::new();
+            image::codecs::png::PngEncoder::new(&mut png)
+                .write_image(
+                    rgba.as_raw(),
+                    rgba.width(),
+                    rgba.height(),
+                    image::ExtendedColorType::Rgba8,
+                )
+                .ok()?;
+
+            Some(png)
+        }
+    }
+}
+
+/// Writes a debug dump without following a pre-planted symlink or reusing a
+/// foreign file: remove whatever sits there, then create the file anew.
+fn write_debug_dump(path: &std::path::Path, bytes: &[u8]) {
+    if std::fs::symlink_metadata(path).is_ok() && std::fs::remove_file(path).is_err() {
+        return;
+    }
+
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    else {
+        return;
+    };
+
+    let _ = std::io::Write::write_all(&mut file, bytes);
 }
 
 #[cfg(test)]

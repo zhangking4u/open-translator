@@ -2350,6 +2350,19 @@ compositor move. `setPosition` straight from JS was rejected by the ACL
 Blur-dismiss stays Linux-only — Windows reports focus changes during normal
 use. Verified by the user on the Windows real machine: the viewer moves.
 
+Windows screenshot review follow-ups (2026-10-07): an unpushed-commit review
+found four issues, all fixed. `move_viewer_by` now carries the fractional
+physical-pixel remainder per axis, so slow drags at 125%/150%/175% scaling no
+longer creep ahead of the pointer; the viewer is positioned and sized
+physically on Windows like the selector, fixing mixed-DPI placement; the
+Windows capture keeps the raw RGBA frame (`Capture::Rgba`) and crops before
+encoding, dropping the full-monitor PNG encode/decode round trip (the portal
+path keeps `Capture::Encoded`); and the debug dumps are written via
+remove-then-`create_new`, so a pre-planted symlink or foreign file is not
+followed (debug-only, `TRANSLATOR_SHOT_DEBUG=1`). Client tests 23/23 green;
+synthetic end-to-end run on the dev machine: selection, OCR, translation,
+viewer and the toolbar drag all pass.
+
 
 ## Sprint 6
 
