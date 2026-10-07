@@ -2,13 +2,17 @@
 //!
 //! Engine-agnostic surface: [`OcrEngine`] turns a raw RGB image into text
 //! blocks with quads, the structure the screenshot-translation overlay needs.
-//! The crate has no engine implementation yet — the first adapter wraps
-//! RapidOCR (PP-OCR v6 mobile) through ONNX Runtime, pending the runtime
-//! packaging decision recorded in `docs/IMAGE_TRANSLATION.md` §5.1 (Linux
-//! reuses the sherpa-shipped runtime via `ort` `load-dynamic`; Windows/macOS
-//! still need a bundled one).
+//! [`RapidOcrEngine`] is the first implementation (RapidOCR / PP-OCR v6 on
+//! ONNX Runtime). The runtime is loaded at process start through `ort`
+//! `load-dynamic`: on Linux it is the `libonnxruntime.so` shipped next to the
+//! binary by the sherpa-onnx packaging, on Windows/macOS the dylib bundled
+//! with the installer (docs/IMAGE_TRANSLATION.md §5.1).
 
 use std::fmt;
+
+mod rapidocr;
+
+pub use rapidocr::{RapidOcrEngine, DEFAULT_MODEL_SET, DEFAULT_THREADS};
 
 /// Failure to load a model or recognize an image.
 #[derive(Debug)]
