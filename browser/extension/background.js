@@ -510,6 +510,21 @@ api.runtime.onInstalled.addListener((details) => {
       title: "翻译此图片（OpenTranslator）",
       contexts: ["image"],
     });
+    api.contextMenus.create({
+      id: "toggle-reading",
+      title: "网页翻译（双语对照）",
+      contexts: ["page"],
+      type: "checkbox",
+      checked: false,
+    });
+
+    // The stored toggle may already be on (e.g. an unpacked reload).
+    getSettings().then((settings) => {
+      const result = api.contextMenus.update("toggle-reading", {
+        checked: Boolean(settings.readingEnabled),
+      });
+      if (result && typeof result.catch === "function") result.catch(() => {});
+    });
   });
 
   api.alarms.create(HEALTH_ALARM, { periodInMinutes: 1 });
@@ -534,6 +549,11 @@ if (api.alarms && api.alarms.onAlarm) {
 }
 
 api.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === "toggle-reading") {
+    await api.storage.local.set({ readingEnabled: Boolean(info.checked) });
+    return;
+  }
+
   if (info.menuItemId === "translate-image") {
     await translateImageElement(tab, info.srcUrl);
     return;
@@ -574,6 +594,20 @@ api.commands.onCommand.addListener((command) => {
       api.tabs.sendMessage(tab.id, { type }).catch(() => {});
     }
   });
+});
+
+// Keep the context-menu checkbox in sync with the stored toggle.
+api.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes.readingEnabled) return;
+
+  try {
+    const result = api.contextMenus.update("toggle-reading", {
+      checked: Boolean(changes.readingEnabled.newValue),
+    });
+    if (result && typeof result.catch === "function") result.catch(() => {});
+  } catch (error) {
+    void error;
+  }
 });
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {

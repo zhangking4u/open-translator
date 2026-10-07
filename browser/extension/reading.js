@@ -3,9 +3,10 @@
 // Bilingual reading mode (网页翻译): inserts a translation under each page
 // block while keeping the original text. Passive by design — it never opens
 // the selection/typing bubbles, never replaces the original, and never writes
-// translation history (record: false). Driven by the popup toggle
-// (`readingEnabled`) and the per-site opt-out (`disabledSites`); top frame
-// only in v1 (see docs/READING_TRANSLATION.md §5).
+// translation history (record: false). Toggled from the page context menu
+// (网页翻译（双语对照）, a checkbox backed by the `readingEnabled` setting)
+// and gated by the per-site opt-out (`disabledSites`); top frame only in v1
+// (see docs/READING_TRANSLATION.md §5).
 
 (() => {
   const api = globalThis.browser ?? globalThis.chrome;
@@ -19,6 +20,9 @@
   const PRIMARY =
     "h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, figcaption, dd, dt, summary";
   const CONTAINER = "div, section, article, main";
+  // Menu labels often live in spans/links with button roles; only inside
+  // nav/header, so body links never split a paragraph.
+  const CHROME_LABEL = "span, a, button, [role='button'], [role='link']";
   const SKIP_CLOSEST =
     "[data-ot-reading], footer, aside, pre, code, script, style, noscript, textarea, select, [contenteditable], [translate=no], .ot-reading-translation";
   const MIN_CHARS = 12;
@@ -463,7 +467,9 @@
       if (walkCandidates(child)) claimed = true;
     }
 
-    const isPrimary = element.matches(PRIMARY);
+    const inChrome = element.closest("nav, header") !== null;
+    const isPrimary =
+      element.matches(PRIMARY) || (inChrome && element.matches(CHROME_LABEL));
     const isContainer = !isPrimary && element.matches(CONTAINER);
     if (!isPrimary && !isContainer) return claimed;
     if (claimed) return true;

@@ -7,7 +7,6 @@ const DEFAULTS = {
   target: "zh",
   autoTranslate: false,
   typeTranslate: false,
-  readingEnabled: false,
   disabledSites: [],
 };
 
@@ -15,7 +14,6 @@ const statusEl = document.getElementById("status");
 const targetSelect = document.getElementById("target");
 const autoInput = document.getElementById("autoTranslate");
 const typeInput = document.getElementById("typeTranslate");
-const readingInput = document.getElementById("readingEnabled");
 const siteRow = document.getElementById("siteRow");
 const siteInput = document.getElementById("siteDisabled");
 const historyEl = document.getElementById("history");
@@ -95,7 +93,6 @@ api.storage.local.get(DEFAULTS).then((settings) => {
   if (globalThis.OTSelect) OTSelect.sync(targetSelect);
   autoInput.checked = Boolean(settings.autoTranslate);
   typeInput.checked = Boolean(settings.typeTranslate);
-  readingInput.checked = Boolean(settings.readingEnabled);
   disabledSites = Array.isArray(settings.disabledSites) ? settings.disabledSites : [];
   loadSite();
   renderHistory();
@@ -128,10 +125,6 @@ autoInput.addEventListener("change", () => {
 
 typeInput.addEventListener("change", () => {
   api.storage.local.set({ typeTranslate: typeInput.checked });
-});
-
-readingInput.addEventListener("change", () => {
-  api.storage.local.set({ readingEnabled: readingInput.checked });
 });
 
 siteInput.addEventListener("change", () => {
