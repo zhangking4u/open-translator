@@ -2432,8 +2432,17 @@ now honors `record`, the popup gained the toggle, both manifests and
 reading-mode scenario (inject → state hook → cleanup). Verified locally with
 a targeted headless-Edge run against the running client: injection renders
 ("The quick brown fox…" → 快速的棕色狐狸跳过了那只懒惰的狗。), state hook and
-disable-cleanup pass. Deferred per §10: streaming display, joined batches,
+disable-cleanup pass. Deferred per §10: joined batches,
 extension-side glossary, iframes, 仅译文.
+
+Reading-mode streaming (2026-10-07): the reading queue now translates over
+the existing `translate` port and renders deltas into the pending block
+(one-shot message kept as the fallback), so paragraphs fill in token by token
+instead of arriving as a 3–5 s block; stopping the mode cancels the in-flight
+stream. The targeted headless run and the Chrome e2e scenario now wait for the
+streamed block to settle (`ot-reading-pending` cleared) and both pass against
+the running client; the e2e scenario was made streaming-aware after the first
+run caught a partial delta.
 
 
 ## Sprint 6

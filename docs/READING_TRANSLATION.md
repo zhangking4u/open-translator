@@ -209,11 +209,15 @@ script on all pages, inert until enabled):
 - Per-block requests (the spike's default), hover controls 复制 / 重译, no
   history writes (`record: false`), no original replacement (仅译文 deferred
   per §7 open question 3).
-- Not in v1: streaming display, joined batches (S3), extension-side glossary
+- Streaming landed the same day: the serialized queue translates over the
+  existing `translate` port and renders deltas into the pending block (the
+  one-shot message remains the fallback when the background cannot stream);
+  stopping the mode cancels the in-flight stream.
+- Not in v1: joined batches (S3), extension-side glossary
   (the extension has no glossary storage yet; the shared glossary stays a
   desktop-side feature until the output guard lands), iframes.
 - Verified: a targeted headless-Edge run against the running client (inject →
   state hook → cleanup on disable, all pass) and the CI harness gained a
-  reading-mode scenario.
+  reading-mode scenario that waits for the streamed block to settle.
 
 
