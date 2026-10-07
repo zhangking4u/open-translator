@@ -83,6 +83,10 @@ pub const DEFAULT_MODEL_FILE: &str = "hy-mt1.5-1.8b-q4_k_m.gguf";
 /// Silero VAD model and `tokens.txt`.
 pub const DEFAULT_ASR_DIR: &str = "sense-voice";
 
+/// Directory (under `models_dir`) that holds the PP-OCRv6 models used by
+/// screenshot translation.
+pub const DEFAULT_OCR_DIR: &str = "ocr";
+
 /// Glossary file (source=target lines) next to the config, used by live
 /// captions and available to other callers.
 pub const DEFAULT_GLOSSARY_FILE: &str = "glossary.txt";
@@ -131,6 +135,10 @@ pub fn default_model_path() -> Option<PathBuf> {
 
 pub fn default_asr_model_dir() -> Option<PathBuf> {
     Some(models_dir()?.join(DEFAULT_ASR_DIR))
+}
+
+pub fn default_ocr_model_dir() -> Option<PathBuf> {
+    Some(models_dir()?.join(DEFAULT_OCR_DIR))
 }
 
 pub fn glossary_path() -> Option<PathBuf> {
@@ -240,6 +248,16 @@ mod tests {
         assert_eq!(
             path.file_name().unwrap().to_string_lossy(),
             DEFAULT_ASR_DIR
+        );
+    }
+
+    #[test]
+    fn default_ocr_model_dir_ends_with_ocr_dir() {
+        let path = default_ocr_model_dir().unwrap();
+
+        assert_eq!(
+            path.file_name().unwrap().to_string_lossy(),
+            DEFAULT_OCR_DIR
         );
     }
 

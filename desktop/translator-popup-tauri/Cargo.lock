@@ -5879,6 +5879,7 @@ name = "translator-ocr"
 version = "0.1.0"
 dependencies = [
  "image",
+ "ort",
  "rapidocr-core",
  "tracing",
 ]
@@ -5906,6 +5907,7 @@ dependencies = [
  "tokio",
  "translator-asr",
  "translator-core",
+ "translator-ocr",
  "translator-service",
  "windows 0.61.3",
  "windows-sys 0.59.0",

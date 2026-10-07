@@ -672,8 +672,10 @@ fn spawn_model_startup(
                 }
 
                 if let Some(plan) = server_plan {
+                    let ocr = build_ocr_provider();
+
                     if let Err(error) =
-                        server::start(engine, plan.bind_addr, plan.model_name)
+                        server::start(engine, ocr, plan.bind_addr, plan.model_name)
                     {
                         let message = format!("扩展接口启动失败：{error}");
 
@@ -722,6 +724,30 @@ fn fail_model(app: &AppHandle, message: String) {
 
     if window_hidden(app) {
         notify::show("OpenTranslator", &message);
+    }
+}
+
+/// Builds the OCR provider for the extension image endpoint. Model files are
+/// downloaded from ModelScope on first use; a failure logs and leaves the
+/// endpoint at 501 instead of blocking the server.
+fn build_ocr_provider() -> Option<translator_service::api::OcrEngineRef> {
+    let config = translator_core::settings::load_config();
+    let directory = config
+        .ocr_model_dir
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(translator_core::paths::default_ocr_model_dir)?;
+
+    match translator_ocr::RapidOcrEngine::load(
+        translator_ocr::DEFAULT_MODEL_SET,
+        &directory,
+        translator_ocr::DEFAULT_THREADS,
+    ) {
+        Ok(engine) => Some(std::sync::Arc::new(engine)),
+        Err(error) => {
+            eprintln!("OCR provider unavailable: {error}");
+            None
+        }
     }
 }
 

@@ -17,6 +17,7 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tokio = { version = "1.53.1", features = ["macros", "net", "rt", "time", "process", "io-util"] }
 translator-core = { version = "0.1.0", path = "../translator-core" }
+translator-ocr = { version = "0.1.0", path = "../../core/ocr" }
 translator-service = { version = "0.1.0", path = "../../core/translator-service" }
 
 [target.'cfg(target_os = "linux")'.dependencies]

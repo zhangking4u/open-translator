@@ -50,6 +50,8 @@ impl RapidOcrEngine {
         threads: usize,
         download: ModelDownloadMode,
     ) -> Result<Self, OcrError> {
+        configure_bundled_runtime();
+
         let Some(spec) = model_set_by_name(model_set) else {
             let names: Vec<&str> = available_model_sets()
                 .iter()
@@ -122,6 +124,45 @@ impl OcrEngine for RapidOcrEngine {
     fn name(&self) -> &'static str {
         "rapidocr"
     }
+}
+
+/// Points `ort` at the ONNX Runtime shipped next to the executable when one
+/// is present — `libonnxruntime.so` (Linux), `onnxruntime.dll` (Windows) or
+/// `libonnxruntime.dylib` (macOS) — once per process. Without such a file the
+/// loader falls back to `ORT_DYLIB_PATH` and the system search path.
+fn configure_bundled_runtime() {
+    use std::sync::Once;
+
+    static CONFIGURE: Once = Once::new();
+
+    CONFIGURE.call_once(|| {
+        let Ok(executable) = std::env::current_exe() else {
+            return;
+        };
+        let Some(directory) = executable.parent() else {
+            return;
+        };
+
+        for name in [
+            "libonnxruntime.so",
+            "onnxruntime.dll",
+            "libonnxruntime.dylib",
+        ] {
+            let candidate = directory.join(name);
+
+            if candidate.is_file() {
+                if let Err(error) = ort::init_from(&candidate) {
+                    tracing::warn!(
+                        path = %candidate.display(),
+                        %error,
+                        "failed to load the bundled ONNX Runtime"
+                    );
+                }
+
+                return;
+            }
+        }
+    });
 }
 
 fn rgb_image(pixels: &[u8], width: u32, height: u32) -> Result<image::RgbImage, OcrError> {

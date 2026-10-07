@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use translator_service::api::{AppState, router};
+use translator_service::api::{AppState, OcrEngineRef, router};
 use translator_service::engine::llama_cpp::LlamaCppEngine;
 use translator_service::engine::{EngineRef, TimeoutEngine};
 
@@ -24,6 +24,7 @@ impl std::fmt::Display for ServerError {
 
 pub fn start(
     engine: Arc<LlamaCppEngine>,
+    ocr: Option<OcrEngineRef>,
     bind_addr: String,
     model_name: String,
 ) -> Result<(), ServerError> {
@@ -63,7 +64,11 @@ pub fn start(
                 };
 
                 let engine_ref: EngineRef = Arc::new(TimeoutEngine::new(engine, TIMEOUT));
-                let state = AppState::new(engine_ref, "llama-cpp", model_name, MAX_CHARS);
+                let mut state = AppState::new(engine_ref, "llama-cpp", model_name, MAX_CHARS);
+
+                if let Some(ocr) = ocr {
+                    state = state.with_ocr(ocr);
+                }
 
                 if let Err(error) = axum::serve(listener, router(state)).await {
                     eprintln!("extension server stopped: {error}");
