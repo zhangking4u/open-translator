@@ -5,8 +5,8 @@ use translator_service::api::{AppState, OcrEngineRef, router};
 use translator_service::engine::llama_cpp::LlamaCppEngine;
 use translator_service::engine::{EngineRef, TimeoutEngine};
 
-const TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_CHARS: usize = 1500;
+pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const MAX_CHARS: usize = 1500;
 
 pub enum ServerError {
     AddrInUse(String),

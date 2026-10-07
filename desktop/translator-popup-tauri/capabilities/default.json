@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Capability for the main translation card, the selection ball and the live caption overlay",
-  "windows": ["main", "ball", "caption"],
+  "description": "Capability for the main translation card, the selection ball, the live caption overlay and the screenshot selector/viewer windows",
+  "windows": ["main", "ball", "caption", "shot", "shot-select"],
   "permissions": ["core:default", "core:window:allow-start-dragging"]
 }

@@ -1,0 +1,33 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  cursor: crosshair;
+  user-select: none;
+}
+
+/* The screen stays live: only the dragged rectangle is drawn, with a light
+   dual border that reads on both dark and light content. */
+#rect {
+  position: fixed;
+  border: 1.5px solid var(--ot-accent, #2f6bff);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85);
+  background: rgba(47, 107, 255, 0.08);
+  pointer-events: none;
+}
+
+#hint {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 17, 21, 0.82);
+  color: #fff;
+  font-family: var(--ot-font, sans-serif);
+  font-size: 13px;
+  pointer-events: none;
+}

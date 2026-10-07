@@ -10,6 +10,7 @@ pub struct FileConfig {
     pub clipboard: Option<String>,
     pub recent_targets: Option<Vec<String>>,
     pub hotkey: Option<String>,
+    pub screenshot_hotkey: Option<String>,
     pub model_path: Option<String>,
     pub prompt_style: Option<String>,
     pub serve_extension: Option<String>,
@@ -79,6 +80,7 @@ pub fn load_file_config(path: &Path) -> FileConfig {
                 );
             }
             "hotkey" => config.hotkey = Some(value.to_string()),
+            "screenshot_hotkey" => config.screenshot_hotkey = Some(value.to_string()),
             "model_path" => config.model_path = Some(value.to_string()),
             "prompt_style" => config.prompt_style = Some(value.to_string()),
             "serve_extension" => config.serve_extension = Some(value.to_string()),
@@ -208,7 +210,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_method = auto\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nasr_model_dir = /models/sense-voice\nocr_model_dir = /models/ocr\ncaption_enabled = true\ncaption_language = auto\ncaption_x = 640\ncaption_y = 960\ncaption_layout = translation\ncaption_glossary = /config/glossary.txt\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nscreenshot_hotkey = Ctrl+Alt+S\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_method = auto\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nasr_model_dir = /models/sense-voice\nocr_model_dir = /models/ocr\ncaption_enabled = true\ncaption_language = auto\ncaption_x = 640\ncaption_y = 960\ncaption_layout = translation\ncaption_glossary = /config/glossary.txt\nunknown = x\n",
         )
         .unwrap();
 
@@ -224,6 +226,7 @@ mod tests {
         );
         assert_eq!(config.service_url.as_deref(), Some("http://127.0.0.1:1"));
         assert_eq!(config.hotkey.as_deref(), Some("Ctrl+Shift+T"));
+        assert_eq!(config.screenshot_hotkey.as_deref(), Some("Ctrl+Alt+S"));
         assert_eq!(config.model_path.as_deref(), Some("/models/hy-mt.gguf"));
         assert_eq!(config.prompt_style.as_deref(), Some("hymt"));
         assert_eq!(config.serve_extension.as_deref(), Some("false"));

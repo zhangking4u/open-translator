@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenTranslator</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="shot.css" />
+  </head>
+  <body>
+    <div id="panel">
+      <div id="toolbar" data-tauri-drag-region>
+        <span id="title" data-tauri-drag-region>截图翻译</span>
+        <button id="mode">显示原文</button>
+        <button id="list">列表</button>
+        <button id="refresh">刷新</button>
+        <button id="copy">复制译文</button>
+        <button id="close" title="关闭">×</button>
+      </div>
+      <div id="stage">
+        <img id="image" alt="" />
+        <div id="boxes"></div>
+      </div>
+      <div id="list-body" hidden></div>
+      <div id="footer" data-tauri-drag-region></div>
+    </div>
+    <script src="shot.js"></script>
+  </body>
+</html>

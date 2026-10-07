@@ -3,6 +3,8 @@
 mod caption;
 mod capture;
 mod notify;
+#[cfg(target_os = "linux")]
+mod screenshot;
 mod selection_watch;
 mod server;
 
@@ -26,6 +28,8 @@ use translator_service::domain::translation::TranslationRequest;
 use translator_service::engine::llama_cpp::LlamaCppEngine;
 
 const DEFAULT_HOTKEY: &str = "Ctrl+Alt+T";
+/// Region-screenshot translation (Linux, XDG portal).
+const DEFAULT_SCREENSHOT_HOTKEY: &str = "Ctrl+Alt+S";
 const DEFAULT_N_CTX: u32 = 4096;
 
 struct InitialView(Mutex<Option<String>>);
@@ -104,6 +108,13 @@ struct AppState {
     /// Text of the last committed (hovered) selection, so hovering the docked
     /// ball again only re-shows the card instead of translating twice.
     last_translated: Mutex<Option<String>>,
+    /// RapidOCR provider for image translation (extension endpoint and the
+    /// region-screenshot flow), loaded lazily on first use.
+    ocr: Mutex<Option<translator_service::api::OcrEngineRef>>,
+    /// The parsed 截图翻译 hotkey; the global handler compares incoming
+    /// shortcuts against it to route to the screenshot flow.
+    #[cfg(target_os = "linux")]
+    screenshot_shortcut: Mutex<Option<tauri_plugin_global_shortcut::Shortcut>>,
     /// Docked ball presentation state (see `BALL_*`).
     ball_state: AtomicU64,
     /// Live caption capture task (Linux) and its tray items.
@@ -307,6 +318,12 @@ fn main() {
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_HOTKEY.to_string());
 
+    let screenshot_hotkey_spec = config
+        .screenshot_hotkey
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_SCREENSHOT_HOTKEY.to_string());
+
     let serve_extension = config.serve_extension.as_deref() != Some("false");
     let server_plan = serve_extension.then(|| ServerPlan {
         bind_addr: translator_core::services::bind_addr_from_service_url(&args.service_url)
@@ -368,6 +385,9 @@ fn main() {
             translation_queue: translator_core::latest_wins::LatestWins::new(),
             popup: AtomicBool::new(false),
             last_translated: Mutex::new(None),
+            ocr: Mutex::new(None),
+            #[cfg(target_os = "linux")]
+            screenshot_shortcut: Mutex::new(None),
             ball_state: AtomicU64::new(BALL_IDLE),
             caption: caption::CaptionRuntime::default(),
             caption_menu: Mutex::new(None),
@@ -392,10 +412,28 @@ fn main() {
         }))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        trigger_translation(app);
+                .with_handler(|app, shortcut, event| {
+                    if event.state != ShortcutState::Pressed {
+                        return;
                     }
+
+                    #[cfg(target_os = "linux")]
+                    {
+                        let is_screenshot = app
+                            .state::<AppState>()
+                            .screenshot_shortcut
+                            .lock()
+                            .unwrap()
+                            .map(|configured| configured == *shortcut)
+                            .unwrap_or(false);
+
+                        if is_screenshot {
+                            screenshot::trigger(app.clone());
+                            return;
+                        }
+                    }
+
+                    trigger_translation(app);
                 })
                 .build(),
         )
@@ -443,7 +481,11 @@ fn main() {
             get_language_state,
             set_source,
             set_target,
-            swap_languages
+            swap_languages,
+            shot_region,
+            shot_refresh,
+            shot_close,
+            shot_cancel
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -456,6 +498,15 @@ fn main() {
 
             if let Err(error) = build_caption_window(&handle) {
                 eprintln!("failed to create the caption window: {error}");
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                app.manage(screenshot::ShotState::default());
+
+                if let Err(error) = screenshot::build_windows(&handle) {
+                    eprintln!("failed to create the screenshot windows: {error}");
+                }
             }
 
             if start_caption {
@@ -509,6 +560,29 @@ fn main() {
                 let _ = app.emit("error", ErrorPayload { message });
             }
 
+            #[cfg(target_os = "linux")]
+            match screenshot_hotkey_spec
+                .parse::<tauri_plugin_global_shortcut::Shortcut>()
+            {
+                Ok(shortcut) => {
+                    match app
+                        .global_shortcut()
+                        .register(screenshot_hotkey_spec.as_str())
+                    {
+                        Ok(()) => {
+                            *app.state::<AppState>().screenshot_shortcut.lock().unwrap() =
+                                Some(shortcut);
+                        }
+                        Err(error) => {
+                            eprintln!("failed to register {screenshot_hotkey_spec}: {error}");
+                        }
+                    }
+                }
+                Err(error) => {
+                    eprintln!("invalid screenshot_hotkey {screenshot_hotkey_spec}: {error}");
+                }
+            }
+
             spawn_model_startup(
                 handle.clone(),
                 model_path,
@@ -540,6 +614,16 @@ fn main() {
                 api.prevent_close();
 
                 if !*window.state::<AppState>().pinned.lock().unwrap() {
+                    let _ = window.hide();
+                }
+            }
+
+            // The screenshot viewer behaves like a popover: clicking anywhere
+            // else (blur) dismisses it, and the stored region stays available
+            // for the next hotkey refresh.
+            #[cfg(target_os = "linux")]
+            if window.label() == screenshot::VIEWER_LABEL {
+                if let WindowEvent::Focused(false) = event {
                     let _ = window.hide();
                 }
             }
@@ -672,7 +756,7 @@ fn spawn_model_startup(
                 }
 
                 if let Some(plan) = server_plan {
-                    let ocr = build_ocr_provider();
+                    let ocr = ocr_provider(&app);
 
                     if let Err(error) =
                         server::start(engine, ocr, plan.bind_addr, plan.model_name)
@@ -727,10 +811,17 @@ fn fail_model(app: &AppHandle, message: String) {
     }
 }
 
-/// Builds the OCR provider for the extension image endpoint. Model files are
-/// downloaded from ModelScope on first use; a failure logs and leaves the
-/// endpoint at 501 instead of blocking the server.
-fn build_ocr_provider() -> Option<translator_service::api::OcrEngineRef> {
+/// Returns the RapidOCR provider (extension image endpoint and the region
+/// screenshot flow), loading it lazily on first use and caching it in
+/// `AppState`. Model files are downloaded from ModelScope on first use; a
+/// failure logs and callers report OCR as unavailable.
+fn ocr_provider(app: &AppHandle) -> Option<translator_service::api::OcrEngineRef> {
+    let state = app.state::<AppState>();
+
+    if let Some(engine) = state.ocr.lock().unwrap().clone() {
+        return Some(engine);
+    }
+
     let config = translator_core::settings::load_config();
     let directory = config
         .ocr_model_dir
@@ -743,7 +834,11 @@ fn build_ocr_provider() -> Option<translator_service::api::OcrEngineRef> {
         &directory,
         translator_ocr::DEFAULT_THREADS,
     ) {
-        Ok(engine) => Some(std::sync::Arc::new(engine)),
+        Ok(engine) => {
+            let engine: translator_service::api::OcrEngineRef = std::sync::Arc::new(engine);
+            *state.ocr.lock().unwrap() = Some(engine.clone());
+            Some(engine)
+        }
         Err(error) => {
             eprintln!("OCR provider unavailable: {error}");
             None
@@ -2003,6 +2098,15 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
     let history_item = MenuItem::with_id(app, "history", "历史…", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
+    // Region screenshot translation is Linux-only (XDG portal) for now. The
+    // item stays visible but disabled elsewhere so it is discoverable.
+    let screenshot_item = MenuItem::with_id(
+        app,
+        "screenshot",
+        "截图翻译",
+        cfg!(target_os = "linux"),
+        None::<&str>,
+    )?;
     let update_item = MenuItem::with_id(app, "update", "正在检查更新…", false, None::<&str>)?;
     // 实时字幕 is Linux-only for now; the items stay visible but disabled
     // elsewhere so the feature is discoverable.
@@ -2130,6 +2234,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &history_item,
             &settings_item,
+            &screenshot_item,
             &selection_menu,
             &caption_menu,
             &update_item,
@@ -2165,6 +2270,10 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             "settings" => {
                 show_main_in_place(app);
                 let _ = app.emit("open-settings", ());
+            }
+            "screenshot" => {
+                #[cfg(target_os = "linux")]
+                screenshot::start_selection(app.clone());
             }
             "update" => {
                 let info = app.state::<UpdateSlot>().info.lock().unwrap().clone();
@@ -2720,10 +2829,66 @@ fn stop_speaking() {
 #[tauri::command]
 fn retranslate(app: AppHandle) {
     let text = app.state::<AppState>().last_text.lock().unwrap().clone();
-
     if let Some(text) = text {
         translate_text(&app, text);
     }
+}
+
+/// Region-screenshot commands (Linux): invoked by the selector and viewer
+/// windows. They are no-ops elsewhere so the handler list stays portable.
+#[tauri::command]
+fn shot_region(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    viewport_width: f64,
+    viewport_height: f64,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    return screenshot::region_selected(
+        &app,
+        x,
+        y,
+        width,
+        height,
+        viewport_width,
+        viewport_height,
+    );
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, x, y, width, height, viewport_width, viewport_height);
+        Err("截图翻译仅支持 Linux".to_string())
+    }
+}
+
+#[tauri::command]
+fn shot_refresh(app: AppHandle) {
+    #[cfg(target_os = "linux")]
+    screenshot::refresh(app);
+
+    #[cfg(not(target_os = "linux"))]
+    let _ = app;
+}
+
+#[tauri::command]
+fn shot_close(app: AppHandle) {
+    #[cfg(target_os = "linux")]
+    screenshot::close(&app);
+
+    #[cfg(not(target_os = "linux"))]
+    let _ = app;
+}
+
+#[tauri::command]
+fn shot_cancel(app: AppHandle) {
+    #[cfg(target_os = "linux")]
+    screenshot::cancel(&app);
+
+    #[cfg(not(target_os = "linux"))]
+    let _ = app;
 }
 
 #[tauri::command]
