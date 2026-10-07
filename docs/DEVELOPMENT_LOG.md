@@ -2370,6 +2370,25 @@ viewer and the toolbar drag all pass.
   17.5 MB, macOS dmg 21.8 MB, extension zips); the Windows package job
   re-verified the DLL copy order from the v0.8.0 fix.
 
+Reading-translation spike S1/S3 (2026-10-07): the C evaluation's first two
+steps ran on the Windows dev machine with a real engine (embedded llama.cpp,
+HY-MT 1.5-1.8B Q4_K_M). New harness under `browser/spike/`: a 40-block
+fixture with deliberate skip cases, a self-contained prototype (DOM walk,
+skip heuristics, viewport-first single-flight queue, sibling injection) and
+a CDP driver that serves the page plus a `/translate` proxy to the running
+client and reports metrics and before/after layout screenshots. Per-block:
+40/40 ok, p50 4.9 s, first visible screen 26.6 s, full page 175 s, no
+horizontal overflow. Batching: join ≤1200 chars timed out at the service's
+30 s non-streaming cap; join ≤600 chars fell back per block after every
+joined response came back one line too many — the extra line is a glossary
+echo, and isolation showed the hymt prompt (`…术语表（必须使用以下译法）：…`
+between the instruction and the text) makes the model continue the hint
+instead of translating (short inputs can return only the glossary line).
+This is a product bug affecting every glossary consumer; the reading MVP
+should default to per-block until the prompt is fixed. Results and the MVP
+decision proposal are in `docs/READING_TRANSLATION.md` §9; S2 (dynamic
+feed) is next.
+
 
 ## Sprint 6
 
