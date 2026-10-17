@@ -2618,6 +2618,25 @@ matrix.
 - Verified on Windows: client 23 tests + the capability guard, core 80/80.
 
 
+## Input Window Becomes the Primary Window
+
+- The tray 显示窗口/历史/设置 items, normal startup and `--settings`/`--history`
+  now open the `input` window; the `main` window is kept as the selection
+  card only. `show_main_in_place` and the tray→card path were removed.
+- The input window hosts the settings/history/about views and resizes per
+  view (input 367 px, settings 480 px, history 416 px on Windows). History
+  rows load into the input result state: `load_history_entry` now returns the
+  entry and the window fills the source/target chips, source preview and
+  translation.
+- `Ctrl+Alt+I` still opens a fresh draft (`input-toggle`); tray/startup use
+  `input-show` to preserve the draft. Startup `--settings`/`--history` are
+  honored by the input window's `get_initial_view` call. The window is
+  taskbar-visible and no longer always-on-top.
+- Verified on Windows: cold normal start, cold `--settings`, tray-show
+  forwarding, tabs/back navigation between input, settings and history, and
+  the expected window heights; `cargo check` and client tests pass.
+
+
 ## Sprint 6
 
 Mobile client.

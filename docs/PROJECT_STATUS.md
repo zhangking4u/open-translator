@@ -828,3 +828,12 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Input translation now records successful requests in history (detected source when available) and sends `glossary.txt` terms; auto source detection goes through `detect::resolve_source`
 - The same `glossary.txt` is now applied to card translations
 - Verified on Windows: `cargo check`, client tests 23 + the capability guard, core tests 80/80; the Linux duplicate `foreground_window` and the macOS `extern static` unsafe access found by the first CI run were fixed
+
+
+## Primary Window Moves to 输入翻译 (2026-10-17)
+
+
+- 托盘「显示窗口」/「历史」/「设置」、普通启动以及 `--settings`/`--history` 全部指向 `input` 窗口；`main` 窗口只保留划词翻译卡片
+- The input window hosts the settings/history/about views and sizes itself dynamically per view (input 367 px, settings 480 px, history 416 px in the Windows check); history rows load back into the input result state via the returned `HistoryEntry`
+- `Ctrl+Alt+I` still starts a fresh draft (`input-toggle`), while tray/startup preserve the current draft (`input-show`); startup `--settings`/`--history` are honored through `get_initial_view` in the input window
+- The input window is taskbar-visible and no longer always-on-top; `show_main_in_place` and the old tray→card path were removed

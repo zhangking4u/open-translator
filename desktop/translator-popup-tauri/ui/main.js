@@ -319,9 +319,6 @@ function render(html) {
 }
 
 async function resize() {
-  // The input window keeps its configured size; its content scrolls inside.
-  if (isInputWindow) return;
-
   const margin = document.body.classList.contains("os-windows") ? 0 : 20;
   const height =
     Math.ceil(document.querySelector(".card").getBoundingClientRect().height) + margin;
@@ -336,6 +333,17 @@ function showView(next) {
   }
 
   resize();
+}
+
+// The primary window returns to the input editor; the selection card returns
+// to its translator view.
+function showHomeView() {
+  if (isInputWindow) {
+    showView("input");
+    inputText.focus();
+  } else {
+    showView("translator");
+  }
 }
 
 function setCopyEnabled(enabled) {
@@ -558,6 +566,11 @@ inputSourcePreview.addEventListener("click", () => {
   inputText.focus();
 });
 
+function showInputHome() {
+  showView("input");
+  inputText.focus();
+}
+
 function openInputCompose() {
   inputText.value = "";
   inputResultText.textContent = "";
@@ -566,8 +579,29 @@ function openInputCompose() {
   showInputError("");
   showInputCompose();
   updateInputActions();
+  showInputHome();
+}
+
+function showInputEntry(entry) {
+  if ([...inputSource.options].some((option) => option.value === entry.source)) {
+    inputSource.value = entry.source;
+  }
+
+  if ([...inputTarget.options].some((option) => option.value === entry.target)) {
+    inputTarget.value = entry.target;
+  }
+
+  syncInputLanguages();
+  inputText.value = entry.text;
+  inputSourcePreview.textContent = entry.text.replace(/\s+/g, " ");
+  inputSourcePreview.title = "编辑原文：" + entry.text;
+  inputResultText.textContent = entry.translation;
+  inputSaved.hidden = true;
+  showInputError("");
+  inputCompose.hidden = true;
+  inputResult.hidden = false;
+  updateInputActions();
   showView("input");
-  inputText.focus();
 }
 
 function showInputCompose() {
@@ -756,10 +790,23 @@ replace.addEventListener("click", async () => {
 });
 
 window.addEventListener("keydown", (event) => {
-  // The input window has no card views or card shortcuts: Enter translates,
-  // Esc dismisses, and everything else keeps its native behavior.
+  // The input window is the primary UI: it hosts the editor plus the
+  // settings/history views, so only the card-specific shortcuts are absent.
   if (isInputWindow) {
+    if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "h") {
+      event.preventDefault();
+      openHistory();
+      return;
+    }
+
+    if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key === ",") {
+      event.preventDefault();
+      openSettings();
+      return;
+    }
+
     if (
+      view === "input" &&
       event.target === inputText &&
       event.key === "Enter" &&
       !event.shiftKey &&
@@ -772,7 +819,14 @@ window.addEventListener("keydown", (event) => {
 
     if (event.key === "Escape") {
       event.preventDefault();
-      invoke("hide_window");
+
+      if (view === "input") {
+        invoke("hide_window");
+      } else if (view === "about") {
+        openSettings();
+      } else {
+        showHomeView();
+      }
     }
 
     return;
@@ -924,8 +978,8 @@ updateNotes.addEventListener("click", () => {
   invoke("open_release_page");
 });
 
-document.getElementById("settings-back").addEventListener("click", () => showView("translator"));
-document.getElementById("history-back").addEventListener("click", () => showView("translator"));
+document.getElementById("settings-back").addEventListener("click", showHomeView);
+document.getElementById("history-back").addEventListener("click", showHomeView);
 
 document.getElementById("open-config").addEventListener("click", () => {
   invoke("open_config_dir");
@@ -1500,8 +1554,13 @@ function renderHistory() {
     });
 
     const open = async () => {
-      await invoke("load_history_entry", { index });
-      showView("translator");
+      const loaded = await invoke("load_history_entry", { index });
+
+      if (isInputWindow && loaded) {
+        showInputEntry(loaded);
+      } else {
+        showView("translator");
+      }
     };
 
     row.append(star, text, time, copyButton, translation);
@@ -1629,14 +1688,15 @@ listen("model-error", (event) => {
   showError(event.payload.message, false);
 });
 
+}
+
 listen("open-settings", () => {
   openSettings();
 });
-}
 
 listen("input-toggle", openInputCompose);
+listen("input-show", showInputHome);
 
-if (!isInputWindow) {
 listen("selection-mode", (event) => {
   // The tray submenu changed the mode; update the UI from the payload (no
   // config refetch) and do it in every view, so the About page and the
@@ -1669,13 +1729,11 @@ listen("selection-mode", (event) => {
 listen("open-history", () => {
   openHistory();
 });
-}
 
 listen("language-state", (event) => {
   applyLanguageState(event.payload);
 });
 
-if (!isInputWindow) {
 listen("history-changed", () => {
   if (view === "history") {
     loadHistory().then(renderHistory);
@@ -1726,7 +1784,6 @@ listen("update-error", (event) => {
   updateState = { ...updateState, phase: "install-error", message: event.payload.message };
   renderUpdate();
 });
-}
 
 if (!isInputWindow) {
   showWaiting();
@@ -1735,10 +1792,9 @@ if (!isInputWindow) {
 } else {
   document.body.classList.add("input-window");
   document.getElementById("title").textContent = "输入翻译";
-  for (const id of ["open-history", "open-settings", "pin"]) {
-    document.getElementById(id).hidden = true;
-  }
+  document.getElementById("pin").hidden = true;
   updateInputActions();
+  showInputHome();
 }
 
 initLanguages();
@@ -1785,10 +1841,12 @@ invoke("platform").then((os) => {
   // Windows keeps the window opaque, so the card fills it instead of floating.
   document.body.classList.toggle("os-windows", os === "windows");
   document.getElementById("ocr-hotkey-row").hidden = os === "macos";
-  if (!isInputWindow) resize();
+  resize();
 });
 
-if (!isInputWindow) {
+// The input window is the primary UI, so it is the one that honors
+// --settings/--history at startup.
+if (isInputWindow) {
 invoke("get_initial_view").then((initial) => {
   if (initial === "settings") {
     openSettings();

@@ -1007,14 +1007,12 @@ button.destructive {
   }
 }
 
-/* Input translation window: content-first compose/result states. The window
-   keeps its configured size; only the content inside swaps. */
-body.input-window .card {
-  height: calc(100vh - 20px);
-}
-
-body.input-window.os-windows .card {
-  height: 100vh;
+/* Input translation window: content-first compose/result states. The compose
+   shell keeps a stable height while the window also hosts the settings and
+   history views, which size the window dynamically. */
+.input-window #input-view {
+  flex: none;
+  height: 300px;
 }
 
 #input-view {

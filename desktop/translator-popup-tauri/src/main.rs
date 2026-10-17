@@ -425,13 +425,13 @@ fn main() {
             if argv.iter().any(|arg| arg == "--translate") {
                 trigger_translation(app);
             } else if argv.iter().any(|arg| arg == "--settings") {
-                show_main_in_place(app);
-                let _ = app.emit("open-settings", ());
+                show_input_window(app, false, false);
+                emit_to_input(app, "open-settings");
             } else if argv.iter().any(|arg| arg == "--history") {
-                show_main_in_place(app);
-                let _ = app.emit("open-history", ());
+                show_input_window(app, false, false);
+                emit_to_input(app, "open-history");
             } else {
-                show_main_in_place(app);
+                show_input_window(app, false, true);
             }
         }))
         .plugin(
@@ -447,7 +447,7 @@ fn main() {
                             state.input_shortcut.lock().unwrap().as_ref() == Some(shortcut);
 
                         if is_input {
-                            show_input_window(&app);
+                            show_input_window(&app, true, true);
                             return;
                         }
                     }
@@ -673,7 +673,11 @@ fn main() {
             }
 
             if show_on_start {
-                show_main(&handle);
+                if args.stdin || translate_on_start {
+                    show_main(&handle);
+                } else {
+                    show_input_window(&handle, false, false);
+                }
             }
 
             if !stdin_text.trim().is_empty() {
@@ -1644,13 +1648,6 @@ fn show_main(app: &AppHandle) {
     show_main_with(app, true, true);
 }
 
-/// Tray/CLI entry points center the window instead of following the cursor,
-/// which would otherwise leave it stuck against the taskbar where the tray
-/// menu is anchored.
-fn show_main_in_place(app: &AppHandle) {
-    show_main_with(app, false, true);
-}
-
 /// Selection-watcher card: it must not steal focus (the source application
 /// must keep the selection and the drag) and it must not jump to a new spot on
 /// every refresh while it is already visible — only the content updates then.
@@ -1680,25 +1677,29 @@ fn show_main_popup(app: &AppHandle) {
     }
 }
 
-/// 输入翻译窗口：独立于主翻译卡，唤出后直接进入输入视图。
-#[cfg(not(target_os = "linux"))]
-fn show_input_window(app: &AppHandle) {
+/// 输入翻译窗口 now doubles as the product's primary window. `reset` starts a
+/// fresh input (the Ctrl+Alt+I hotkey); the tray/startup path preserves the
+/// current draft. `notify` is false on startup so the initial-view handshake
+/// cannot be overridden by a late "show the input view" event.
+fn show_input_window(app: &AppHandle, reset: bool, notify: bool) {
     if let Some(window) = app.get_webview_window("input") {
         let _ = window.set_focusable(true);
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-        // 该窗口的 JS 监听 input-toggle，切到输入视图并清空上次内容。
-        let _ = window.emit("input-toggle", ());
+
+        if notify {
+            let event = if reset { "input-toggle" } else { "input-show" };
+            let _ = window.emit(event, ());
+        }
     }
 }
 
-#[cfg(target_os = "linux")]
-fn show_input_window(app: &AppHandle) {
+/// Sends a view command to the primary (input) window only, so the selection
+/// card does not react to tray/CLI navigation.
+fn emit_to_input(app: &AppHandle, event: &str) {
     if let Some(window) = app.get_webview_window("input") {
-        let _ = window.set_focusable(true);
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = window.emit("input-toggle", ());
+        let _ = window.emit(event, ());
     }
 }
 
@@ -2361,14 +2362,14 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "show" => show_main_in_place(app),
+            "show" => show_input_window(app, false, true),
             "history" => {
-                show_main_in_place(app);
-                let _ = app.emit("open-history", ());
+                show_input_window(app, false, false);
+                emit_to_input(app, "open-history");
             }
             "settings" => {
-                show_main_in_place(app);
-                let _ = app.emit("open-settings", ());
+                show_input_window(app, false, false);
+                emit_to_input(app, "open-settings");
             }
             "screenshot" => {
                 #[cfg(any(target_os = "linux", target_os = "windows"))]
@@ -3542,7 +3543,7 @@ fn get_history(app: AppHandle) -> Vec<HistoryEntry> {
 }
 
 #[tauri::command]
-fn load_history_entry(app: AppHandle, index: usize) -> Result<(), String> {
+fn load_history_entry(app: AppHandle, index: usize) -> Result<HistoryEntry, String> {
     let entry = app
         .state::<AppState>()
         .history
@@ -3568,14 +3569,14 @@ fn load_history_entry(app: AppHandle, index: usize) -> Result<(), String> {
     let _ = app.emit(
         "source",
         SourcePayload {
-            text: entry.text,
+            text: entry.text.clone(),
             replaceable: false,
             detected: None,
         },
     );
-    let _ = app.emit("done", entry.translation);
+    let _ = app.emit("done", entry.translation.clone());
 
-    Ok(())
+    Ok(entry)
 }
 
 #[tauri::command(async)]
