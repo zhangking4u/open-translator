@@ -28,6 +28,8 @@ use translator_service::domain::translation::TranslationRequest;
 use translator_service::engine::llama_cpp::LlamaCppEngine;
 
 const DEFAULT_HOTKEY: &str = "Ctrl+Alt+T";
+const DEFAULT_INPUT_HOTKEY: &str = "Ctrl+Alt+I";
+const DEFAULT_OCR_HOTKEY: &str = "Ctrl+Alt+Z";
 /// Region-screenshot translation (Linux XDG portal / Windows Graphics
 /// Capture).
 const DEFAULT_SCREENSHOT_HOTKEY: &str = "Ctrl+Alt+S";
@@ -202,6 +204,7 @@ struct SettingsPayload {
     model_exists: bool,
     extension_addr: String,
     extension_running: bool,
+    auto_copy: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -325,6 +328,9 @@ fn main() {
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_SCREENSHOT_HOTKEY.to_string());
 
+    let input_hotkey_spec = DEFAULT_INPUT_HOTKEY.to_string();
+    let ocr_hotkey_spec = DEFAULT_OCR_HOTKEY.to_string();
+
     let serve_extension = config.serve_extension.as_deref() != Some("false");
     let server_plan = serve_extension.then(|| ServerPlan {
         bind_addr: translator_core::services::bind_addr_from_service_url(&args.service_url)
@@ -413,12 +419,27 @@ fn main() {
         }))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, shortcut, event| {
-                    if event.state != ShortcutState::Pressed {
-                        return;
-                    }
+                .with_handler({
+                    let input_shortcut: tauri_plugin_global_shortcut::Shortcut =
+                        input_hotkey_spec.clone().parse().unwrap();
+                    let ocr_shortcut: tauri_plugin_global_shortcut::Shortcut =
+                        ocr_hotkey_spec.clone().parse().unwrap();
+                    move |app, shortcut, event| {
+                        if event.state != ShortcutState::Pressed {
+                            return;
+                        }
 
-                    #[cfg(any(target_os = "linux", target_os = "windows"))]
+                        if *shortcut == input_shortcut {
+                            show_input_window(&app);
+                            return;
+                        }
+
+                        if *shortcut == ocr_shortcut {
+                            let _ = start_ocr_silent(app.clone());
+                            return;
+                        }
+
+                        #[cfg(any(target_os = "linux", target_os = "windows"))]
                     {
                         let is_screenshot = app
                             .state::<AppState>()
@@ -435,6 +456,7 @@ fn main() {
                     }
 
                     trigger_translation(app);
+                    }
                 })
                 .build(),
         )
@@ -469,6 +491,7 @@ fn main() {
             open_model_location,
             get_history,
             load_history_entry,
+            toggle_history_favorite,
             clear_history,
             set_pinned,
             get_initial_view,
@@ -478,6 +501,7 @@ fn main() {
             check_update_now,
             get_update_state,
             replace_text,
+            translate_input,
             get_languages,
             get_language_state,
             set_source,
@@ -487,6 +511,7 @@ fn main() {
             shot_refresh,
             shot_close,
             shot_cancel,
+            start_ocr_silent,
             move_viewer_by
         ])
         .setup(move |app| {
@@ -560,6 +585,14 @@ fn main() {
                 }
 
                 let _ = app.emit("error", ErrorPayload { message });
+            }
+
+            if let Err(error) = app.global_shortcut().register(input_hotkey_spec.as_str()) {
+                eprintln!("failed to register {input_hotkey_spec}: {error}");
+            }
+
+            if let Err(error) = app.global_shortcut().register(ocr_hotkey_spec.as_str()) {
+                eprintln!("failed to register {ocr_hotkey_spec}: {error}");
             }
 
             #[cfg(any(target_os = "linux", target_os = "windows"))]
@@ -1520,9 +1553,22 @@ fn start_translation(app: &AppHandle, text: String) {
                                     .map(|elapsed| elapsed.as_millis() as u64)
                                     .unwrap_or(0),
                             ),
+                            favorited: false,
                         },
                     );
                     translator_core::history::save(&history);
+                }
+
+                if translator_core::settings::load_config()
+                    .auto_copy
+                    .as_deref()
+                    .map(|value| value == "true")
+                    .unwrap_or(false)
+                {
+                    let translation = result.translated_text.clone();
+                    let _ = with_clipboard(&app, move |clipboard| {
+                        let _ = clipboard.set_text(translation);
+                    });
                 }
 
                 let _ = app.emit("done", result.translated_text);
@@ -1591,6 +1637,28 @@ fn show_main_popup(app: &AppHandle) {
         }
 
         pulse_above(app, &window);
+    }
+}
+
+/// 输入翻译窗口：独立于主翻译卡，唤出后直接进入输入视图。
+#[cfg(not(target_os = "linux"))]
+fn show_input_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("input") {
+        let _ = window.set_focusable(true);
+        let _ = window.show();
+        let _ = window.set_focus();
+        // 该窗口的 JS 监听 input-toggle，切到输入视图并清空上次内容。
+        let _ = window.emit("input-toggle", ());
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn show_input_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("input") {
+        let _ = window.set_focusable(true);
+        let _ = window.show();
+        let _ = window.set_focus();
+        let _ = window.emit("input-toggle", ());
     }
 }
 
@@ -2330,6 +2398,13 @@ fn tooltip_ready(app: &AppHandle) -> String {
 
 #[tauri::command]
 fn hide_window(app: AppHandle, window: WebviewWindow) {
+    // The input window is independent of the card's pin state: 完成 must always
+    // dismiss it.
+    if window.label() == "input" {
+        let _ = window.hide();
+        return;
+    }
+
     if *app.state::<AppState>().pinned.lock().unwrap() {
         return;
     }
@@ -2825,6 +2900,23 @@ fn retranslate(app: AppHandle) {
     }
 }
 
+/// 静默 OCR：框选屏幕区域，只把识别出的文字写入剪贴板，不打开翻译窗口。
+#[tauri::command]
+fn start_ocr_silent(app: AppHandle) {
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        *app.state::<crate::screenshot::ShotState>().mode.lock().unwrap() =
+            crate::screenshot::ShotMode::OcrOnly;
+        crate::screenshot::start_selection(app.clone());
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = app;
+        crate::notify::show("OpenTranslator", "静默 OCR 仅在 Windows 和 Linux 上可用");
+    }
+}
+
 /// Region-screenshot commands (Linux/Windows): invoked by the selector and
 /// viewer windows. They are no-ops elsewhere so the handler list stays
 /// portable.
@@ -2935,6 +3027,7 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
             .unwrap_or(false),
         extension_addr: app.state::<AppState>().extension_addr.clone(),
         extension_running: app.state::<AppState>().extension_running,
+        auto_copy: config.auto_copy.as_deref() == Some("true"),
     }
 }
 
@@ -2975,7 +3068,7 @@ fn save_model_path(value: String) {
 #[tauri::command]
 fn save_switch(key: String, value: bool) -> Result<(), String> {
     let key = match key.as_str() {
-        "auto_download" | "check_updates" | "serve_extension" => key,
+        "auto_download" | "check_updates" | "serve_extension" | "auto_copy" => key,
         other => return Err(format!("unknown setting: {other}")),
     };
 
@@ -3320,7 +3413,7 @@ fn load_history_entry(app: AppHandle, index: usize) -> Result<(), String> {
 
 #[tauri::command(async)]
 fn replace_text(app: AppHandle, text: String) -> Result<(), String> {
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     {
         let window = *app.state::<AppState>().replace_window.lock().unwrap();
         let Some(window) = window else {
@@ -3333,11 +3426,25 @@ fn replace_text(app: AppHandle, text: String) -> Result<(), String> {
         .unwrap_or_else(|| Err("无法访问系统剪贴板".to_string()))
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         let _ = (app, text);
-        Err("替换原文仅支持 Windows 和 Linux（X11）".to_string())
+        Err("替换原文仅支持 Windows、Linux（X11）和 macOS".to_string())
     }
+}
+
+#[tauri::command]
+fn toggle_history_favorite(app: AppHandle, index: usize) -> Result<(), String> {
+    let app_state = app.state::<AppState>();
+    let mut state = app_state.history.lock().unwrap();
+    let entry = state
+        .get_mut(index)
+        .ok_or_else(|| "history entry not found".to_string())?;
+    entry.favorited = !entry.favorited;
+    translator_core::history::save(&*state);
+    drop(state);
+    let _ = app.emit("history-changed", ());
+    Ok(())
 }
 
 #[tauri::command]
@@ -3349,6 +3456,52 @@ fn clear_history(app: AppHandle) {
     }
 
     let _ = app.emit("history-changed", ());
+}
+
+#[tauri::command(async)]
+async fn translate_input(
+    app: AppHandle,
+    text: String,
+    source: String,
+    target: String,
+) -> Result<String, String> {
+    if text.trim().is_empty() {
+        return Err("请输入要翻译的文本".to_string());
+    }
+
+    if source != "auto" && !translator_core::languages::is_supported(&source) {
+        return Err(format!("unsupported language: {source}"));
+    }
+
+    if !translator_core::languages::is_supported(&target) {
+        return Err(format!("unsupported language: {target}"));
+    }
+
+    let engine = app.state::<AppState>().engine.lock().unwrap().clone();
+    let Some(engine) = engine else {
+        return Err("翻译引擎尚未就绪".to_string());
+    };
+
+    // The input window's languages are local to that window: never mutate the
+    // shared card config behind the main window's back.
+    let (effective_source, _detected) =
+        translator_core::detect::resolve_source(&source, &text);
+
+    let request = TranslationRequest {
+        text,
+        source: effective_source,
+        target,
+        glossary: Vec::new(),
+    };
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        engine.translate_blocking_streaming(&request, |_piece| {})
+    })
+    .await
+    .map_err(|error| format!("翻译任务失败：{error}"))?
+    .map_err(|error| error.to_string())?;
+
+    Ok(result.translated_text)
 }
 
 #[tauri::command]

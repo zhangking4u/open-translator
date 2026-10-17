@@ -1,8 +1,11 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const isInputWindow =
+  window.__TAURI__.window?.getCurrentWindow().label === "input";
 
 const views = {
   translator: document.getElementById("translator-view"),
+  input: document.getElementById("input-view"),
   settings: document.getElementById("settings-view"),
   about: document.getElementById("about-view"),
   history: document.getElementById("history-view"),
@@ -22,12 +25,28 @@ const speak = document.getElementById("speak");
 const pin = document.getElementById("pin");
 const close = document.getElementById("close");
 const dot = document.getElementById("dot");
+const inputView = document.getElementById("input-view");
+const inputSource = document.getElementById("input-source");
+const inputTarget = document.getElementById("input-target");
+const inputSwap = document.getElementById("input-swap");
+const inputClear = document.getElementById("input-clear");
+const inputText = document.getElementById("input-text");
+const inputCompose = document.getElementById("input-compose");
+const inputTranslate = document.getElementById("input-translate");
+const inputError = document.getElementById("input-error");
+const inputResult = document.getElementById("input-result");
+const inputSourcePreview = document.getElementById("input-source-preview");
+const inputResultText = document.getElementById("input-result-text");
+const inputCopy = document.getElementById("input-copy");
+const inputRetranslate = document.getElementById("input-retranslate");
+const inputSaved = document.getElementById("input-saved");
 const switchSelection = document.getElementById("switch-selection");
 const selectionMethodSelect = document.getElementById("selection-method");
 const selectionMethodRow = document.getElementById("selection-method-row");
 const selectionSaved = document.getElementById("selection-saved");
 const selectionGroup = document.getElementById("selection-group");
 const switchAutostart = document.getElementById("switch-autostart");
+const switchAutoCopy = document.getElementById("switch-auto-copy");
 const openAbout = document.getElementById("open-about");
 const aboutBack = document.getElementById("about-back");
 const aboutVersionLabel = document.getElementById("about-version-label");
@@ -38,6 +57,7 @@ let selectionModeValue = "off";
 let selectionMethodValue = "ball";
 let selectionAutoSupported = false;
 let selectionBallSupported = true;
+let autoCopyEnabled = false;
 
 const SPEECH_LANGS = {
   zh: "zh-CN",
@@ -89,22 +109,42 @@ function applyLanguageState(state) {
   languageState = state;
   sourceSelect.value = state.source;
   targetSelect.value = state.target;
+
+  // The input window starts from the card's current languages instead of
+  // silently falling back to the first entry in each list.
+  if ([...inputSource.options].some((option) => option.value === state.source)) {
+    inputSource.value = state.source;
+  }
+
+  if ([...inputTarget.options].some((option) => option.value === state.target)) {
+    inputTarget.value = state.target;
+  }
+
   detectedLabel.textContent = state.detected ? "检测：" + labelOf(state.detected) : "";
 
   if (globalThis.OTSelect) {
     OTSelect.sync(sourceSelect);
     OTSelect.sync(targetSelect);
+    syncInputLanguages();
+  }
+}
+
+function syncInputLanguages() {
+  if (globalThis.OTSelect) {
+    OTSelect.sync(inputSource);
+    OTSelect.sync(inputTarget);
   }
 }
 
 async function initLanguages() {
   languageOptions = await invoke("get_languages");
 
-  for (const select of [sourceSelect, targetSelect]) {
+  for (const select of [sourceSelect, targetSelect, inputSource, inputTarget]) {
     select.innerHTML = "";
+    const allowsAuto = select === sourceSelect || select === inputSource;
 
     for (const option of languageOptions) {
-      if (select === targetSelect && option.tag === "auto") {
+      if (option.tag === "auto" && !allowsAuto) {
         continue;
       }
 
@@ -116,11 +156,14 @@ async function initLanguages() {
   }
 
   const settings = await invoke("get_settings").catch(() => null);
+  autoCopyEnabled = Boolean(settings && settings.auto_copy);
 
   if (globalThis.OTSelect) {
     OTSelect.inject();
     OTSelect.enhance(sourceSelect, { title: "源语言" });
     OTSelect.enhance(targetSelect, { title: "目标语言" });
+    OTSelect.enhance(inputSource, { title: "源语言" });
+    OTSelect.enhance(inputTarget, { title: "目标语言" });
   }
 
   // Short mode choices read better as segmented controls than as dropdowns.
@@ -273,6 +316,9 @@ function render(html) {
 }
 
 async function resize() {
+  // The input window keeps its configured size; its content scrolls inside.
+  if (isInputWindow) return;
+
   const margin = document.body.classList.contains("os-windows") ? 0 : 20;
   const height =
     Math.ceil(document.querySelector(".card").getBoundingClientRect().height) + margin;
@@ -453,6 +499,149 @@ close.addEventListener("click", () => {
   invoke("hide_window");
 });
 
+inputTranslate.addEventListener("click", doInputTranslate);
+inputRetranslate.addEventListener("click", doInputTranslate);
+
+inputCopy.addEventListener("click", async () => {
+  await invoke("copy_text", { text: inputResultText.textContent });
+  flashInputSaved();
+});
+
+inputText.addEventListener("input", () => {
+  showInputError("");
+  updateInputActions();
+});
+
+inputClear.addEventListener("click", () => {
+  inputText.value = "";
+  showInputError("");
+  showInputCompose();
+  updateInputActions();
+  inputText.focus();
+});
+
+inputSwap.addEventListener("click", () => {
+  const sourceValue = inputSource.value;
+  const targetValue = inputTarget.value;
+  const detected = languageState.detected || languageState.target;
+
+  if (sourceValue === "auto") {
+    if (!detected || detected === targetValue) {
+      return;
+    }
+
+    inputSource.value = targetValue;
+    inputTarget.value = detected;
+  } else {
+    inputSource.value = targetValue;
+    inputTarget.value = sourceValue;
+  }
+
+  syncInputLanguages();
+  inputText.focus();
+
+  if (!inputResult.hidden) doInputTranslate();
+});
+
+for (const select of [inputSource, inputTarget]) {
+  select.addEventListener("change", () => {
+    if (!inputResult.hidden) doInputTranslate();
+  });
+}
+
+inputSourcePreview.addEventListener("click", () => {
+  showInputCompose();
+  updateInputActions();
+  inputText.focus();
+});
+
+function openInputCompose() {
+  inputText.value = "";
+  inputResultText.textContent = "";
+  inputSourcePreview.textContent = "";
+  inputSaved.hidden = true;
+  showInputError("");
+  showInputCompose();
+  updateInputActions();
+  showView("input");
+  inputText.focus();
+}
+
+function showInputCompose() {
+  inputCompose.hidden = false;
+  inputResult.hidden = true;
+}
+
+function updateInputActions() {
+  const hasText = inputText.value.trim().length > 0;
+  inputTranslate.disabled = !hasText;
+  inputClear.disabled = inputText.value.length === 0;
+}
+
+function showInputError(message) {
+  inputError.textContent = message;
+  inputError.hidden = !message;
+}
+
+let inputSavedTimer = 0;
+function flashInputSaved() {
+  inputSaved.hidden = false;
+  clearTimeout(inputSavedTimer);
+  inputSavedTimer = setTimeout(() => {
+    inputSaved.hidden = true;
+  }, 1200);
+}
+
+let inputGeneration = 0;
+async function doInputTranslate() {
+  const text = inputText.value.trim();
+  if (!text) {
+    inputText.focus();
+    return;
+  }
+
+  const generation = ++inputGeneration;
+  inputTranslate.disabled = true;
+  inputRetranslate.disabled = true;
+  inputTranslate.textContent = "翻译中…";
+  inputRetranslate.textContent = "翻译中…";
+  showInputError("");
+
+  try {
+    const result = await invoke("translate_input", {
+      text,
+      source: inputSource.value,
+      target: inputTarget.value,
+    });
+
+    if (generation !== inputGeneration) {
+      return;
+    }
+
+    inputResultText.textContent = result;
+    inputSourcePreview.textContent = text.replace(/\s+/g, " ");
+    inputSourcePreview.title = "编辑原文：" + text;
+    inputCompose.hidden = true;
+    inputResult.hidden = false;
+
+    if (autoCopyEnabled) {
+      await invoke("copy_text", { text: result });
+      flashInputSaved();
+    }
+  } catch (message) {
+    if (generation === inputGeneration) {
+      showInputError(String(message));
+    }
+  } finally {
+    if (generation === inputGeneration) {
+      inputTranslate.textContent = "翻译";
+      inputRetranslate.textContent = "重新翻译";
+      inputRetranslate.disabled = false;
+      updateInputActions();
+    }
+  }
+}
+
 document.getElementById("open-history").addEventListener("click", () => {
   openHistory();
 });
@@ -564,6 +753,28 @@ replace.addEventListener("click", async () => {
 });
 
 window.addEventListener("keydown", (event) => {
+  // The input window has no card views or card shortcuts: Enter translates,
+  // Esc dismisses, and everything else keeps its native behavior.
+  if (isInputWindow) {
+    if (
+      event.target === inputText &&
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.isComposing
+    ) {
+      event.preventDefault();
+      doInputTranslate();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      invoke("hide_window");
+    }
+
+    return;
+  }
+
   if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "h") {
     event.preventDefault();
     openHistory();
@@ -944,6 +1155,7 @@ hotkeyReset.addEventListener("click", () => {
 for (const [id, key] of [
   ["switch-updates", "check_updates"],
   ["switch-extension", "serve_extension"],
+  ["switch-auto-copy", "auto_copy"],
 ]) {
   document.getElementById(id).addEventListener("change", (event) => {
     event.target.setAttribute("aria-checked", String(event.target.checked));
@@ -1105,6 +1317,8 @@ async function applySettingsToUi(settings) {
   extensionRunning = Boolean(settings.extension_running);
   setSwitch("switch-updates", settings.check_updates);
   setSwitch("switch-extension", settings.serve_extension);
+  setSwitch("switch-auto-copy", Boolean(settings.auto_copy));
+  autoCopyEnabled = Boolean(settings.auto_copy);
   applySelectionSettings(settings);
   updateModelStatus(settings);
   updateExtensionStatus(settings);
@@ -1168,39 +1382,50 @@ async function renderHistory() {
   document.getElementById("history-empty-hint").textContent =
     "选中文字按 " + hotkeyLabel + " 开始";
 
-  history.forEach((entry, index) => {
-    const button = document.createElement("button");
-    button.className = "history-entry";
-    button.type = "button";
-    button.title = entry.text + "\n" + entry.translation;
+    history.forEach((entry, index) => {
+      const button = document.createElement("button");
+      button.className = "history-entry";
+      button.type = "button";
+      button.title = entry.text + "\n" + entry.translation;
 
-    const text = document.createElement("span");
-    text.className = "history-text";
-    text.textContent = entry.text;
+      const star = document.createElement("span");
+      star.className = "history-star";
+      star.textContent = entry.favorited ? "★" : "☆";
+      star.title = entry.favorited ? "取消收藏" : "收藏";
+      star.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        await invoke("toggle_history_favorite", { index });
+        await renderHistory();
+        resize();
+      });
 
-    const time = document.createElement("span");
-    time.className = "history-time";
-    const relative = relativeTime(entry.at);
-    // The language tag only earns its place when it differs from the target
-    // the user is translating into right now.
-    time.textContent =
-      entry.target && entry.target !== languageState.target
-        ? relative
-          ? entry.target + " · " + relative
-          : entry.target
-        : relative;
+      const text = document.createElement("span");
+      text.className = "history-text";
+      text.textContent = entry.text;
 
-    const translation = document.createElement("span");
-    translation.className = "history-translation";
-    translation.textContent = entry.translation;
+      const time = document.createElement("span");
+      time.className = "history-time";
+      const relative = relativeTime(entry.at);
+      // The language tag only earns its place when it differs from the target
+      // the user is translating into right now.
+      time.textContent =
+        entry.target && entry.target !== languageState.target
+          ? relative
+            ? entry.target + " · " + relative
+            : entry.target
+          : relative;
 
-    button.append(text, time, translation);
-    button.addEventListener("click", async () => {
-      await invoke("load_history_entry", { index });
-      showView("translator");
+      const translation = document.createElement("span");
+      translation.className = "history-translation";
+      translation.textContent = entry.translation;
+
+      button.append(star, text, time, translation);
+      button.addEventListener("click", async () => {
+        await invoke("load_history_entry", { index });
+        showView("translator");
+      });
+      list.appendChild(button);
     });
-    list.appendChild(button);
-  });
 }
 
 function relativeTime(at) {
@@ -1262,6 +1487,9 @@ confirmDialog.addEventListener("click", (event) => {
   if (event.target === confirmDialog) closeConfirm();
 });
 
+// Card events are broadcast to every window; the input window must not react
+// to them (they would switch its view and resize it mid-typing).
+if (!isInputWindow) {
 listen("source", (event) => {
   // A new translation always belongs in the translator view, even when the
   // card currently sits on the history or settings page.
@@ -1304,7 +1532,11 @@ listen("model-error", (event) => {
 listen("open-settings", () => {
   openSettings();
 });
+}
 
+listen("input-toggle", openInputCompose);
+
+if (!isInputWindow) {
 listen("selection-mode", (event) => {
   // The tray submenu changed the mode; update the UI from the payload (no
   // config refetch) and do it in every view, so the About page and the
@@ -1337,11 +1569,13 @@ listen("selection-mode", (event) => {
 listen("open-history", () => {
   openHistory();
 });
+}
 
 listen("language-state", (event) => {
   applyLanguageState(event.payload);
 });
 
+if (!isInputWindow) {
 listen("history-changed", () => {
   if (view === "history") {
     renderHistory();
@@ -1392,12 +1626,24 @@ listen("update-error", (event) => {
   updateState = { ...updateState, phase: "install-error", message: event.payload.message };
   renderUpdate();
 });
+}
 
-showWaiting();
-setDot("loading");
-resize();
+if (!isInputWindow) {
+  showWaiting();
+  setDot("loading");
+  resize();
+} else {
+  document.body.classList.add("input-window");
+  document.getElementById("title").textContent = "输入翻译";
+  for (const id of ["open-history", "open-settings", "pin"]) {
+    document.getElementById(id).hidden = true;
+  }
+  updateInputActions();
+}
+
 initLanguages();
 
+if (!isInputWindow) {
 invoke("get_settings").then((settings) => {
   hotkeyLabel = settings.hotkey || hotkeyLabel;
   selectionModeValue = settings.selection_supported ? settings.selection_mode : "off";
@@ -1433,13 +1679,15 @@ listen("speech-ended", (event) => {
   speak.classList.remove("active");
   speak.title = "朗读译文";
 });
+}
 
 invoke("platform").then((os) => {
   // Windows keeps the window opaque, so the card fills it instead of floating.
   document.body.classList.toggle("os-windows", os === "windows");
-  resize();
+  if (!isInputWindow) resize();
 });
 
+if (!isInputWindow) {
 invoke("get_initial_view").then((initial) => {
   if (initial === "settings") {
     openSettings();
@@ -1447,3 +1695,4 @@ invoke("get_initial_view").then((initial) => {
     openHistory();
   }
 });
+}

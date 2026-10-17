@@ -14,14 +14,35 @@ pub struct HistoryEntry {
     pub translation: String,
     #[serde(default)]
     pub at: Option<u64>,
+    #[serde(default)]
+    pub favorited: bool,
 }
 
 /// Insert a translation, newest first, replacing an entry with the same text
-/// and target and capping the list at [`MAX_ENTRIES`].
-pub fn push(entries: &mut Vec<HistoryEntry>, entry: HistoryEntry) {
+/// and target and capping the list at [`MAX_ENTRIES`]. Re-translating keeps the
+/// favorite mark, and favorites are evicted only after every plain entry.
+pub fn push(entries: &mut Vec<HistoryEntry>, mut entry: HistoryEntry) {
+    if let Some(existing) = entries
+        .iter()
+        .find(|existing| existing.text == entry.text && existing.target == entry.target)
+    {
+        entry.favorited |= existing.favorited;
+    }
+
     entries.retain(|existing| !(existing.text == entry.text && existing.target == entry.target));
     entries.insert(0, entry);
-    entries.truncate(MAX_ENTRIES);
+
+    while entries.len() > MAX_ENTRIES {
+        match entries.iter().rposition(|existing| !existing.favorited) {
+            Some(index) => {
+                entries.remove(index);
+            }
+            None => {
+                entries.truncate(MAX_ENTRIES);
+                break;
+            }
+        }
+    }
 }
 
 pub fn load() -> Vec<HistoryEntry> {
@@ -63,6 +84,7 @@ mod tests {
             text: text.to_string(),
             translation: translation.to_string(),
             at: None,
+            favorited: false,
         }
     }
 
@@ -101,6 +123,42 @@ mod tests {
     }
 
     #[test]
+    fn retranslating_keeps_the_favorite() {
+        let mut entries = Vec::new();
+        let mut first = entry("a", "zh", "甲");
+        first.favorited = true;
+        push(&mut entries, first);
+
+        push(&mut entries, entry("a", "zh", "甲二"));
+
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].favorited);
+        assert_eq!(entries[0].translation, "甲二");
+    }
+
+    #[test]
+    fn evicts_plain_entries_before_favorites() {
+        let mut entries = Vec::new();
+
+        for index in 0..MAX_ENTRIES {
+            push(&mut entries, entry(&format!("text-{index}"), "zh", "x"));
+        }
+
+        let favorite = entries
+            .iter_mut()
+            .find(|existing| existing.text == "text-0")
+            .unwrap();
+        favorite.favorited = true;
+
+        push(&mut entries, entry("newest", "zh", "x"));
+
+        assert_eq!(entries.len(), MAX_ENTRIES);
+        assert!(entries
+            .iter()
+            .any(|existing| existing.text == "text-0" && existing.favorited));
+    }
+
+    #[test]
     fn round_trips_through_a_file() {
         let path = std::env::temp_dir().join(format!(
             "open-translator-history-test-{}.json",
@@ -110,6 +168,24 @@ mod tests {
 
         save_to(&path, &entries);
         assert_eq!(load_from(&path), entries);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn favorited_survives_round_trip() {
+        let path = std::env::temp_dir().join(format!(
+            "open-translator-history-favorite-test-{}.json",
+            std::process::id()
+        ));
+        let mut entries = vec![entry("hello", "zh", "你好")];
+        entries[0].favorited = true;
+
+        save_to(&path, &entries);
+        let loaded = load_from(&path);
+
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].favorited);
 
         let _ = std::fs::remove_file(&path);
     }

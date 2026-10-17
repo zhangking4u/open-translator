@@ -458,9 +458,118 @@ pub fn foreground_window() -> Option<isize> {
     linux::foreground_window()
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(target_os = "linux")]
+pub fn foreground_window() -> Option<isize> {
+    linux::foreground_window()
+}
+
+#[cfg(target_os = "macos")]
+pub fn foreground_window() -> Option<isize> {
+    use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
+    use core_foundation::string::{CFString, CFStringRef};
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    unsafe extern "C" {
+        fn AXUIElementCreateSystemWide() -> CFTypeRef;
+        fn AXUIElementCopyAttributeValue(
+            element: CFTypeRef,
+            attribute: CFStringRef,
+            value: *mut CFTypeRef,
+        ) -> i32;
+        fn AXUIElementGetPid(element: CFTypeRef, pid: *mut i32) -> i32;
+    }
+
+    let system = unsafe { AXUIElementCreateSystemWide() };
+    let focused_attr = CFString::new("AXFocusedApplication");
+    let mut focused: CFTypeRef = std::ptr::null();
+    let status = unsafe {
+        AXUIElementCopyAttributeValue(
+            system,
+            focused_attr.as_concrete_TypeRef(),
+            &mut focused,
+        )
+    };
+    if status != 0 || focused.is_null() {
+        return None;
+    }
+
+    let mut pid: i32 = 0;
+    let pid_status = unsafe { AXUIElementGetPid(focused, &mut pid) };
+    unsafe { CFRelease(focused) };
+
+    if pid_status != 0 || pid == 0 {
+        None
+    } else {
+        Some(pid as isize)
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 pub fn foreground_window() -> Option<isize> {
     None
+}
+
+#[cfg(target_os = "macos")]
+pub fn replace_selection(
+    window: isize,
+    text: &str,
+    clipboard: &mut arboard::Clipboard,
+) -> Result<(), String> {
+    use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
+    use core_foundation::boolean::kCFBooleanTrue;
+    use core_foundation::string::{CFString, CFStringRef};
+    use std::time::Duration;
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    unsafe extern "C" {
+        fn AXUIElementCreateApplication(pid: u32) -> CFTypeRef;
+        fn AXUIElementSetAttributeValue(
+            element: CFTypeRef,
+            attribute: CFStringRef,
+            value: CFTypeRef,
+        ) -> i32;
+    }
+
+    let front_attr = CFString::new("AXFrontmost");
+    let app = unsafe { AXUIElementCreateApplication(window as u32) };
+    if !app.is_null() {
+        let value = kCFBooleanTrue as CFTypeRef;
+        let _ = unsafe {
+            AXUIElementSetAttributeValue(app, front_attr.as_concrete_TypeRef(), value)
+        };
+        unsafe { CFRelease(app) };
+    }
+
+    wait_for_modifiers_released();
+
+    let before = clipboard.get_text().ok();
+    clipboard
+        .set_text(text)
+        .map_err(|error| format!("failed to write clipboard: {error}"))?;
+
+    let mut enigo =
+        enigo::Enigo::new(&enigo::Settings::default())
+            .map_err(|error| format!("failed to init input: {error}"))?;
+
+    enigo
+        .key(enigo::Key::Meta, enigo::Direction::Press)
+        .map_err(|error| format!("failed to press modifier: {error}"))?;
+    std::thread::sleep(Duration::from_millis(15));
+
+    let paste = enigo.key(enigo::Key::Unicode('v'), enigo::Direction::Click);
+    let release = enigo.key(enigo::Key::Meta, enigo::Direction::Release);
+    paste.map_err(|error| format!("failed to send V: {error}"))?;
+    release.map_err(|error| format!("failed to release modifier: {error}"))?;
+
+    std::thread::sleep(Duration::from_millis(250));
+
+    if let Some(previous) = before {
+        if previous != text {
+            let _ = clipboard.set_text(previous);
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]

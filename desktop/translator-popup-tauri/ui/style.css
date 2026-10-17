@@ -747,8 +747,8 @@ button.icon.active {
 
 .history-entry {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 8px;
   row-gap: 3px;
   align-items: start;
   width: 100%;
@@ -778,8 +778,22 @@ button.icon.active {
   border-color: transparent;
 }
 
-.history-text {
+.history-star {
   grid-column: 1;
+  grid-row: 1;
+  font-size: 13px;
+  color: var(--ot-label-2);
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+}
+
+.history-entry:hover .history-star {
+  color: var(--ot-accent);
+}
+
+.history-text {
+  grid-column: 2;
   grid-row: 1;
   font-size: 13.5px;
   color: var(--ot-label);
@@ -789,7 +803,7 @@ button.icon.active {
 }
 
 .history-time {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
   justify-self: end;
   align-self: start;
@@ -803,6 +817,7 @@ button.icon.active {
 .history-translation {
   grid-column: 1;
   grid-row: 2;
+  grid-column-end: span 3;
   font-size: 12px;
   color: var(--ot-label-2);
   white-space: nowrap;
@@ -898,4 +913,155 @@ button.destructive {
   .translation .text.streaming::after {
     animation: none;
   }
+}
+
+/* Input translation window: content-first compose/result states. The window
+   keeps its configured size; only the content inside swaps. */
+body.input-window .card {
+  height: calc(100vh - 20px);
+}
+
+body.input-window.os-windows .card {
+  height: 100vh;
+}
+
+#input-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.input-lang-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.input-lang-row .ot-select-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.input-swap {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+
+.input-clear {
+  background: transparent;
+  color: var(--ot-label-2);
+  font-size: 12.5px;
+  padding: 4px 6px;
+}
+
+.input-clear:hover:not(:disabled) {
+  background: var(--ot-fill);
+  color: var(--ot-label);
+}
+
+.input-error {
+  margin: -2px 2px 0;
+  font-size: 12px;
+  color: var(--ot-red);
+}
+
+.input-compose,
+.input-result {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.input-editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 2px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ot-label);
+  user-select: text;
+}
+
+.input-editor::placeholder {
+  color: var(--ot-label-3);
+}
+
+.input-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.input-hint {
+  font-size: 11.5px;
+  color: var(--ot-label-3);
+}
+
+.input-primary {
+  min-width: 68px;
+  padding: 7px 16px;
+  border-radius: 9px;
+  font-weight: 600;
+}
+
+.input-secondary {
+  background: transparent;
+  color: var(--ot-label-2);
+  padding: 6px 10px;
+}
+
+.input-secondary:hover:not(:disabled) {
+  background: var(--ot-fill);
+  color: var(--ot-label);
+}
+
+.input-source-preview {
+  display: block;
+  flex: none;
+  max-width: 100%;
+  padding: 2px;
+  background: transparent;
+  color: var(--ot-label-2);
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.input-source-preview:hover:not(:disabled) {
+  background: transparent;
+  color: var(--ot-label);
+}
+
+.input-divider {
+  flex: none;
+  height: 1px;
+  background: var(--ot-separator);
+}
+
+.input-output {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: 16.5px;
+  line-height: 1.55;
+  color: var(--ot-label);
+  user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

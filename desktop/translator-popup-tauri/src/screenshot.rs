@@ -45,6 +45,18 @@ pub struct ShotState {
     active: Mutex<Option<MonitorBox>>,
     /// Everything needed to replay the last region without selecting again.
     last: Mutex<Option<LastShot>>,
+    /// Translate (default) shows the Lens viewer; OcrOnly only recognizes and
+    /// copies the text to the clipboard.
+    pub mode: Mutex<ShotMode>,
+}
+
+/// Whether a region selection ends in a translation viewer or a silent OCR
+/// that only copies the recognized text to the clipboard.
+#[derive(Default, Clone, Copy, PartialEq)]
+pub enum ShotMode {
+    #[default]
+    Translate,
+    OcrOnly,
 }
 
 /// Diagnostic sequence for the screenshot flow logs.
@@ -280,6 +292,10 @@ pub fn region_selected(
 
     *state.last.lock().unwrap() = Some(LastShot { region: selection, monitor });
 
+    // Silent OCR only recognizes and copies text; translation uses the viewer.
+    let ocr_only = matches!(*state.mode.lock().unwrap(), ShotMode::OcrOnly);
+    *state.mode.lock().unwrap() = ShotMode::Translate;
+
     let app = app.clone();
 
     tauri::async_runtime::spawn(async move {
@@ -306,6 +322,11 @@ pub fn region_selected(
             "SHOTDBG capture {capture_width}x{capture_height} slice {}x{} scale {:.2} selection {selection:?}",
             slice.width, slice.height, slice.scale
         );
+
+        if ocr_only {
+            run_ocr_only(&app, &capture, selection, slice).await;
+            return;
+        }
 
         run_region(&app, &capture, selection, slice, monitor).await;
     });
@@ -364,6 +385,9 @@ pub fn cancel(app: &AppHandle) {
     }
 
     *app.state::<ShotState>().active.lock().unwrap() = None;
+    // Cancelling an OCR-only selection must not turn the next normal
+    // screenshot into a silent OCR.
+    *app.state::<ShotState>().mode.lock().unwrap() = ShotMode::Translate;
 }
 
 /// Hides the viewer (Esc / close / blur).
@@ -480,6 +504,80 @@ async fn run_region(
     };
 
     show_viewer(app, region, slice, monitor, payload);
+}
+
+/// 静默 OCR：只识别框选区域里的文字并写入剪贴板，不打开翻译窗口。
+async fn run_ocr_only(
+    app: &AppHandle,
+    capture: &Capture,
+    region: Selection,
+    slice: Slice,
+) {
+    let (_data_url, cropped) = match crop_region(capture, region, slice) {
+        Ok(value) => value,
+        Err(message) => {
+            crate::notify::show("OpenTranslator", &message);
+            return;
+        }
+    };
+
+    let dynamic = match image::load_from_memory(&cropped) {
+        Ok(image) => image,
+        Err(error) => {
+            crate::notify::show("OpenTranslator", &format!("OCR 图像解析失败：{error}"));
+            return;
+        }
+    };
+    let rgb = dynamic.to_rgb8();
+    let (width, height) = (rgb.width(), rgb.height());
+    let pixels = rgb.into_raw();
+
+    let ocr = match crate::ocr_provider(app) {
+        Some(ocr) => ocr,
+        None => {
+            crate::notify::show("OpenTranslator", "OCR 模型不可用");
+            return;
+        }
+    };
+
+    let blocks = match ocr.recognize(&pixels, width, height) {
+        Ok(blocks) => blocks,
+        Err(error) => {
+            crate::notify::show("OpenTranslator", &format!("OCR 识别失败：{error}"));
+            return;
+        }
+    };
+
+    let text: String = blocks
+        .into_iter()
+        .map(|block| block.text.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if text.trim().is_empty() {
+        crate::notify::show("OpenTranslator", "没有识别到文字");
+        return;
+    }
+
+    if let Err(error) = write_clipboard(&text) {
+        crate::notify::show("OpenTranslator", &format!("写入剪贴板失败：{error}"));
+        eprintln!("SHOTDBG ocr clipboard: {error}");
+        return;
+    }
+
+    crate::notify::show("OpenTranslator", "已识别并复制到剪贴板");
+    eprintln!("SHOTDBG ocr_only {} chars", text.chars().count());
+}
+
+/// Writes `text` to the system clipboard.
+fn write_clipboard(text: &str) -> Result<(), String> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|error| format!("剪贴板打开失败：{error}"))?;
+    clipboard
+        .set_text(text.to_string())
+        .map_err(|error| format!("剪贴板写入失败：{error}"))?;
+    Ok(())
 }
 
 async fn translate_cropped(
@@ -655,6 +753,7 @@ fn record_history(app: &AppHandle, source_text: String, translation_text: String
                     .map(|elapsed| elapsed.as_millis() as u64)
                     .unwrap_or(0),
             ),
+            favorited: false,
         },
     );
     translator_core::history::save(&history);

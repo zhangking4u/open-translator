@@ -117,12 +117,57 @@
             <svg class="icon-check" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M20 6 9 17l-5-5" />
             </svg>
-            <span>复制</span>
-          </button>
-        </footer>
+          <span>复制</span>
+        </button>
+      </footer>
+    </div>
+
+    <div id="input-view" hidden>
+      <div class="input-lang-row">
+        <select id="input-source" class="setting-select" title="源语言"></select>
+        <button id="input-swap" class="icon input-swap" title="交换语言" aria-label="交换语言">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m8 3-4 4 4 4" />
+            <path d="M4 7h16" />
+            <path d="m16 21 4-4-4-4" />
+            <path d="M20 17H4" />
+          </svg>
+        </button>
+        <select id="input-target" class="setting-select" title="目标语言"></select>
+        <span class="spacer"></span>
+        <button id="input-clear" class="input-clear" type="button" disabled>清空</button>
       </div>
 
-      <div id="settings-view" hidden>
+      <p id="input-error" class="input-error" hidden></p>
+
+      <div id="input-compose" class="input-compose">
+        <textarea
+          id="input-text"
+          class="input-editor"
+          spellcheck="false"
+          placeholder="输入或粘贴文本…"
+        ></textarea>
+        <div class="input-foot">
+          <span class="input-hint">Enter 翻译 · Shift+Enter 换行</span>
+          <span class="spacer"></span>
+          <button id="input-translate" class="primary input-primary" type="button" disabled>翻译</button>
+        </div>
+      </div>
+
+      <div id="input-result" class="input-result" hidden>
+        <button id="input-source-preview" class="input-source-preview" type="button" title="编辑原文"></button>
+        <div class="input-divider"></div>
+        <div id="input-result-text" class="input-output"></div>
+        <div class="input-foot">
+          <span id="input-saved" class="ok-text" hidden>已复制</span>
+          <span class="spacer"></span>
+          <button id="input-retranslate" class="input-secondary" type="button">重新翻译</button>
+          <button id="input-copy" class="primary input-primary" type="button">复制</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settings-view" hidden>
         <div class="page-head">
           <span class="page-title">设置</span>
           <span class="spacer"></span>
@@ -173,6 +218,17 @@
               <span id="hotkey-error" class="error-text" hidden></span>
             </div>
           </div>
+          <label class="setting-row switch-row">
+            <span class="setting-name">自动复制翻译</span>
+            <input
+              type="checkbox"
+              id="switch-auto-copy"
+              class="switch"
+              role="switch"
+              aria-checked="false"
+              title="翻译完成后自动把结果写入剪贴板。"
+            />
+          </label>
         </div>
 
         <p class="group-title">系统</p>
