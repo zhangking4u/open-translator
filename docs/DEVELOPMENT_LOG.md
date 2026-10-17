@@ -2552,6 +2552,49 @@ reading-mode e2e passes end to end (inject/coverage/cache/cleanup), and
 translator-core tests stay 76/76.
 
 
+# 2026-10-17
+
+
+## Desktop P0: Input Translation, Silent OCR, Favorites, macOS Replace
+
+Landed the first desktop-product batch from `docs/DESKTOP_PRODUCT.md`:
+
+- 输入翻译 (`Ctrl+Alt+I`): a separate `input` Tauri window with a
+  content-first layout — source/target chips with swap, a borderless editor
+  and a bottom action row. Enter translates, Shift+Enter inserts a newline,
+  Esc dismisses. The result state replaces the editor with a one-line,
+  click-to-edit source preview and a large translation; the window keeps its
+  fixed 520x360 size and scrolls internally. `translate_input` takes
+  `source`/`target` from the window and never mutates the shared card config;
+  switching languages in the result state re-translates with latest-wins.
+- 静默 OCR (`Ctrl+Alt+Z`): the screenshot selector runs with `ShotMode::OcrOnly`,
+  recognizes the region and copies the joined text to the clipboard with a
+  notification, without opening the viewer. Cancelling resets the mode so the
+  next `Ctrl+Alt+S` is a normal screenshot translation.
+- 自动复制 (`auto_copy`, default off): completed card and input-window
+  translations are copied to the clipboard; the settings switch persists it.
+- 历史收藏: `HistoryEntry.favorited` with a star toggle in the history panel;
+  re-translating the same text+target preserves the mark and the 10-entry cap
+  evicts plain entries before favorites.
+- macOS 替换原文: `capture.rs` gained an AX-based `foreground_window` and a
+  Cmd+V `replace_selection` that restores the previous clipboard; macOS is
+  CI-verified only (no Mac hardware).
+
+Review fixes before landing: the `input` window was missing from
+`capabilities/default.json` (it could be shown but its JS had no event or
+plugin permission), card events were leaking into the input window and
+resizing it, a cancelled OCR selection left `OcrOnly` behind, favorites were
+lost when re-translating, `auto_copy` defaulted on and silently overwrote the
+clipboard, and the macOS AX code had unresolved imports and the wrong
+`AXUIElementGetPid` symbol. `tests/window_capabilities.rs` now rejects a config
+window that no capability covers.
+
+Verified on Windows: `cargo check`, `cargo build --release`, client tests
+23 + the capability guard, translator-core tests 80/80, and real-machine
+input/Silent OCR/history checks. The macOS build is left to the `tauri` CI
+matrix.
+
+
 ## Sprint 6
 
 Mobile client.

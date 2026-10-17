@@ -806,3 +806,15 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - W1: `translator-asr` is now target-gated for Linux and Windows and `wasapi` 0.25 (MIT) was added; `src/caption.rs` gained `mod windows` (single-thread WASAPI lifecycle, device-mix-format fallback with an in-repo box-filter/linear resampler, session rebuild after a device switch, shared model/worker helpers extracted from the Linux module, whose `pw-record` path is unchanged); the tray 实时字幕 items are enabled on Windows
 - W3: the Windows release zip ships `sherpa-onnx-c-api.dll`/`sherpa-onnx-cxx-api.dll`/`onnxruntime.dll`/`onnxruntime_providers_shared.dll` and `install.ps1` copies them next to the exe (one-click updates carry them too); CI gained an `asr-windows` job and the Windows Tauri/release jobs got the sherpa cache workaround
 - Real-machine verified on Windows 11: source captions, translation line/layouts, overlay drag; one bug found and fixed — 编辑术语表…/打开字幕记录 used the Linux-only `open_in_default_app` helper (a no-op outside Linux) and now reuse `open_path`; client `cargo test --release` 17/17
+
+
+## Desktop P0 — Input Translation, Silent OCR, Favorites, macOS Replace (2026-10-17)
+
+
+- 输入翻译: new `input` Tauri window (`Ctrl+Alt+I`, fixed 520x360) with source/target chips and swap, a content-first compose state (Enter translates, Shift+Enter newlines, Esc dismisses) and a result state that replaces the editor with a one-line editable source preview plus the translation; `translate_input` takes `source`/`target` and never mutates the shared card config
+- 静默 OCR: `Ctrl+Alt+Z` reuses the screenshot selector in `ShotMode::OcrOnly`, recognizes the region and writes the joined text to the clipboard with a notification (no viewer); cancelling resets the mode so the next `Ctrl+Alt+S` is a normal screenshot translation
+- 自动复制: `auto_copy` setting (default off) copies completed card and input-window translations to the clipboard
+- 历史收藏: `HistoryEntry.favorited` with a star toggle in the history panel; re-translating keeps the mark and the 10-entry cap evicts plain entries first
+- macOS 替换原文: `capture.rs` resolves the AX frontmost application and pastes with Cmd+V (clipboard restored afterwards); macOS remains CI-verified only (no Mac hardware)
+- Fixes found in review: the `input` window is listed in `capabilities/default.json` (without it events/plugin calls are denied), card events are ignored inside the input window, and `tests/window_capabilities.rs` now rejects config windows missing from every capability
+- Verified on Windows: `cargo check`/`build`/`test` green (client 23 tests + the capability guard), core history tests 80/80, real-machine input/Silent OCR/history checks; macOS compile is left to the `tauri` CI matrix
