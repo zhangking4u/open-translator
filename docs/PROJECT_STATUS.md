@@ -818,3 +818,13 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - macOS 替换原文: `capture.rs` resolves the AX frontmost application and pastes with Cmd+V (clipboard restored afterwards); macOS remains CI-verified only (no Mac hardware)
 - Fixes found in review: the `input` window is listed in `capabilities/default.json` (without it events/plugin calls are denied), card events are ignored inside the input window, and `tests/window_capabilities.rs` now rejects config windows missing from every capability
 - Verified on Windows: `cargo check`/`build`/`test` green (client 23 tests + the capability guard), core history tests 80/80, real-machine input/Silent OCR/history checks; macOS compile is left to the `tauri` CI matrix
+
+
+## Desktop P0 Follow-up — History Tools, Hotkeys, Input History (2026-10-17)
+
+
+- History panel: a search field matches source, translation and language; a ★ 收藏 toggle filters to favorites; each row gained a hover copy action (checkmark feedback) and stays keyboard-loadable; the empty state distinguishes "no history" from "no matches". The old nested-button markup became a focusable row with separate star/copy buttons
+- Hotkeys: `input_hotkey` and `ocr_hotkey` are now config keys with settings-page recorders (same double-press/Esc flow as the main hotkey), runtime re-registration and explicit conflict checks against the main, screenshot and sibling shortcuts; the global handler reads the live parsed shortcuts from `AppState`, and rebinding the main hotkey no longer calls `unregister_all` (which used to drop the input/OCR/screenshot bindings)
+- Input translation now records successful requests in history (detected source when available) and sends `glossary.txt` terms; auto source detection goes through `detect::resolve_source`
+- The same `glossary.txt` is now applied to card translations
+- Verified on Windows: `cargo check`, client tests 23 + the capability guard, core tests 80/80; the Linux duplicate `foreground_window` and the macOS `extern static` unsafe access found by the first CI run were fixed

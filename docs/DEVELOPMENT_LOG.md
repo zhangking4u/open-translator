@@ -2595,6 +2595,29 @@ input/Silent OCR/history checks. The macOS build is left to the `tauri` CI
 matrix.
 
 
+## Desktop P0 Follow-up: History Tools, Configurable Hotkeys, Input History
+
+- History panel: search across source, translation and language; a ★ 收藏
+  filter; per-row copy with the same checkmark feedback as the card; rows are
+  focusable divs with separate star/copy buttons (a button cannot legally
+  contain buttons); the empty state now tells "no history" and "no matches"
+  apart.
+- Hotkeys: `input_hotkey`/`ocr_hotkey` joined the config file and the settings
+  page. The main recorder logic became a reusable `createHotkeyRecorder`, and
+  the backend gained `save_input_hotkey`/`save_ocr_hotkey`, runtime
+  unregister/re-register, conflict checks against the main/screenshot/sibling
+  shortcuts and live shortcut state in `AppState`. `save_hotkey` no longer
+  calls `unregister_all()`: rebinding the main hotkey used to silently drop
+  the input, OCR and screenshot bindings.
+- Input translation: successful requests are pushed into history (detected
+  source when auto-detection succeeds) and the card/input requests now send
+  the `source=target` terms from `glossary.txt` (cap 50).
+- The first CI run found two platform-only failures invisible on Windows: a
+  duplicate Linux `foreground_window` and the macOS `kCFBooleanTrue` extern
+  static requiring `unsafe`. Both fixed before the next push.
+- Verified on Windows: client 23 tests + the capability guard, core 80/80.
+
+
 ## Sprint 6
 
 Mobile client.
