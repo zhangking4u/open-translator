@@ -518,6 +518,7 @@ pub fn replace_selection(
     use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
     use core_foundation::boolean::kCFBooleanTrue;
     use core_foundation::string::{CFString, CFStringRef};
+    use enigo::Keyboard;
     use std::time::Duration;
 
     #[link(name = "ApplicationServices", kind = "framework")]
