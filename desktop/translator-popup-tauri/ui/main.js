@@ -42,6 +42,13 @@ const inputRetranslate = document.getElementById("input-retranslate");
 const inputSaved = document.getElementById("input-saved");
 const inputAlternate = document.getElementById("input-alternate");
 const inputAlternativesContainer = document.getElementById("input-alternatives");
+const inputSpeak = document.getElementById("input-speak");
+const ttsTargetSelect = document.getElementById("tts-target");
+const ttsRateSelect = document.getElementById("tts-rate");
+const ttsVoiceSelect = document.getElementById("tts-voice");
+const ttsVoiceRow = document.getElementById("tts-voice-row");
+const ttsTitle = document.getElementById("tts-title");
+const ttsGroup = document.getElementById("tts-group");
 const switchSelection = document.getElementById("switch-selection");
 const selectionMethodSelect = document.getElementById("selection-method");
 const selectionMethodRow = document.getElementById("selection-method-row");
@@ -79,6 +86,13 @@ let speakBackend = "webview";
 let speakSupported = "speechSynthesis" in window;
 let speakVoiceAvailable = true;
 let speechGeneration = 0;
+let activeSpeechButton = null;
+let pendingSpeechEnd = null;
+let ttsTargetValue = "translation";
+let ttsRateValue = 1;
+let ttsVoiceName = "";
+let ttsTargetControl = null;
+let ttsRateControl = null;
 let hotkeyLabel = "Ctrl+Alt+T";
 
 async function checkSpeakVoice(lang) {
@@ -132,6 +146,11 @@ function applyLanguageState(state) {
     OTSelect.sync(targetSelect);
     syncInputLanguages();
   }
+
+  if (speakSupported) {
+    populateTtsVoices();
+    speak.title = speakTitle();
+  }
 }
 
 function syncInputLanguages() {
@@ -177,6 +196,8 @@ async function initLanguages() {
 
   if (globalThis.OTSegmented) {
     selectionMethodControl = OTSegmented.enhance(selectionMethodSelect, { title: "翻译方式" });
+    ttsTargetControl = OTSegmented.enhance(ttsTargetSelect, { title: "朗读内容" });
+    ttsRateControl = OTSegmented.enhance(ttsRateSelect, { title: "语速" });
   }
 
   applyLanguageState(await invoke("get_language_state"));
@@ -237,26 +258,68 @@ function setDot(state) {
     state === "loading" ? "正在准备翻译引擎" : state === "error" ? "翻译引擎出错" : "就绪";
 }
 
+function speakTitle() {
+  if (ttsTargetValue === "source") return "朗读原文";
+  if (ttsTargetValue === "both") return "朗读原文和译文";
+  return "朗读译文";
+}
+
+function setSpeaking(active, button) {
+  if (active) {
+    if (activeSpeechButton && activeSpeechButton !== button) {
+      activeSpeechButton.classList.remove("active");
+      activeSpeechButton.title =
+        activeSpeechButton === inputSpeak ? "朗读" : speakTitle();
+    }
+
+    activeSpeechButton = button;
+    button.classList.add("active");
+    button.title = "停止朗读";
+  } else {
+    if (activeSpeechButton) {
+      activeSpeechButton.classList.remove("active");
+      activeSpeechButton.title =
+        activeSpeechButton === inputSpeak ? "朗读" : speakTitle();
+    }
+
+    activeSpeechButton = null;
+  }
+}
+
 function stopSpeaking() {
-  if (!speakSupported) return;
+  if (pendingSpeechEnd) {
+    const resolve = pendingSpeechEnd;
+    pendingSpeechEnd = null;
+    resolve();
+  }
 
   if (speakBackend === "spd-say") {
-    if (speak.classList.contains("active")) {
-      speechGeneration += 1;
-      invoke("stop_speaking");
-    }
-  } else {
+    speechGeneration += 1;
+    invoke("stop_speaking").catch(() => {});
+  } else if ("speechSynthesis" in window) {
     window.speechSynthesis.cancel();
   }
 
-  speak.classList.remove("active");
-  speak.title = "朗读译文";
+  setSpeaking(false);
 }
 
 function pickVoice(lang) {
   const target = lang.toLowerCase();
   const base = target.split("-")[0];
   const voices = window.speechSynthesis.getVoices();
+
+  if (ttsVoiceName) {
+    const selected = voices.find((voice) => {
+      if (voice.name !== ttsVoiceName) return false;
+
+      const code = voice.lang.toLowerCase();
+      return code === target || code.startsWith(base);
+    });
+
+    if (selected) {
+      return selected;
+    }
+  }
 
   return (
     voices.find((voice) => voice.lang.toLowerCase() === target) ||
@@ -265,29 +328,22 @@ function pickVoice(lang) {
   );
 }
 
-function toggleSpeech() {
-  if (!speakSupported || !speakVoiceAvailable || !current) return;
+function buildSpeechParts(sourceText, sourceLang, translation, targetLang) {
+  const parts = [];
 
-  if (speakBackend === "spd-say") {
-    if (speak.classList.contains("active")) {
-      stopSpeaking();
-      return;
-    }
-
-    speak.classList.add("active");
-    speak.title = "停止朗读";
-    const generation = ++speechGeneration;
-    invoke("speak_text", {
-      text: current,
-      lang: languageState.target,
-      generation,
-    }).catch((message) => {
-      stopSpeaking();
-      setStatus(String(message));
-      window.setTimeout(() => setStatus(""), 3000);
-    });
-    return;
+  if (ttsTargetValue !== "translation" && sourceText && sourceText.trim()) {
+    parts.push({ text: sourceText, lang: sourceLang });
   }
+
+  if (ttsTargetValue !== "source" && translation && translation.trim()) {
+    parts.push({ text: translation, lang: targetLang });
+  }
+
+  return parts;
+}
+
+function speakWebviewParts(parts, button, reportError) {
+  if (!("speechSynthesis" in window)) return;
 
   const synth = window.speechSynthesis;
 
@@ -296,23 +352,165 @@ function toggleSpeech() {
     return;
   }
 
-  const lang = SPEECH_LANGS[languageState.target] || languageState.target;
-  const voice = pickVoice(lang);
+  const playable = [];
 
-  if (!voice) {
-    setStatus("未找到" + labelOf(languageState.target) + "语音，请先安装系统语音包");
-    window.setTimeout(() => setStatus(""), 3000);
+  for (const part of parts) {
+    const voice = pickVoice(part.lang);
+
+    if (voice) {
+      playable.push({ ...part, voice });
+    }
+  }
+
+  if (!playable.length) {
+    reportError("未找到可用的系统语音，请先安装语音包");
     return;
   }
 
-  const utterance = new SpeechSynthesisUtterance(current);
-  utterance.voice = voice;
-  utterance.lang = voice.lang;
-  utterance.onend = stopSpeaking;
-  utterance.onerror = stopSpeaking;
-  speak.classList.add("active");
-  speak.title = "停止朗读";
-  synth.speak(utterance);
+  setSpeaking(true, button);
+
+  const speakAt = (index) => {
+    if (index >= playable.length) {
+      stopSpeaking();
+      return;
+    }
+
+    const part = playable[index];
+    const utterance = new SpeechSynthesisUtterance(part.text);
+    utterance.voice = part.voice;
+    utterance.lang = part.voice.lang;
+    utterance.rate = ttsRateValue;
+    utterance.onend = () => speakAt(index + 1);
+    utterance.onerror = () => stopSpeaking();
+    synth.speak(utterance);
+  };
+
+  speakAt(0);
+}
+
+async function speakSpdParts(parts, button, reportError) {
+  setSpeaking(true, button);
+
+  for (const part of parts) {
+    if (!activeSpeechButton) return;
+
+    const generation = ++speechGeneration;
+
+    await new Promise((resolve) => {
+      pendingSpeechEnd = resolve;
+
+      invoke("speak_text", {
+        text: part.text,
+        lang: part.lang,
+        rate: ttsRateValue,
+        generation,
+      }).catch((message) => {
+        pendingSpeechEnd = null;
+        stopSpeaking();
+        reportError(String(message));
+        resolve();
+      });
+    });
+  }
+
+  stopSpeaking();
+}
+
+function toggleSpeechFor(button, parts, reportError) {
+  if (!speakSupported) return;
+
+  if (activeSpeechButton) {
+    stopSpeaking();
+    return;
+  }
+
+  if (!parts.length) return;
+
+  if (speakBackend === "spd-say") {
+    speakSpdParts(parts, button, reportError);
+  } else {
+    speakWebviewParts(parts, button, reportError);
+  }
+}
+
+function toggleCardSpeech() {
+  if (!speakVoiceAvailable) return;
+
+  const sourceLang =
+    languageState.detected || languageState.source || languageState.target;
+
+  toggleSpeechFor(
+    speak,
+    buildSpeechParts(lastSource, sourceLang, current, languageState.target),
+    (message) => {
+      setStatus(message);
+      window.setTimeout(() => setStatus(""), 3000);
+    },
+  );
+}
+
+function toggleInputSpeech() {
+  if (!inputResultContext) return;
+
+  const target = inputResultContext.target;
+  const source =
+    inputResultContext.source && inputResultContext.source !== "auto"
+      ? inputResultContext.source
+      : target;
+
+  toggleSpeechFor(
+    inputSpeak,
+    buildSpeechParts(
+      inputResultContext.text,
+      source,
+      inputResultText.textContent,
+      target,
+    ),
+    (message) => {
+      showInputError(message);
+      window.setTimeout(() => showInputError(""), 3000);
+    },
+  );
+}
+
+function updateInputSpeak() {
+  inputSpeak.hidden = !speakSupported || !inputResultContext;
+}
+
+function populateTtsVoices(selected = ttsVoiceName) {
+  if (speakBackend === "spd-say" || !("speechSynthesis" in window)) {
+    ttsVoiceRow.hidden = true;
+    return;
+  }
+
+  ttsVoiceRow.hidden = false;
+
+  const lang = (SPEECH_LANGS[languageState.target] || languageState.target).toLowerCase();
+  const base = lang.split("-")[0];
+  const voices = window.speechSynthesis.getVoices().filter((voice) => {
+    const code = voice.lang.toLowerCase();
+    return code === lang || code.startsWith(base);
+  });
+
+  ttsVoiceSelect.replaceChildren();
+
+  const auto = document.createElement("option");
+  auto.value = "";
+  auto.textContent = "自动（按语言）";
+  ttsVoiceSelect.append(auto);
+
+  for (const voice of voices) {
+    const option = document.createElement("option");
+    option.value = voice.name;
+    option.textContent = voice.name + " · " + voice.lang;
+    ttsVoiceSelect.append(option);
+  }
+
+  ttsVoiceSelect.value = [...ttsVoiceSelect.options].some(
+    (option) => option.value === selected,
+  )
+    ? selected
+    : "";
 }
 
 function render(html) {
@@ -653,6 +851,7 @@ function showInputEntry(entry) {
   };
   clearInputAlternatives();
   updateInputActions();
+  updateInputSpeak();
   showView("input");
 }
 
@@ -777,16 +976,17 @@ async function doInputTranslate() {
       return;
     }
 
-    inputResultText.textContent = result;
+    inputResultText.textContent = result.translation;
     inputSourcePreview.textContent = text.replace(/\s+/g, " ");
     inputSourcePreview.title = "编辑原文：" + text;
     inputCompose.hidden = true;
     inputResult.hidden = false;
-    inputResultContext = { text, source, target };
+    inputResultContext = { text, source: result.source || source, target };
     updateInputAlternateButton();
+    updateInputSpeak();
 
     if (autoCopyEnabled) {
-      await invoke("copy_text", { text: result });
+      await invoke("copy_text", { text: result.translation });
       flashInputSaved();
     }
   } catch (message) {
@@ -826,7 +1026,8 @@ document.querySelector(".titlebar").addEventListener("dblclick", (event) => {
   togglePin();
 });
 
-speak.addEventListener("click", toggleSpeech);
+speak.addEventListener("click", toggleCardSpeech);
+inputSpeak.addEventListener("click", toggleInputSpeech);
 
 const contextMenu = document.getElementById("context-menu");
 
@@ -867,7 +1068,7 @@ contextMenu.addEventListener("click", (event) => {
       selection.addRange(range);
     }
   } else if (action === "speak") {
-    toggleSpeech();
+    toggleCardSpeech();
   }
 
   hideContextMenu();
@@ -1372,6 +1573,24 @@ for (const [id, key] of [
   });
 }
 
+ttsTargetSelect.addEventListener("change", () => {
+  ttsTargetValue = ttsTargetSelect.value;
+  invoke("save_tts_setting", { key: "tts_target", value: ttsTargetValue });
+  if (ttsTargetControl) ttsTargetControl.sync();
+  if (speakSupported) speak.title = speakTitle();
+});
+
+ttsRateSelect.addEventListener("change", () => {
+  ttsRateValue = Number(ttsRateSelect.value) || 1;
+  invoke("save_tts_setting", { key: "tts_rate", value: String(ttsRateValue) });
+  if (ttsRateControl) ttsRateControl.sync();
+});
+
+ttsVoiceSelect.addEventListener("change", () => {
+  ttsVoiceName = ttsVoiceSelect.value;
+  invoke("save_tts_setting", { key: "tts_voice", value: ttsVoiceName });
+});
+
 function setSwitch(id, checked) {
   const input = document.getElementById(id);
   input.checked = checked;
@@ -1525,6 +1744,18 @@ async function applySettingsToUi(settings) {
   setSwitch("switch-extension", settings.serve_extension);
   setSwitch("switch-auto-copy", Boolean(settings.auto_copy));
   autoCopyEnabled = Boolean(settings.auto_copy);
+  ttsTargetValue = settings.tts_target || "translation";
+  ttsRateValue = Math.min(2, Math.max(0.5, Number(settings.tts_rate) || 1));
+  ttsVoiceName = settings.tts_voice || "";
+  ttsTargetSelect.value = ttsTargetValue;
+  ttsRateSelect.value = String(ttsRateValue);
+  populateTtsVoices(ttsVoiceName);
+  if (ttsTargetControl) ttsTargetControl.sync();
+  if (ttsRateControl) ttsRateControl.sync();
+  ttsVoiceRow.hidden = speakBackend === "spd-say";
+  ttsTitle.hidden = !speakSupported;
+  ttsGroup.hidden = !speakSupported;
+  speak.title = speakTitle();
   applySelectionSettings(settings);
   updateModelStatus(settings);
   updateExtensionStatus(settings);
@@ -1941,6 +2172,8 @@ invoke("get_settings").then((settings) => {
   }
 });
 
+}
+
 invoke("tts_backend").then((backend) => {
   speakBackend = backend;
   speakSupported =
@@ -1949,6 +2182,12 @@ invoke("tts_backend").then((backend) => {
   if (speakSupported && current) {
     speak.hidden = false;
   }
+
+  ttsVoiceRow.hidden = speakBackend === "spd-say";
+  ttsTitle.hidden = !speakSupported;
+  ttsGroup.hidden = !speakSupported;
+  populateTtsVoices();
+  updateInputSpeak();
 });
 
 listen("speech-ended", (event) => {
@@ -1956,9 +2195,18 @@ listen("speech-ended", (event) => {
     return;
   }
 
-  speak.classList.remove("active");
-  speak.title = "朗读译文";
+  if (pendingSpeechEnd) {
+    const resolve = pendingSpeechEnd;
+    pendingSpeechEnd = null;
+    resolve();
+    return;
+  }
+
+  stopSpeaking();
 });
+
+if ("speechSynthesis" in window) {
+  window.speechSynthesis.onvoiceschanged = () => populateTtsVoices();
 }
 
 invoke("platform").then((os) => {

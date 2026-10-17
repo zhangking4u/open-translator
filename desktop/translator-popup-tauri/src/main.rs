@@ -192,6 +192,9 @@ struct SettingsPayload {
     hotkey: String,
     input_hotkey: String,
     ocr_hotkey: String,
+    tts_target: String,
+    tts_rate: String,
+    tts_voice: String,
     model_path: String,
     default_model_path: String,
     auto_download: bool,
@@ -509,6 +512,7 @@ fn main() {
             save_hotkey,
             save_input_hotkey,
             save_ocr_hotkey,
+            save_tts_setting,
             save_model_path,
             save_switch,
             open_config_dir,
@@ -2858,12 +2862,18 @@ fn spd_voice_languages() -> &'static std::collections::HashSet<String> {
 /// text out of argv so a translation starting with `-` is not parsed as an
 /// option; `important` interrupts the previous message.
 #[cfg(target_os = "linux")]
-fn spd_speak_command(lang: &str) -> std::process::Command {
+fn spd_speak_command(lang: &str, rate: f32) -> std::process::Command {
     let mut command = std::process::Command::new("spd-say");
     command.args(["--priority", "important", "--wait", "--pipe-mode"]);
 
     if let Some(code) = spd_language(lang) {
         command.arg("-l").arg(code);
+    }
+
+    let rate_offset = ((rate.clamp(0.5, 2.0) - 1.0) * 100.0).round() as i32;
+
+    if rate_offset != 0 {
+        command.arg("-r").arg(rate_offset.to_string());
     }
 
     command
@@ -2889,7 +2899,13 @@ fn tts_voice_available(lang: String) -> bool {
 }
 
 #[tauri::command]
-fn speak_text(app: AppHandle, text: String, lang: String, generation: u64) -> Result<(), String> {
+fn speak_text(
+    app: AppHandle,
+    text: String,
+    lang: String,
+    rate: f32,
+    generation: u64,
+) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         if text.trim().is_empty() {
@@ -2897,7 +2913,7 @@ fn speak_text(app: AppHandle, text: String, lang: String, generation: u64) -> Re
             return Ok(());
         }
 
-        let mut child = spd_speak_command(&lang)
+        let mut child = spd_speak_command(&lang, rate)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -2918,7 +2934,7 @@ fn speak_text(app: AppHandle, text: String, lang: String, generation: u64) -> Re
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (app, text, lang, generation);
+        let _ = (app, text, lang, rate, generation);
         Ok(())
     }
 }
@@ -3050,6 +3066,22 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
             .clone()
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_OCR_HOTKEY.to_string()),
+        tts_target: config
+            .tts_target
+            .clone()
+            .filter(|value| matches!(value.as_str(), "translation" | "source" | "both"))
+            .unwrap_or_else(|| "translation".to_string()),
+        tts_rate: config
+            .tts_rate
+            .clone()
+            .filter(|value| {
+                value
+                    .parse::<f32>()
+                    .map(|rate| (0.5..=2.0).contains(&rate))
+                    .unwrap_or(false)
+            })
+            .unwrap_or_else(|| "1".to_string()),
+        tts_voice: config.tts_voice.clone().unwrap_or_default(),
         model_path: config.model_path.clone().unwrap_or_default(),
         default_model_path: translator_core::paths::default_model_path()
             .map(|path| path.to_string_lossy().to_string())
@@ -3227,6 +3259,31 @@ fn save_input_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
 #[tauri::command]
 fn save_ocr_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
     apply_extra_hotkey(&app, HotkeyTarget::Ocr, &spec)
+}
+
+#[tauri::command]
+fn save_tts_setting(key: String, value: String) -> Result<(), String> {
+    let key = match key.as_str() {
+        "tts_target" | "tts_rate" | "tts_voice" => key,
+        other => return Err(format!("unknown setting: {other}")),
+    };
+
+    if key == "tts_target" && !matches!(value.as_str(), "translation" | "source" | "both") {
+        return Err(format!("unknown tts target: {value}"));
+    }
+
+    if key == "tts_rate" {
+        let rate: f32 = value
+            .parse()
+            .map_err(|_| "invalid tts rate".to_string())?;
+
+        if !(0.5..=2.0).contains(&rate) {
+            return Err("tts rate out of range".to_string());
+        }
+    }
+
+    translator_core::settings::persist_value(&key, value.trim());
+    Ok(())
 }
 
 #[tauri::command]
@@ -3627,13 +3684,19 @@ fn clear_history(app: AppHandle) {
     let _ = app.emit("history-changed", ());
 }
 
+#[derive(serde::Serialize)]
+struct InputTranslationResult {
+    translation: String,
+    source: String,
+}
+
 #[tauri::command(async)]
 async fn translate_input(
     app: AppHandle,
     text: String,
     source: String,
     target: String,
-) -> Result<String, String> {
+) -> Result<InputTranslationResult, String> {
     if text.trim().is_empty() {
         return Err("请输入要翻译的文本".to_string());
     }
@@ -3657,6 +3720,7 @@ async fn translate_input(
     let history_source = detected.map(str::to_string).unwrap_or_else(|| source.trim().to_string());
     let history_text = text.clone();
     let history_target = target.clone();
+    let result_source = history_source.clone();
 
     let request = TranslationRequest {
         text,
@@ -3698,7 +3762,10 @@ async fn translate_input(
 
     let _ = app.emit("history-changed", ());
 
-    Ok(translation)
+    Ok(InputTranslationResult {
+        translation,
+        source: result_source,
+    })
 }
 
 #[tauri::command(async)]
@@ -4524,7 +4591,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn speech_command_waits_and_selects_the_language() {
-        let args: Vec<String> = super::spd_speak_command("zh")
+        let args: Vec<String> = super::spd_speak_command("zh", 1.2)
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
@@ -4533,6 +4600,8 @@ mod tests {
         assert!(args.contains(&"--pipe-mode".to_string()));
         let language = args.iter().position(|arg| arg == "-l");
         assert_eq!(language.map(|index| args[index + 1].as_str()), Some("cmn"));
+        let rate = args.iter().position(|arg| arg == "-r");
+        assert_eq!(rate.map(|index| args[index + 1].as_str()), Some("20"));
     }
 
     #[cfg(target_os = "linux")]

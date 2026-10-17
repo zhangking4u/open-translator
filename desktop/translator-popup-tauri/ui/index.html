@@ -162,6 +162,7 @@
         <div class="input-foot">
           <span id="input-saved" class="ok-text" hidden>已复制</span>
           <span class="spacer"></span>
+          <button id="input-speak" class="input-secondary" type="button" hidden>朗读</button>
           <button id="input-alternate" class="input-secondary" type="button">换一种译法</button>
           <button id="input-retranslate" class="input-secondary" type="button">重新翻译</button>
           <button id="input-copy" class="primary input-primary" type="button">复制</button>
@@ -273,6 +274,36 @@
               title="翻译完成后自动把结果写入剪贴板。"
             />
           </label>
+        </div>
+
+        <p class="group-title" id="tts-title">语音</p>
+        <div class="group" id="tts-group">
+          <div class="setting-row">
+            <span class="setting-name">朗读内容</span>
+            <div class="setting-control">
+              <select id="tts-target" class="setting-select" title="朗读内容">
+                <option value="translation">译文</option>
+                <option value="source">原文</option>
+                <option value="both">原文 + 译文</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-name">语速</span>
+            <div class="setting-control">
+              <select id="tts-rate" class="setting-select" title="语速">
+                <option value="0.8">慢</option>
+                <option value="1">正常</option>
+                <option value="1.2">快</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row" id="tts-voice-row">
+            <span class="setting-name">语音</span>
+            <div class="setting-control">
+              <select id="tts-voice" class="setting-select" title="语音"></select>
+            </div>
+          </div>
         </div>
 
         <p class="group-title">系统</p>
