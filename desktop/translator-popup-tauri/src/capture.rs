@@ -458,11 +458,6 @@ pub fn foreground_window() -> Option<isize> {
     linux::foreground_window()
 }
 
-#[cfg(target_os = "linux")]
-pub fn foreground_window() -> Option<isize> {
-    linux::foreground_window()
-}
-
 #[cfg(target_os = "macos")]
 pub fn foreground_window() -> Option<isize> {
     use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
@@ -534,7 +529,7 @@ pub fn replace_selection(
     let front_attr = CFString::new("AXFrontmost");
     let app = unsafe { AXUIElementCreateApplication(window as u32) };
     if !app.is_null() {
-        let value = kCFBooleanTrue as CFTypeRef;
+        let value = unsafe { kCFBooleanTrue } as CFTypeRef;
         let _ = unsafe {
             AXUIElementSetAttributeValue(app, front_attr.as_concrete_TypeRef(), value)
         };
