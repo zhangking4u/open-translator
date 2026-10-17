@@ -63,6 +63,7 @@ const footer = document.getElementById("footer");
 const stage = document.getElementById("stage");
 const listBody = document.getElementById("list-body");
 const modeButton = document.getElementById("mode");
+const inPlaceButton = document.getElementById("inplace");
 const listButton = document.getElementById("list");
 const copyButton = document.getElementById("copy");
 const refreshButton = document.getElementById("refresh");
@@ -75,6 +76,10 @@ for (const handle of [toolbar, footer]) {
 let blocks = [];
 let showOriginal = false;
 let listMode = false;
+let inPlaceMode = false;
+let sampleSource = "";
+let sampleCanvas = null;
+let sampleContext = null;
 
 listen("shot-result", (event) => apply(event.payload));
 
@@ -84,6 +89,8 @@ function apply(payload) {
   listMode = false;
 
   modeButton.textContent = "显示原文";
+  modeButton.hidden = inPlaceMode;
+  inPlaceButton.textContent = inPlaceMode ? "对照" : "原位";
   listButton.textContent = "列表";
   listBody.hidden = true;
   stage.hidden = false;
@@ -135,11 +142,113 @@ function quadBoundingBox(quad) {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
+function ensureSampleCanvas() {
+  if (!image.naturalWidth || !image.naturalHeight) return false;
+  if (sampleSource === image.src && sampleContext) return true;
+
+  sampleSource = image.src;
+  sampleCanvas = document.createElement("canvas");
+  sampleCanvas.width = image.naturalWidth;
+  sampleCanvas.height = image.naturalHeight;
+  sampleContext = sampleCanvas.getContext("2d", { willReadFrequently: true });
+
+  if (!sampleContext) return false;
+
+  sampleContext.drawImage(image, 0, 0);
+  return true;
+}
+
+// OCR quads are tight around the glyphs; the ring just outside them is the
+// background. Taking the dominant quantized color is more robust than an
+// average when the ring grazes a neighboring icon or line.
+function sampleBackground(box) {
+  if (!sampleContext) return "rgb(255, 255, 255)";
+
+  const maxX = image.naturalWidth - 1;
+  const maxY = image.naturalHeight - 1;
+  const offset = 2;
+  const step = Math.max(1, Math.floor(Math.min(box.width, box.height) / 8));
+  const counts = new Map();
+
+  function sample(x, y) {
+    x = Math.round(Math.min(maxX, Math.max(0, x)));
+    y = Math.round(Math.min(maxY, Math.max(0, y)));
+
+    const data = sampleContext.getImageData(x, y, 1, 1).data;
+    const r = data[0] & 0xf8;
+    const g = data[1] & 0xf8;
+    const b = data[2] & 0xf8;
+    const key = (r << 16) | (g << 8) | b;
+    const entry = counts.get(key) || { count: 0, r, g, b };
+    entry.count += 1;
+    counts.set(key, entry);
+  }
+
+  for (let x = box.x; x <= box.x + box.width; x += step) {
+    sample(x, box.y - offset);
+    sample(x, box.y + box.height + offset);
+  }
+
+  for (let y = box.y; y <= box.y + box.height; y += step) {
+    sample(box.x - offset, y);
+    sample(box.x + box.width + offset, y);
+  }
+
+  let best = null;
+
+  for (const entry of counts.values()) {
+    if (!best || entry.count > best.count) best = entry;
+  }
+
+  return best ? `rgb(${best.r}, ${best.g}, ${best.b})` : "rgb(255, 255, 255)";
+}
+
+function contrastColor(background) {
+  const match = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(background);
+  if (!match) return "#ffffff";
+
+  const [r, g, b] = match.slice(1).map(Number);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance > 0.6 ? "#111111" : "#ffffff";
+}
+
+// Shrink the translation until it wraps inside the original line height; if
+// it still does not fit at the minimum size, the opaque cover grows downwards
+// instead of clipping the text.
+function fitInPlace(element, height) {
+  const maxSize = Math.min(20, Math.max(10, height * 0.8));
+
+  for (let size = maxSize; size >= 9; size -= 0.5) {
+    element.style.fontSize = size + "px";
+
+    if (element.scrollHeight <= height + 1) {
+      break;
+    }
+  }
+
+  element.style.minHeight = height + "px";
+}
+
+function addBoxHandlers(element, block) {
+  element.addEventListener("mouseenter", () => {
+    if (listMode) return;
+    footer.textContent =
+      (showOriginal ? "译文：" : "原文：") +
+      (showOriginal ? block.translation || "" : block.text || "");
+  });
+
+  element.addEventListener("click", () => {
+    invoke("copy_text", { text: block.translation || "" });
+    footer.textContent = "已复制译文";
+  });
+}
+
 function render() {
   boxes.textContent = "";
   if (!image.clientWidth || !image.naturalWidth) return;
 
   const scale = image.clientWidth / image.naturalWidth;
+  const canInPlace = inPlaceMode && ensureSampleCanvas();
 
   for (const block of blocks) {
     const box = quadBoundingBox(block.quad);
@@ -147,26 +256,43 @@ function render() {
 
     const element = document.createElement("div");
     element.className = "box";
+    element.title = block.translation || "";
 
     const height = Math.max(10, box.height * scale);
+
+    if (canInPlace) {
+      const inset = 2;
+      const x = Math.max(0, box.x - inset);
+      const y = Math.max(0, box.y - inset);
+      const width = Math.min(image.naturalWidth - x, box.width + inset * 2);
+      const coverHeight = Math.min(
+        image.naturalHeight - y,
+        box.height + inset * 2,
+      );
+      const background = sampleBackground(box);
+
+      element.classList.add("inplace");
+      element.style.left = x * scale + "px";
+      element.style.top = y * scale + "px";
+      element.style.setProperty("--box-width", width * scale + "px");
+      element.style.setProperty("--box-height", coverHeight * scale + "px");
+      element.style.setProperty("--box-bg", background);
+      element.style.setProperty("--box-fg", contrastColor(background));
+      element.textContent = block.translation || "";
+
+      addBoxHandlers(element, block);
+      boxes.append(element);
+      fitInPlace(element, coverHeight * scale);
+      continue;
+    }
+
     element.style.left = box.x * scale + "px";
     element.style.top = box.y * scale + "px";
     element.style.minHeight = height + "px";
     element.style.fontSize = Math.min(Math.max(11, height * 0.68), 20) + "px";
     element.textContent = showOriginal ? block.text || "" : block.translation || "";
 
-    element.addEventListener("mouseenter", () => {
-      if (listMode) return;
-      footer.textContent =
-        (showOriginal ? "译文：" : "原文：") +
-        (showOriginal ? block.translation || "" : block.text || "");
-    });
-
-    element.addEventListener("click", () => {
-      invoke("copy_text", { text: block.translation || "" });
-      footer.textContent = "已复制译文";
-    });
-
+    addBoxHandlers(element, block);
     boxes.append(element);
   }
 }
@@ -194,6 +320,20 @@ function renderList() {
 modeButton.addEventListener("click", () => {
   showOriginal = !showOriginal;
   modeButton.textContent = showOriginal ? "显示译文" : "显示原文";
+  render();
+});
+
+inPlaceButton.addEventListener("click", () => {
+  inPlaceMode = !inPlaceMode;
+
+  if (inPlaceMode) {
+    showOriginal = false;
+    modeButton.textContent = "显示原文";
+  }
+
+  modeButton.hidden = inPlaceMode;
+  inPlaceButton.textContent = inPlaceMode ? "对照" : "原位";
+  footer.textContent = inPlaceMode ? "原位：已覆盖原文，点击译文可复制" : "";
   render();
 });
 

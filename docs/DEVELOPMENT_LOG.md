@@ -2655,6 +2655,25 @@ matrix.
   alternatives reset after 重新翻译.
 
 
+## P1: 原位 Screenshot Translation
+
+- `ui/shot.*` gained a 原位/对照 toggle. The viewer renders the image to an
+  offscreen canvas once per capture, samples the dominant quantized color in a
+  ring 2 px outside each OCR quad, and covers the quad bounding box (expanded
+  by 2 px) with that color. The translation is drawn inside the cover with
+  black/white text chosen from the background luminance and a font that
+  shrinks from 80% of the line height to 9 px until it wraps inside the line;
+  longer text grows the opaque cover downwards instead of being clipped.
+- This is deliberately a cover-and-replace approximation, not inpainting:
+  gradients and textured backgrounds can show a color mismatch, and the cover
+  only handles recognized blocks. 显示原文 is hidden while 原位 is active.
+- Real-machine verified on Windows by triggering Ctrl+Alt+S over a text line in
+  the input window and capturing the viewer: 原位 showed the Chinese
+  translation at the original position with the sampled dark background and
+  white text, and 对照 restored the overlay with the English text visible
+  beside it.
+
+
 ## Sprint 6
 
 Mobile client.

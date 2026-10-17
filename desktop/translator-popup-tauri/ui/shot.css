@@ -129,6 +129,32 @@ button:focus-visible {
   outline-offset: 1px;
 }
 
+/* 原位: cover the recognized text with the sampled background and draw the
+   translation in its place. The cover is opaque so the original text is gone;
+   the text color flips for contrast. */
+.box.inplace {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: var(--box-width);
+  min-height: var(--box-height);
+  max-width: none;
+  padding: 0 1px;
+  border-radius: 1px;
+  background: var(--box-bg);
+  color: var(--box-fg);
+  font-weight: 500;
+  line-height: 1.15;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: visible;
+}
+
+.box.inplace:hover {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ot-accent);
+}
+
 #footer {
   flex: none;
   min-height: 20px;
