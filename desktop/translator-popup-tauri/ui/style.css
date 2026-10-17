@@ -739,6 +739,49 @@ button.icon.active {
   max-width: 210px;
 }
 
+.history-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.history-search {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ot-label);
+  background: var(--ot-fill);
+  border: none;
+  border-radius: var(--ot-radius-sm);
+  padding: 6px 10px;
+  outline: none;
+  user-select: text;
+}
+
+.history-search::placeholder {
+  color: var(--ot-label-3);
+}
+
+.history-search:focus {
+  background: var(--ot-bg);
+  box-shadow: 0 0 0 2px var(--ot-accent);
+}
+
+.history-filter {
+  flex: none;
+  background: var(--ot-fill);
+  color: var(--ot-label-2);
+  font-size: 12px;
+  padding: 5px 9px;
+  border-radius: var(--ot-radius-sm);
+}
+
+.history-filter[aria-pressed="true"] {
+  background: var(--ot-accent);
+  color: #ffffff;
+}
+
 .history-list {
   max-height: 240px;
   overflow: auto;
@@ -747,7 +790,7 @@ button.icon.active {
 
 .history-entry {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   column-gap: 8px;
   row-gap: 3px;
   align-items: start;
@@ -757,6 +800,12 @@ button.icon.active {
   border: none;
   border-radius: 0;
   text-align: left;
+  cursor: pointer;
+}
+
+.history-entry:focus-visible {
+  outline: 2px solid var(--ot-accent);
+  outline-offset: -2px;
 }
 
 .history-entry + .history-entry {
@@ -773,14 +822,17 @@ button.icon.active {
   background: var(--ot-separator);
 }
 
-.history-entry:hover:not(:disabled) {
+.history-entry:hover {
   background: var(--ot-fill);
-  border-color: transparent;
 }
 
 .history-star {
   grid-column: 1;
-  grid-row: 1;
+  grid-row: 1 / span 2;
+  align-self: center;
+  background: transparent;
+  border: none;
+  padding: 2px;
   font-size: 13px;
   color: var(--ot-label-2);
   cursor: pointer;
@@ -788,7 +840,8 @@ button.icon.active {
   line-height: 1;
 }
 
-.history-entry:hover .history-star {
+.history-entry:hover .history-star,
+.history-star:hover {
   color: var(--ot-accent);
 }
 
@@ -814,10 +867,49 @@ button.icon.active {
   font-variant-numeric: tabular-nums;
 }
 
+.history-copy {
+  grid-column: 4;
+  grid-row: 1 / span 2;
+  align-self: center;
+  background: transparent;
+  border: none;
+  padding: 2px;
+  color: var(--ot-label-2);
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.history-entry:hover .history-copy,
+.history-copy:focus-visible,
+.history-copy.copied {
+  opacity: 1;
+}
+
+.history-copy:hover {
+  color: var(--ot-label);
+}
+
+.history-copy svg {
+  width: 14px;
+  height: 14px;
+}
+
+.history-copy .icon-check {
+  display: none;
+}
+
+.history-copy.copied .icon-copy {
+  display: none;
+}
+
+.history-copy.copied .icon-check {
+  display: block;
+  color: var(--ot-green);
+}
+
 .history-translation {
-  grid-column: 1;
+  grid-column: 2 / span 2;
   grid-row: 2;
-  grid-column-end: span 3;
   font-size: 12px;
   color: var(--ot-label-2);
   white-space: nowrap;

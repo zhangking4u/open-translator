@@ -218,6 +218,48 @@
               <span id="hotkey-error" class="error-text" hidden></span>
             </div>
           </div>
+          <div class="setting-row">
+            <span class="setting-name">输入翻译</span>
+            <div class="setting-control">
+              <button
+                id="input-hotkey-recorder"
+                class="hotkey-recorder"
+                type="button"
+                aria-label="录制输入翻译快捷键"
+                title="按下此快捷键打开输入翻译窗口。点击可重新录制：按下新组合键并再次确认即可应用，Esc 取消；需要 Ctrl/Alt/Super；被占用时保留原快捷键。"
+              ></button>
+              <button
+                id="input-hotkey-reset"
+                hidden
+                title="恢复默认快捷键 Ctrl+Alt+I"
+              >
+                恢复默认
+              </button>
+              <span id="input-hotkey-saved" class="ok-text" hidden>已应用</span>
+              <span id="input-hotkey-error" class="error-text" hidden></span>
+            </div>
+          </div>
+          <div class="setting-row" id="ocr-hotkey-row">
+            <span class="setting-name">静默 OCR</span>
+            <div class="setting-control">
+              <button
+                id="ocr-hotkey-recorder"
+                class="hotkey-recorder"
+                type="button"
+                aria-label="录制静默 OCR 快捷键"
+                title="按下此快捷键框选屏幕区域，只把识别出的文字复制到剪贴板。点击可重新录制：按下新组合键并再次确认即可应用，Esc 取消；需要 Ctrl/Alt/Super；被占用时保留原快捷键。"
+              ></button>
+              <button
+                id="ocr-hotkey-reset"
+                hidden
+                title="恢复默认快捷键 Ctrl+Alt+Z"
+              >
+                恢复默认
+              </button>
+              <span id="ocr-hotkey-saved" class="ok-text" hidden>已应用</span>
+              <span id="ocr-hotkey-error" class="error-text" hidden></span>
+            </div>
+          </div>
           <label class="setting-row switch-row">
             <span class="setting-name">自动复制翻译</span>
             <input
@@ -376,6 +418,22 @@
           <span class="spacer"></span>
           <button id="history-back">完成</button>
         </div>
+        <div class="history-toolbar" id="history-toolbar" hidden>
+          <input
+            id="history-search"
+            class="history-search"
+            type="search"
+            placeholder="搜索原文或译文…"
+            autocomplete="off"
+          />
+          <button
+            id="history-favorites"
+            class="history-filter"
+            type="button"
+            aria-pressed="false"
+            title="只看收藏"
+          >★ 收藏</button>
+        </div>
         <div class="group">
           <div id="history-list" class="history-list"></div>
           <div id="history-empty" class="history-empty" hidden>
@@ -393,7 +451,7 @@
               <circle cx="12" cy="12" r="9" />
               <path d="M12 7v5l3 2" />
             </svg>
-            <p>暂无翻译记录</p>
+            <p id="history-empty-title">暂无翻译记录</p>
             <p class="sub" id="history-empty-hint">选中文字按 Ctrl+Alt+T 开始</p>
           </div>
           <button id="history-clear" class="setting-row danger-row" type="button" hidden>

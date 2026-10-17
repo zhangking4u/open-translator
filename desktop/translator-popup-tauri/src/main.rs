@@ -21,10 +21,10 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use translator_core::history::HistoryEntry;
 use translator_service::domain::prompt::PromptStyle;
-use translator_service::domain::translation::TranslationRequest;
+use translator_service::domain::translation::{GlossaryTerm, TranslationRequest};
 use translator_service::engine::llama_cpp::LlamaCppEngine;
 
 const DEFAULT_HOTKEY: &str = "Ctrl+Alt+T";
@@ -118,6 +118,10 @@ struct AppState {
     /// shortcuts against it to route to the screenshot flow.
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     screenshot_shortcut: Mutex<Option<tauri_plugin_global_shortcut::Shortcut>>,
+    /// The parsed 输入翻译 hotkey; runtime-rebindable from the settings page.
+    input_shortcut: Mutex<Option<tauri_plugin_global_shortcut::Shortcut>>,
+    /// The parsed 静默 OCR hotkey; runtime-rebindable from the settings page.
+    ocr_shortcut: Mutex<Option<tauri_plugin_global_shortcut::Shortcut>>,
     /// Docked ball presentation state (see `BALL_*`).
     ball_state: AtomicU64,
     /// Live caption capture task (Linux) and its tray items.
@@ -186,6 +190,8 @@ struct LanguageState {
 #[derive(Clone, serde::Serialize)]
 struct SettingsPayload {
     hotkey: String,
+    input_hotkey: String,
+    ocr_hotkey: String,
     model_path: String,
     default_model_path: String,
     auto_download: bool,
@@ -328,8 +334,17 @@ fn main() {
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_SCREENSHOT_HOTKEY.to_string());
 
-    let input_hotkey_spec = DEFAULT_INPUT_HOTKEY.to_string();
-    let ocr_hotkey_spec = DEFAULT_OCR_HOTKEY.to_string();
+    let input_hotkey_spec = config
+        .input_hotkey
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_INPUT_HOTKEY.to_string());
+
+    let ocr_hotkey_spec = config
+        .ocr_hotkey
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_OCR_HOTKEY.to_string());
 
     let serve_extension = config.serve_extension.as_deref() != Some("false");
     let server_plan = serve_extension.then(|| ServerPlan {
@@ -395,6 +410,8 @@ fn main() {
             ocr: Mutex::new(None),
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             screenshot_shortcut: Mutex::new(None),
+            input_shortcut: Mutex::new(None),
+            ocr_shortcut: Mutex::new(None),
             ball_state: AtomicU64::new(BALL_IDLE),
             caption: caption::CaptionRuntime::default(),
             caption_menu: Mutex::new(None),
@@ -419,27 +436,33 @@ fn main() {
         }))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler({
-                    let input_shortcut: tauri_plugin_global_shortcut::Shortcut =
-                        input_hotkey_spec.clone().parse().unwrap();
-                    let ocr_shortcut: tauri_plugin_global_shortcut::Shortcut =
-                        ocr_hotkey_spec.clone().parse().unwrap();
-                    move |app, shortcut, event| {
-                        if event.state != ShortcutState::Pressed {
-                            return;
-                        }
+                .with_handler(move |app, shortcut, event| {
+                    if event.state != ShortcutState::Pressed {
+                        return;
+                    }
 
-                        if *shortcut == input_shortcut {
+                    {
+                        let state = app.state::<AppState>();
+                        let is_input =
+                            state.input_shortcut.lock().unwrap().as_ref() == Some(shortcut);
+
+                        if is_input {
                             show_input_window(&app);
                             return;
                         }
+                    }
 
-                        if *shortcut == ocr_shortcut {
+                    {
+                        let state = app.state::<AppState>();
+                        let is_ocr = state.ocr_shortcut.lock().unwrap().as_ref() == Some(shortcut);
+
+                        if is_ocr {
                             let _ = start_ocr_silent(app.clone());
                             return;
                         }
+                    }
 
-                        #[cfg(any(target_os = "linux", target_os = "windows"))]
+                    #[cfg(any(target_os = "linux", target_os = "windows"))]
                     {
                         let is_screenshot = app
                             .state::<AppState>()
@@ -456,7 +479,6 @@ fn main() {
                     }
 
                     trigger_translation(app);
-                    }
                 })
                 .build(),
         )
@@ -485,6 +507,8 @@ fn main() {
             finish_caption_move,
             get_settings,
             save_hotkey,
+            save_input_hotkey,
+            save_ocr_hotkey,
             save_model_path,
             save_switch,
             open_config_dir,
@@ -587,12 +611,28 @@ fn main() {
                 let _ = app.emit("error", ErrorPayload { message });
             }
 
-            if let Err(error) = app.global_shortcut().register(input_hotkey_spec.as_str()) {
-                eprintln!("failed to register {input_hotkey_spec}: {error}");
-            }
+            for (which, spec) in [
+                (HotkeyTarget::Input, input_hotkey_spec.as_str()),
+                (HotkeyTarget::Ocr, ocr_hotkey_spec.as_str()),
+            ] {
+                match spec.parse::<Shortcut>() {
+                    Ok(shortcut) => {
+                        if shortcut_taken(&handle, &shortcut, which) {
+                            eprintln!("hotkey {spec} conflicts with another action; skipped");
+                            continue;
+                        }
 
-            if let Err(error) = app.global_shortcut().register(ocr_hotkey_spec.as_str()) {
-                eprintln!("failed to register {ocr_hotkey_spec}: {error}");
+                        match app.global_shortcut().register(shortcut.clone()) {
+                            Ok(()) => {
+                                *extra_hotkey_slot(app.state::<AppState>().inner(), which)
+                                    .lock()
+                                    .unwrap() = Some(shortcut);
+                            }
+                            Err(error) => eprintln!("failed to register {spec}: {error}"),
+                        }
+                    }
+                    Err(error) => eprintln!("invalid hotkey {spec}: {error}"),
+                }
             }
 
             #[cfg(any(target_os = "linux", target_os = "windows"))]
@@ -1522,7 +1562,7 @@ fn start_translation(app: &AppHandle, text: String) {
             text: text.clone(),
             source: effective_source,
             target,
-            glossary: Vec::new(),
+            glossary: load_glossary(),
         };
 
         let delta_app = app.clone();
@@ -2998,6 +3038,16 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
 
     SettingsPayload {
         hotkey,
+        input_hotkey: config
+            .input_hotkey
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_INPUT_HOTKEY.to_string()),
+        ocr_hotkey: config
+            .ocr_hotkey
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_OCR_HOTKEY.to_string()),
         model_path: config.model_path.clone().unwrap_or_default(),
         default_model_path: translator_core::paths::default_model_path()
             .map(|path| path.to_string_lossy().to_string())
@@ -3031,6 +3081,106 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HotkeyTarget {
+    Main,
+    Input,
+    Ocr,
+}
+
+impl HotkeyTarget {
+    fn config_key(self) -> &'static str {
+        match self {
+            Self::Input => "input_hotkey",
+            Self::Ocr => "ocr_hotkey",
+            Self::Main => "hotkey",
+        }
+    }
+}
+
+fn extra_hotkey_slot<'a>(
+    state: &'a AppState,
+    target: HotkeyTarget,
+) -> &'a Mutex<Option<Shortcut>> {
+    match target {
+        HotkeyTarget::Input => &state.input_shortcut,
+        HotkeyTarget::Ocr => &state.ocr_shortcut,
+        HotkeyTarget::Main => unreachable!("the main hotkey lives in TranslateConfig"),
+    }
+}
+
+/// True when another action already owns `shortcut`. `except` is the target
+/// being rebound, so re-applying its current combination is not a conflict.
+fn shortcut_taken(app: &AppHandle, shortcut: &Shortcut, except: HotkeyTarget) -> bool {
+    if except != HotkeyTarget::Main {
+        let main = app
+            .state::<Mutex<TranslateConfig>>()
+            .lock()
+            .unwrap()
+            .hotkey_label
+            .parse::<Shortcut>()
+            .ok();
+
+        if main.as_ref() == Some(shortcut) {
+            return true;
+        }
+    }
+
+    let state = app.state::<AppState>();
+
+    if except != HotkeyTarget::Input
+        && state.input_shortcut.lock().unwrap().as_ref() == Some(shortcut)
+    {
+        return true;
+    }
+
+    if except != HotkeyTarget::Ocr && state.ocr_shortcut.lock().unwrap().as_ref() == Some(shortcut)
+    {
+        return true;
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    if state.screenshot_shortcut.lock().unwrap().as_ref() == Some(shortcut) {
+        return true;
+    }
+
+    false
+}
+
+fn apply_extra_hotkey(app: &AppHandle, target: HotkeyTarget, spec: &str) -> Result<(), String> {
+    let spec = spec.trim();
+    let shortcut = spec
+        .parse::<Shortcut>()
+        .map_err(|error| format!("无效的快捷键：{error}"))?;
+
+    if shortcut_taken(app, &shortcut, target) {
+        return Err("该快捷键已被其他功能使用（已保留原快捷键）".to_string());
+    }
+
+    let state = app.state::<AppState>();
+    let previous = extra_hotkey_slot(&state, target).lock().unwrap().clone();
+
+    if let Some(previous) = &previous {
+        let _ = app.global_shortcut().unregister(previous.clone());
+    }
+
+    match app.global_shortcut().register(shortcut.clone()) {
+        Ok(()) => {
+            *extra_hotkey_slot(&state, target).lock().unwrap() = Some(shortcut);
+            translator_core::settings::persist_value(target.config_key(), spec);
+            Ok(())
+        }
+        Err(error) => {
+            if let Some(previous) = previous {
+                let _ = app.global_shortcut().register(previous.clone());
+                *extra_hotkey_slot(&state, target).lock().unwrap() = Some(previous);
+            }
+
+            Err(format!("{error}（已保留原快捷键）"))
+        }
+    }
+}
+
 #[tauri::command]
 fn save_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
     let spec = spec.trim().to_string();
@@ -3041,7 +3191,14 @@ fn save_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
         .hotkey_label
         .clone();
 
-    let _ = app.global_shortcut().unregister_all();
+    if let Ok(shortcut) = spec.parse::<Shortcut>() {
+        if shortcut_taken(&app, &shortcut, HotkeyTarget::Main) {
+            return Err("该快捷键已被其他功能使用（已保留原快捷键）".to_string());
+        }
+    }
+
+    // Only release the main binding: input/OCR must survive a rebind.
+    let _ = app.global_shortcut().unregister(previous.as_str());
 
     match app.global_shortcut().register(spec.as_str()) {
         Ok(()) => {
@@ -3058,6 +3215,16 @@ fn save_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
             Err(format!("{error}（已保留 {previous}）"))
         }
     }
+}
+
+#[tauri::command]
+fn save_input_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
+    apply_extra_hotkey(&app, HotkeyTarget::Input, &spec)
+}
+
+#[tauri::command]
+fn save_ocr_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
+    apply_extra_hotkey(&app, HotkeyTarget::Ocr, &spec)
 }
 
 #[tauri::command]
@@ -3484,14 +3651,16 @@ async fn translate_input(
 
     // The input window's languages are local to that window: never mutate the
     // shared card config behind the main window's back.
-    let (effective_source, _detected) =
-        translator_core::detect::resolve_source(&source, &text);
+    let (effective_source, detected) = translator_core::detect::resolve_source(&source, &text);
+    let history_source = detected.map(str::to_string).unwrap_or_else(|| source.trim().to_string());
+    let history_text = text.clone();
+    let history_target = target.clone();
 
     let request = TranslationRequest {
         text,
         source: effective_source,
         target,
-        glossary: Vec::new(),
+        glossary: load_glossary(),
     };
 
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -3501,7 +3670,57 @@ async fn translate_input(
     .map_err(|error| format!("翻译任务失败：{error}"))?
     .map_err(|error| error.to_string())?;
 
-    Ok(result.translated_text)
+    let translation = result.translated_text;
+
+    {
+        let state = app.state::<AppState>();
+        let mut history = state.history.lock().unwrap();
+        translator_core::history::push(
+            &mut history,
+            HistoryEntry {
+                source: history_source,
+                target: history_target,
+                text: history_text,
+                translation: translation.clone(),
+                at: Some(
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map(|elapsed| elapsed.as_millis() as u64)
+                        .unwrap_or(0),
+                ),
+                favorited: false,
+            },
+        );
+        translator_core::history::save(&history);
+    }
+
+    let _ = app.emit("history-changed", ());
+
+    Ok(translation)
+}
+
+/// `source=target` lines from `glossary.txt` next to the config, capped like
+/// the live-caption glossary.
+fn load_glossary() -> Vec<GlossaryTerm> {
+    let Some(path) = translator_core::paths::glossary_path() else {
+        return Vec::new();
+    };
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+
+    contents
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter_map(|line| line.split_once('='))
+        .map(|(source, target)| GlossaryTerm {
+            source: source.trim().to_string(),
+            target: target.trim().to_string(),
+        })
+        .filter(|term| !term.source.is_empty() && !term.target.is_empty())
+        .take(50)
+        .collect()
 }
 
 #[tauri::command]

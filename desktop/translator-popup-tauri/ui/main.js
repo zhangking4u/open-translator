@@ -58,6 +58,9 @@ let selectionMethodValue = "ball";
 let selectionAutoSupported = false;
 let selectionBallSupported = true;
 let autoCopyEnabled = false;
+let historyCache = [];
+let historyFilter = "";
+let historyFavoritesOnly = false;
 
 const SPEECH_LANGS = {
   zh: "zh-CN",
@@ -974,12 +977,9 @@ modelInput.addEventListener("keydown", (event) => {
   }
 });
 
-const hotkeyRecorder = document.getElementById("hotkey-recorder");
-const hotkeyReset = document.getElementById("hotkey-reset");
-const hotkeyError = document.getElementById("hotkey-error");
-const hotkeySaved = document.getElementById("hotkey-saved");
-
 const DEFAULT_HOTKEY = "Ctrl+Alt+T";
+const DEFAULT_INPUT_HOTKEY = "Ctrl+Alt+I";
+const DEFAULT_OCR_HOTKEY = "Ctrl+Alt+Z";
 const MODIFIER_EVENT_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
 const KEY_LABELS = {
   Control: "Ctrl",
@@ -989,12 +989,6 @@ const KEY_LABELS = {
   ArrowDown: "ArrowDown",
   ArrowLeft: "ArrowLeft",
   ArrowRight: "ArrowRight",
-};
-
-const hotkeyState = {
-  recording: false,
-  candidate: "",
-  current: "",
 };
 
 function hotkeyParts(spec) {
@@ -1022,134 +1016,171 @@ function specFromEvent(event) {
   return { modifiers, key: keyLabel(event) };
 }
 
-function renderHotkey() {
-  hotkeyRecorder.classList.toggle("recording", hotkeyState.recording);
+function createHotkeyRecorder(config) {
+  const state = { recording: false, candidate: "", current: "" };
 
-  let parts = [];
-  let state = "";
+  function render() {
+    config.recorder.classList.toggle("recording", state.recording);
 
-  if (!hotkeyState.recording) {
-    parts = hotkeyParts(hotkeyState.current);
-    if (!parts.length) state = "未设置";
-  } else if (hotkeyState.candidate) {
-    parts = hotkeyParts(hotkeyState.candidate);
-    state = "再按一次";
-  } else {
-    state = "按下新组合键…";
+    let parts = [];
+    let placeholder = "";
+
+    if (!state.recording) {
+      parts = hotkeyParts(state.current);
+      if (!parts.length) placeholder = "未设置";
+    } else if (state.candidate) {
+      parts = hotkeyParts(state.candidate);
+      placeholder = "再按一次";
+    } else {
+      placeholder = "按下新组合键…";
+    }
+
+    const nodes = [];
+    for (const part of parts) {
+      const keycap = document.createElement("kbd");
+      keycap.textContent = part;
+      nodes.push(keycap);
+    }
+    if (placeholder) {
+      const span = document.createElement("span");
+      span.className = "placeholder";
+      span.textContent = placeholder;
+      nodes.push(span);
+    }
+    config.recorder.replaceChildren(...nodes);
+    config.reset.hidden = !state.recording;
+
+    resize();
   }
 
-  const nodes = [];
-  for (const part of parts) {
-    const keycap = document.createElement("kbd");
-    keycap.textContent = part;
-    nodes.push(keycap);
+  function start() {
+    state.recording = true;
+    state.candidate = "";
+    config.error.hidden = true;
+    config.saved.hidden = true;
+    config.recorder.focus();
+    render();
   }
-  if (state) {
-    const span = document.createElement("span");
-    span.className = "placeholder";
-    span.textContent = state;
-    nodes.push(span);
+
+  function stop() {
+    state.recording = false;
+    state.candidate = "";
+    render();
   }
-  hotkeyRecorder.replaceChildren(...nodes);
-  hotkeyReset.hidden = !hotkeyState.recording;
 
-  resize();
+  async function apply(spec) {
+    config.error.hidden = true;
+    config.saved.hidden = true;
+
+    try {
+      await invoke(config.saveCommand, { spec });
+      state.current = spec;
+      state.recording = false;
+      state.candidate = "";
+      config.saved.hidden = false;
+      window.setTimeout(() => (config.saved.hidden = true), 1500);
+      config.onApplied?.(spec);
+    } catch (message) {
+      config.error.textContent = String(message);
+      config.error.hidden = false;
+    }
+
+    render();
+  }
+
+  config.recorder.addEventListener("click", start);
+
+  config.recorder.addEventListener("blur", (event) => {
+    if (event.relatedTarget === config.reset) return;
+    if (state.recording) stop();
+  });
+
+  config.recorder.addEventListener("keydown", (event) => {
+    if (!state.recording) return;
+    if (event.isComposing) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.key === "Escape") {
+      stop();
+      return;
+    }
+
+    if (event.key === "Backspace" || event.key === "Delete") {
+      state.candidate = "";
+      render();
+      return;
+    }
+
+    if (event.repeat || MODIFIER_EVENT_KEYS.has(event.key)) return;
+
+    const { modifiers, key } = specFromEvent(event);
+    const hasCommandModifier = modifiers.some((modifier) => modifier !== "Shift");
+
+    if (!hasCommandModifier) {
+      config.error.textContent = "快捷键需要包含 Ctrl、Alt 或 Super";
+      config.error.hidden = false;
+      return;
+    }
+
+    config.error.hidden = true;
+
+    const next = modifiers.concat(key).join("+");
+
+    if (state.candidate === next) {
+      apply(next);
+      return;
+    }
+
+    state.candidate = next;
+    render();
+  });
+
+  config.reset.addEventListener("click", () => apply(config.defaultSpec));
+
+  return {
+    setCurrent(spec) {
+      state.current = spec || "";
+      state.recording = false;
+      state.candidate = "";
+      render();
+    },
+  };
 }
 
-function startHotkeyRecording() {
-  hotkeyState.recording = true;
-  hotkeyState.candidate = "";
-  hotkeyError.hidden = true;
-  hotkeySaved.hidden = true;
-  hotkeyRecorder.focus();
-  renderHotkey();
-}
-
-function stopHotkeyRecording() {
-  hotkeyState.recording = false;
-  hotkeyState.candidate = "";
-  renderHotkey();
-}
-
-async function applyHotkey(spec) {
-  hotkeyError.hidden = true;
-  hotkeySaved.hidden = true;
-
-  try {
-    await invoke("save_hotkey", { spec });
-    hotkeyState.current = spec;
-    hotkeyState.recording = false;
-    hotkeyState.candidate = "";
-    hotkeySaved.hidden = false;
-    window.setTimeout(() => (hotkeySaved.hidden = true), 1500);
+const mainHotkeyRecorder = createHotkeyRecorder({
+  recorder: document.getElementById("hotkey-recorder"),
+  reset: document.getElementById("hotkey-reset"),
+  error: document.getElementById("hotkey-error"),
+  saved: document.getElementById("hotkey-saved"),
+  defaultSpec: DEFAULT_HOTKEY,
+  saveCommand: "save_hotkey",
+  onApplied(spec) {
     hotkeyLabel = spec;
 
     if (view === "translator" && !current && !streaming) {
       showWaiting();
     }
-  } catch (message) {
-    hotkeyError.textContent = String(message);
-    hotkeyError.hidden = false;
-  }
-
-  renderHotkey();
-}
-
-hotkeyRecorder.addEventListener("click", () => {
-  startHotkeyRecording();
+  },
 });
 
-hotkeyRecorder.addEventListener("blur", (event) => {
-  if (event.relatedTarget === hotkeyReset) return;
-  if (hotkeyState.recording) {
-    stopHotkeyRecording();
-  }
+const inputHotkeyRecorder = createHotkeyRecorder({
+  recorder: document.getElementById("input-hotkey-recorder"),
+  reset: document.getElementById("input-hotkey-reset"),
+  error: document.getElementById("input-hotkey-error"),
+  saved: document.getElementById("input-hotkey-saved"),
+  defaultSpec: DEFAULT_INPUT_HOTKEY,
+  saveCommand: "save_input_hotkey",
 });
 
-hotkeyRecorder.addEventListener("keydown", (event) => {
-  if (!hotkeyState.recording) return;
-  if (event.isComposing) return;
-
-  event.preventDefault();
-  event.stopPropagation();
-
-  if (event.key === "Escape") {
-    stopHotkeyRecording();
-    return;
-  }
-
-  if (event.key === "Backspace" || event.key === "Delete") {
-    hotkeyState.candidate = "";
-    renderHotkey();
-    return;
-  }
-
-  if (event.repeat || MODIFIER_EVENT_KEYS.has(event.key)) return;
-
-  const { modifiers, key } = specFromEvent(event);
-  const hasCommandModifier = modifiers.some((modifier) => modifier !== "Shift");
-
-  if (!hasCommandModifier) {
-    hotkeyError.textContent = "快捷键需要包含 Ctrl、Alt 或 Super";
-    hotkeyError.hidden = false;
-    return;
-  }
-
-  hotkeyError.hidden = true;
-
-  const next = modifiers.concat(key).join("+");
-
-  if (hotkeyState.candidate === next) {
-    applyHotkey(next);
-    return;
-  }
-
-  hotkeyState.candidate = next;
-  renderHotkey();
-});
-
-hotkeyReset.addEventListener("click", () => {
-  applyHotkey(DEFAULT_HOTKEY);
+const ocrHotkeyRecorder = createHotkeyRecorder({
+  recorder: document.getElementById("ocr-hotkey-recorder"),
+  reset: document.getElementById("ocr-hotkey-reset"),
+  error: document.getElementById("ocr-hotkey-error"),
+  saved: document.getElementById("ocr-hotkey-saved"),
+  defaultSpec: DEFAULT_OCR_HOTKEY,
+  saveCommand: "save_ocr_hotkey",
 });
 
 for (const [id, key] of [
@@ -1303,12 +1334,9 @@ aboutBack.addEventListener("click", () => {
 openAbout.addEventListener("click", showAbout);
 
 async function applySettingsToUi(settings) {
-  hotkeyState.current = settings.hotkey;
-  hotkeyState.recording = false;
-  hotkeyState.candidate = "";
-  hotkeyError.hidden = true;
-  hotkeySaved.hidden = true;
-  renderHotkey();
+  mainHotkeyRecorder.setCurrent(settings.hotkey);
+  inputHotkeyRecorder.setCurrent(settings.input_hotkey || DEFAULT_INPUT_HOTKEY);
+  ocrHotkeyRecorder.setCurrent(settings.ocr_hotkey || DEFAULT_OCR_HOTKEY);
   defaultModelPath = settings.default_model_path || "";
   savedModelPath = settings.model_path || defaultModelPath;
   modelInput.value = savedModelPath;
@@ -1363,70 +1391,141 @@ async function showAbout() {
 }
 
 async function openHistory() {
-  await renderHistory();
+  await loadHistory();
+  renderHistory();
   showView("history");
   await resize();
   await invoke("center_window");
 }
 
-async function renderHistory() {
-  const history = await invoke("get_history");
+async function loadHistory() {
+  historyCache = await invoke("get_history");
+}
+
+function renderHistory() {
   const list = document.getElementById("history-list");
   const empty = document.getElementById("history-empty");
   const clear = document.getElementById("history-clear");
+  const toolbar = document.getElementById("history-toolbar");
+  const emptyTitle = document.getElementById("history-empty-title");
+  const emptyHint = document.getElementById("history-empty-hint");
+  const query = historyFilter.trim().toLowerCase();
+
+  const rows = historyCache
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => {
+      if (historyFavoritesOnly && !entry.favorited) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      return [entry.text, entry.translation, entry.target, labelOf(entry.target)]
+        .join("\n")
+        .toLowerCase()
+        .includes(query);
+    });
 
   list.replaceChildren();
-  empty.hidden = history.length > 0;
-  clear.hidden = history.length === 0;
+  toolbar.hidden = historyCache.length === 0;
+  empty.hidden = rows.length > 0;
+  clear.hidden = historyCache.length === 0;
 
-  document.getElementById("history-empty-hint").textContent =
-    "选中文字按 " + hotkeyLabel + " 开始";
+  if (historyCache.length === 0) {
+    emptyTitle.textContent = "暂无翻译记录";
+    emptyHint.textContent = "选中文字按 " + hotkeyLabel + " 开始";
+  } else {
+    emptyTitle.textContent = "没有匹配的记录";
+    emptyHint.textContent = historyFavoritesOnly
+      ? "取消收藏筛选或换个关键词"
+      : "换个关键词试试";
+  }
 
-    history.forEach((entry, index) => {
-      const button = document.createElement("button");
-      button.className = "history-entry";
-      button.type = "button";
-      button.title = entry.text + "\n" + entry.translation;
+  for (const { entry, index } of rows) {
+    const row = document.createElement("div");
+    row.className = "history-entry";
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.title = entry.text + "\n" + entry.translation;
 
-      const star = document.createElement("span");
-      star.className = "history-star";
-      star.textContent = entry.favorited ? "★" : "☆";
-      star.title = entry.favorited ? "取消收藏" : "收藏";
-      star.addEventListener("click", async (event) => {
-        event.stopPropagation();
-        await invoke("toggle_history_favorite", { index });
-        await renderHistory();
-        resize();
-      });
-
-      const text = document.createElement("span");
-      text.className = "history-text";
-      text.textContent = entry.text;
-
-      const time = document.createElement("span");
-      time.className = "history-time";
-      const relative = relativeTime(entry.at);
-      // The language tag only earns its place when it differs from the target
-      // the user is translating into right now.
-      time.textContent =
-        entry.target && entry.target !== languageState.target
-          ? relative
-            ? entry.target + " · " + relative
-            : entry.target
-          : relative;
-
-      const translation = document.createElement("span");
-      translation.className = "history-translation";
-      translation.textContent = entry.translation;
-
-      button.append(star, text, time, translation);
-      button.addEventListener("click", async () => {
-        await invoke("load_history_entry", { index });
-        showView("translator");
-      });
-      list.appendChild(button);
+    const star = document.createElement("button");
+    star.type = "button";
+    star.className = "history-star";
+    star.textContent = entry.favorited ? "★" : "☆";
+    star.title = entry.favorited ? "取消收藏" : "收藏";
+    star.setAttribute("aria-label", star.title);
+    star.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await invoke("toggle_history_favorite", { index });
+      entry.favorited = !entry.favorited;
+      renderHistory();
+      resize();
     });
+
+    const text = document.createElement("span");
+    text.className = "history-text";
+    text.textContent = entry.text;
+
+    const time = document.createElement("span");
+    time.className = "history-time";
+    const relative = relativeTime(entry.at);
+    // The language tag only earns its place when it differs from the target
+    // the user is translating into right now.
+    time.textContent =
+      entry.target && entry.target !== languageState.target
+        ? relative
+          ? entry.target + " · " + relative
+          : entry.target
+        : relative;
+
+    const translation = document.createElement("span");
+    translation.className = "history-translation";
+    translation.textContent = entry.translation;
+
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "history-copy";
+    copyButton.title = "复制译文";
+    copyButton.setAttribute("aria-label", "复制译文");
+    copyButton.innerHTML =
+      '<svg class="icon-copy" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>' +
+      '<svg class="icon-check" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+    copyButton.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await invoke("copy_text", { text: entry.translation });
+      copyButton.classList.add("copied");
+      window.setTimeout(() => copyButton.classList.remove("copied"), 1200);
+    });
+
+    const open = async () => {
+      await invoke("load_history_entry", { index });
+      showView("translator");
+    };
+
+    row.append(star, text, time, copyButton, translation);
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
+    list.appendChild(row);
+  }
 }
+
+document.getElementById("history-search").addEventListener("input", (event) => {
+  historyFilter = event.target.value;
+  renderHistory();
+});
+
+document.getElementById("history-favorites").addEventListener("click", (event) => {
+  historyFavoritesOnly = !historyFavoritesOnly;
+  event.currentTarget.setAttribute("aria-pressed", String(historyFavoritesOnly));
+  renderHistory();
+});
 
 function relativeTime(at) {
   if (!at) return "";
@@ -1451,7 +1550,8 @@ function relativeTime(at) {
 document.getElementById("history-clear").addEventListener("click", () => {
   openConfirm(async () => {
     await invoke("clear_history");
-    await renderHistory();
+    historyCache = [];
+    renderHistory();
     resize();
   });
 });
@@ -1578,7 +1678,7 @@ listen("language-state", (event) => {
 if (!isInputWindow) {
 listen("history-changed", () => {
   if (view === "history") {
-    renderHistory();
+    loadHistory().then(renderHistory);
   }
 });
 
@@ -1684,6 +1784,7 @@ listen("speech-ended", (event) => {
 invoke("platform").then((os) => {
   // Windows keeps the window opaque, so the card fills it instead of floating.
   document.body.classList.toggle("os-windows", os === "windows");
+  document.getElementById("ocr-hotkey-row").hidden = os === "macos";
   if (!isInputWindow) resize();
 });
 
