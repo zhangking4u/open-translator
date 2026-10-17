@@ -837,3 +837,12 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - The input window hosts the settings/history/about views and sizes itself dynamically per view (input 367 px, settings 480 px, history 416 px in the Windows check); history rows load back into the input result state via the returned `HistoryEntry`
 - `Ctrl+Alt+I` still starts a fresh draft (`input-toggle`), while tray/startup preserve the current draft (`input-show`); startup `--settings`/`--history` are honored through `get_initial_view` in the input window
 - The input window is taskbar-visible and no longer always-on-top; `show_main_in_place` and the old tray→card path were removed
+
+
+## P1 — 备选译法 Replaces Multi-Engine Comparison (2026-10-17)
+
+
+- Multi-engine comparison was rejected for a local-first product: a second `hy-mt1.5-1.8b` model is another 1.08 GB download, raised process memory from 1.8 GB to 3.5 GB, and doubles serialized generation latency. The uncommitted second-model plumbing was removed and its UI repurposed.
+- 备选译法: the result footer gained 换一种译法. It re-runs the same model with a different-phrasing prompt hint, temperature 0.9 and a fresh time-based seed, caches up to two alternatives (备选 1/备选 2), rejects duplicates of the primary or of an already shown alternative, and gives each alternative its own copy button. Alternatives are cleared by 重新翻译, editing the source, 清空 or loading another history entry.
+- `LlamaCppEngine::translate_alternative` lives in `core/translator-service`; the Tauri command is `translate_alternative`. No extra model, memory or persistent setting is involved.
+- Real-machine verified on Windows: primary translation, two distinct alternatives, duplicate rejection, copy, and alternatives reset after 重新翻译.

@@ -1155,3 +1155,68 @@ button.destructive {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.input-alternatives {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 150px;
+  overflow-y: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--ot-separator);
+}
+
+.input-alternative {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.input-alternative-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.input-alternative-label {
+  flex: 1;
+  font-size: 11px;
+  color: var(--ot-label-3);
+}
+
+.input-alternative-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ot-label-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.input-alternative-copy {
+  flex: none;
+  padding: 2px;
+  background: transparent;
+  border: none;
+  color: var(--ot-label-2);
+  opacity: 0.6;
+}
+
+.input-alternative-copy:hover {
+  color: var(--ot-label);
+  opacity: 1;
+}
+
+.input-alternative-copy .icon-check {
+  display: none;
+}
+
+.input-alternative-copy.copied .icon-copy {
+  display: none;
+}
+
+.input-alternative-copy.copied .icon-check {
+  display: block;
+  color: var(--ot-green);
+}

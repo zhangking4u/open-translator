@@ -39,9 +39,21 @@ impl LlamaCppEngine {
         &self,
         request: &TranslationRequest,
     ) -> Result<(String, Vec<String>, InferenceOptions), TranslationError> {
-        let prompt = self
-            .prompt_style
-            .raw_prompt(&translation_prompt(self.prompt_style, request)?);
+        self.inference_request_with_hint(request, None)
+    }
+
+    fn inference_request_with_hint(
+        &self,
+        request: &TranslationRequest,
+        hint: Option<&str>,
+    ) -> Result<(String, Vec<String>, InferenceOptions), TranslationError> {
+        let mut prompt = translation_prompt(self.prompt_style, request)?;
+
+        if let Some(hint) = hint {
+            prompt = format!("{hint}\n{prompt}");
+        }
+
+        let prompt = self.prompt_style.raw_prompt(&prompt);
         let stop_strings = self.prompt_style.stop_strings();
         let sampling = self.prompt_style.sampling();
 
@@ -62,6 +74,41 @@ impl LlamaCppEngine {
         request: &TranslationRequest,
     ) -> Result<TranslationResult, TranslationError> {
         let (prompt, stop_strings, options) = self.inference_request(request)?;
+
+        let generation = self
+            .engine
+            .generate(&prompt, &stop_strings, &options)
+            .map_err(|error| TranslationError::EngineUnavailable(error.to_string()))?;
+
+        Ok(TranslationResult {
+            translated_text: generation.text,
+        })
+    }
+
+    /// Re-runs the same request with a "say it another way" hint and varied
+    /// sampling, producing another plausible rendering from the same model
+    /// rather than a different translation mode.
+    pub fn translate_alternative(
+        &self,
+        request: &TranslationRequest,
+        seed: u32,
+    ) -> Result<TranslationResult, TranslationError> {
+        let hint = match self.prompt_style {
+            PromptStyle::HunYuanMt => {
+                "请换一种更自然、更口语化的说法，不要逐字照搬原句结构。"
+            }
+            PromptStyle::Generic | PromptStyle::TranslateGemma => {
+                "Give a different, more natural and idiomatic rendering than a literal translation."
+            }
+        };
+        let (prompt, stop_strings, mut options) =
+            self.inference_request_with_hint(request, Some(hint))?;
+
+        options.temperature = 0.9;
+        options.top_p = 0.9;
+        options.top_k = 40;
+        options.repeat_penalty = 1.02;
+        options.seed = seed;
 
         let generation = self
             .engine

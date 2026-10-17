@@ -526,6 +526,7 @@ fn main() {
             get_update_state,
             replace_text,
             translate_input,
+            translate_alternative,
             get_languages,
             get_language_state,
             set_source,
@@ -3698,6 +3699,52 @@ async fn translate_input(
     let _ = app.emit("history-changed", ());
 
     Ok(translation)
+}
+
+#[tauri::command(async)]
+async fn translate_alternative(
+    app: AppHandle,
+    text: String,
+    source: String,
+    target: String,
+) -> Result<String, String> {
+    if text.trim().is_empty() {
+        return Err("请输入要翻译的文本".to_string());
+    }
+
+    if source != "auto" && !translator_core::languages::is_supported(&source) {
+        return Err(format!("unsupported language: {source}"));
+    }
+
+    if !translator_core::languages::is_supported(&target) {
+        return Err(format!("unsupported language: {target}"));
+    }
+
+    let engine = app.state::<AppState>().engine.lock().unwrap().clone();
+    let Some(engine) = engine else {
+        return Err("翻译引擎尚未就绪".to_string());
+    };
+
+    let (effective_source, _detected) =
+        translator_core::detect::resolve_source(&source, &text);
+
+    let request = TranslationRequest {
+        text,
+        source: effective_source,
+        target,
+        glossary: load_glossary(),
+    };
+
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.subsec_nanos())
+        .unwrap_or(0);
+
+    tauri::async_runtime::spawn_blocking(move || engine.translate_alternative(&request, seed))
+        .await
+        .map_err(|error| format!("翻译任务失败：{error}"))?
+        .map_err(|error| error.to_string())
+        .map(|result| result.translated_text)
 }
 
 /// `source=target` lines from `glossary.txt` next to the config, capped like

@@ -40,6 +40,8 @@ const inputResultText = document.getElementById("input-result-text");
 const inputCopy = document.getElementById("input-copy");
 const inputRetranslate = document.getElementById("input-retranslate");
 const inputSaved = document.getElementById("input-saved");
+const inputAlternate = document.getElementById("input-alternate");
+const inputAlternativesContainer = document.getElementById("input-alternatives");
 const switchSelection = document.getElementById("switch-selection");
 const selectionMethodSelect = document.getElementById("selection-method");
 const selectionMethodRow = document.getElementById("selection-method-row");
@@ -518,6 +520,49 @@ inputCopy.addEventListener("click", async () => {
   flashInputSaved();
 });
 
+inputAlternate.addEventListener("click", async () => {
+  if (inputAlternateBusy || inputAlternatives.length >= 2 || !inputResultContext) {
+    return;
+  }
+
+  const context = inputResultContext;
+  const generation = inputGeneration;
+  inputAlternateBusy = true;
+  showInputError("");
+  updateInputAlternateButton();
+
+  try {
+    const result = await invoke("translate_alternative", {
+      text: context.text,
+      source: context.source,
+      target: context.target,
+    });
+
+    if (generation !== inputGeneration) {
+      return;
+    }
+
+    if (
+      !result ||
+      result === inputResultText.textContent ||
+      inputAlternatives.includes(result)
+    ) {
+      showInputError("这次没有生成新的译法，再试一次。");
+      return;
+    }
+
+    inputAlternatives.push(result);
+    renderInputAlternatives();
+  } catch (message) {
+    if (generation === inputGeneration) {
+      showInputError(String(message));
+    }
+  } finally {
+    inputAlternateBusy = false;
+    updateInputAlternateButton();
+  }
+});
+
 inputText.addEventListener("input", () => {
   showInputError("");
   updateInputActions();
@@ -600,13 +645,82 @@ function showInputEntry(entry) {
   showInputError("");
   inputCompose.hidden = true;
   inputResult.hidden = false;
+  inputGeneration += 1;
+  inputResultContext = {
+    text: entry.text,
+    source: entry.source,
+    target: entry.target,
+  };
+  clearInputAlternatives();
   updateInputActions();
   showView("input");
 }
 
 function showInputCompose() {
+  inputGeneration += 1;
+  inputResultContext = null;
+  clearInputAlternatives();
   inputCompose.hidden = false;
   inputResult.hidden = true;
+}
+
+function clearInputAlternatives() {
+  inputAlternatives = [];
+  inputAlternateBusy = false;
+  inputAlternativesContainer.hidden = true;
+  inputAlternativesContainer.replaceChildren();
+  updateInputAlternateButton();
+}
+
+function updateInputAlternateButton() {
+  const full = inputAlternatives.length >= 2;
+  inputAlternate.disabled = inputAlternateBusy || full || !inputResultContext;
+  inputAlternate.textContent = inputAlternateBusy
+    ? "生成中…"
+    : full
+      ? "已生成 2 个备选"
+      : "换一种译法";
+}
+
+function renderInputAlternatives() {
+  inputAlternativesContainer.replaceChildren();
+
+  inputAlternatives.forEach((alternative, index) => {
+    const item = document.createElement("div");
+    item.className = "input-alternative";
+
+    const head = document.createElement("div");
+    head.className = "input-alternative-head";
+
+    const label = document.createElement("span");
+    label.className = "input-alternative-label";
+    label.textContent = "备选 " + (index + 1);
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "input-alternative-copy";
+    copy.title = "复制备选译文";
+    copy.setAttribute("aria-label", "复制备选译文");
+    copy.innerHTML =
+      '<svg class="icon-copy" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>' +
+      '<svg class="icon-check" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+    copy.addEventListener("click", async () => {
+      await invoke("copy_text", { text: alternative });
+      copy.classList.add("copied");
+      window.setTimeout(() => copy.classList.remove("copied"), 1200);
+    });
+
+    const text = document.createElement("div");
+    text.className = "input-alternative-text";
+    text.textContent = alternative;
+
+    head.append(label, copy);
+    item.append(head, text);
+    inputAlternativesContainer.appendChild(item);
+  });
+
+  inputAlternativesContainer.hidden = inputAlternatives.length === 0;
+  updateInputAlternateButton();
 }
 
 function updateInputActions() {
@@ -630,6 +744,10 @@ function flashInputSaved() {
 }
 
 let inputGeneration = 0;
+let inputAlternatives = [];
+let inputAlternateBusy = false;
+let inputResultContext = null;
+
 async function doInputTranslate() {
   const text = inputText.value.trim();
   if (!text) {
@@ -637,7 +755,11 @@ async function doInputTranslate() {
     return;
   }
 
+  const source = inputSource.value;
+  const target = inputTarget.value;
   const generation = ++inputGeneration;
+  inputResultContext = null;
+  clearInputAlternatives();
   inputTranslate.disabled = true;
   inputRetranslate.disabled = true;
   inputTranslate.textContent = "翻译中…";
@@ -647,8 +769,8 @@ async function doInputTranslate() {
   try {
     const result = await invoke("translate_input", {
       text,
-      source: inputSource.value,
-      target: inputTarget.value,
+      source,
+      target,
     });
 
     if (generation !== inputGeneration) {
@@ -660,6 +782,8 @@ async function doInputTranslate() {
     inputSourcePreview.title = "编辑原文：" + text;
     inputCompose.hidden = true;
     inputResult.hidden = false;
+    inputResultContext = { text, source, target };
+    updateInputAlternateButton();
 
     if (autoCopyEnabled) {
       await invoke("copy_text", { text: result });

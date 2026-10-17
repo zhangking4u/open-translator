@@ -2637,6 +2637,24 @@ matrix.
   the expected window heights; `cargo check` and client tests pass.
 
 
+## P1: 备选译法 Replaces Multi-Engine Comparison
+
+- The second-model experiment was reverted: downloading another 1 GB model
+  and holding two contexts (1.8 GB → 3.5 GB RSS, two serialized generations)
+  does not fit a local-first desktop translator. The compare config, settings
+  switch, About row and event plumbing were removed.
+- 换一种译法 in the input result footer now calls the same engine again with a
+  "say it another way" prompt hint, temperature 0.9 and a fresh time-based
+  seed. `LlamaCppEngine::translate_alternative` keeps the model and prompt
+  format, varying only the prompt hint and sampling. The UI keeps up to two
+  alternatives, rejects duplicates of the primary/existing ones, and clears
+  them on 重新翻译/edit/clear/history load. Each alternative has its own copy
+  button.
+- Real-machine verified with the 1.8B model: two distinct alternatives, a
+  duplicate attempt rejected, clipboard copy of an alternative, and the
+  alternatives reset after 重新翻译.
+
+
 ## Sprint 6
 
 Mobile client.
