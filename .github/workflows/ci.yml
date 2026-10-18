@@ -98,6 +98,47 @@ jobs:
           Remove-Item -Recurse -Force target/sherpa-onnx-prebuilt -ErrorAction SilentlyContinue
       - run: cargo test
 
+  tts:
+    name: TTS crate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core/tts
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/tts
+      - name: Rebuild the sherpa-onnx prebuilt libraries
+        # See the ASR crate job above.
+        run: |
+          rm -rf target/*/build/sherpa-onnx-sys-*
+          rm -rf target/*/.fingerprint/sherpa-onnx-sys-*
+          rm -rf target/sherpa-onnx-prebuilt
+      - run: cargo test
+
+  tts-windows:
+    name: TTS crate (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: core/tts
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/tts
+      - name: Rebuild the sherpa-onnx prebuilt libraries
+        # See the ASR crate job above.
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/*/build/sherpa-onnx-sys-* -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force target/*/.fingerprint/sherpa-onnx-sys-* -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force target/sherpa-onnx-prebuilt -ErrorAction SilentlyContinue
+      - run: cargo test
+
   core-windows:
     name: Core service tests (Windows)
     runs-on: windows-latest

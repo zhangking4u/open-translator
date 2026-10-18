@@ -278,13 +278,23 @@
 
         <p class="group-title" id="tts-title">语音</p>
         <div class="group" id="tts-group">
+          <div class="setting-row" id="tts-engine-row">
+            <span class="setting-name">朗读引擎</span>
+            <div class="setting-control">
+              <select id="tts-engine" class="setting-select" title="朗读引擎">
+                <option value="system">系统语音</option>
+                <option value="local">本地模型</option>
+              </select>
+            </div>
+          </div>
           <div class="setting-row">
             <span class="setting-name">朗读内容</span>
             <div class="setting-control">
-              <select id="tts-target" class="setting-select" title="朗读内容">
+              <select id="tts-target" class="setting-select" title="朗读内容（自动=读非中文一侧）">
+                <option value="auto">自动</option>
                 <option value="translation">译文</option>
                 <option value="source">原文</option>
-                <option value="both">原文 + 译文</option>
+                <option value="both">双语</option>
               </select>
             </div>
           </div>
@@ -296,6 +306,87 @@
                 <option value="1">正常</option>
                 <option value="1.2">快</option>
               </select>
+            </div>
+          </div>
+          <div class="setting-row" id="tts-local-engine-row" hidden>
+            <span class="setting-name">中文引擎</span>
+            <div class="setting-control">
+              <select id="tts-local-engine" class="setting-select" title="中文引擎">
+                <option value="fast">流畅（MeloTTS）</option>
+                <option value="natural">自然（Kokoro）</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row" id="tts-supertonic-model-row" hidden>
+            <span class="setting-name">多语种模型</span>
+            <div class="setting-control">
+              <span id="tts-supertonic-model-status" class="dim-text">未下载</span>
+              <button
+                id="tts-supertonic-model-download"
+                class="setting-select"
+                type="button"
+                title="下载 Supertonic 3 多语种语音模型（31 种语言，约 145 MB，OpenRAIL）"
+              >
+                下载
+              </button>
+            </div>
+          </div>
+          <div class="setting-row" id="tts-multi-speaker-row" hidden>
+            <span class="setting-name">多语种音色</span>
+            <div class="setting-control">
+              <select
+                id="tts-speaker-multi"
+                class="setting-select"
+                title="多语种音色（悬停或选择会自动试听）"
+              ></select>
+              <button
+                id="tts-multi-preview"
+                class="setting-select"
+                type="button"
+                title="试听当前多语种音色"
+              >
+                试听
+              </button>
+            </div>
+          </div>
+          <div class="setting-row" id="tts-vits-model-row" hidden>
+            <span class="setting-name">中文快速模型</span>
+            <div class="setting-control">
+              <span id="tts-vits-model-status" class="dim-text">未下载</span>
+              <button
+                id="tts-vits-model-download"
+                class="setting-select"
+                type="button"
+                title="下载 MeloTTS 中英快速语音模型（约 177 MB，MIT）"
+              >
+                下载
+              </button>
+            </div>
+          </div>
+          <div class="setting-row" id="tts-kokoro-model-row" hidden>
+            <span class="setting-name">中英自然模型</span>
+            <div class="setting-control">
+              <span id="tts-kokoro-model-status" class="dim-text">未下载</span>
+              <button
+                id="tts-kokoro-model-download"
+                class="setting-select"
+                type="button"
+                title="下载 Kokoro v1.1 本地语音模型（约 180 MB，Apache-2.0）"
+              >
+                下载
+              </button>
+            </div>
+          </div>
+          <div class="setting-row" id="tts-speaker-zh-row" hidden>
+            <span class="setting-name">中文音色</span>
+            <div class="setting-control">
+              <select id="tts-speaker-zh" class="setting-select" title="中文音色"></select>
+            </div>
+          </div>
+          <div class="setting-row" id="tts-speaker-en-row" hidden>
+            <span class="setting-name">English 音色</span>
+            <div class="setting-control">
+              <select id="tts-speaker-en" class="setting-select" title="English 音色"></select>
             </div>
           </div>
           <div class="setting-row" id="tts-voice-row">

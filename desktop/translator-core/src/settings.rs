@@ -38,6 +38,13 @@ pub struct FileConfig {
     pub tts_target: Option<String>,
     pub tts_rate: Option<String>,
     pub tts_voice: Option<String>,
+    pub tts_engine: Option<String>,
+    pub tts_local_engine: Option<String>,
+    pub tts_speaker: Option<String>,
+    pub tts_speaker_zh: Option<String>,
+    pub tts_speaker_en: Option<String>,
+    pub tts_speaker_multi: Option<String>,
+    pub tts_model_dir: Option<String>,
 }
 
 pub fn load_config() -> FileConfig {
@@ -113,6 +120,13 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "tts_target" => config.tts_target = Some(value.to_string()),
             "tts_rate" => config.tts_rate = Some(value.to_string()),
             "tts_voice" => config.tts_voice = Some(value.to_string()),
+            "tts_engine" => config.tts_engine = Some(value.to_string()),
+            "tts_local_engine" => config.tts_local_engine = Some(value.to_string()),
+            "tts_speaker" => config.tts_speaker = Some(value.to_string()),
+            "tts_speaker_zh" => config.tts_speaker_zh = Some(value.to_string()),
+            "tts_speaker_en" => config.tts_speaker_en = Some(value.to_string()),
+            "tts_speaker_multi" => config.tts_speaker_multi = Some(value.to_string()),
+            "tts_model_dir" => config.tts_model_dir = Some(value.to_string()),
             "auto_copy" => config.auto_copy = Some(value.to_string()),
             _ => {}
         }
@@ -226,7 +240,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nscreenshot_hotkey = Ctrl+Alt+S\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_method = auto\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nasr_model_dir = /models/sense-voice\nocr_model_dir = /models/ocr\ncaption_enabled = true\ncaption_language = auto\ncaption_x = 640\ncaption_y = 960\ncaption_layout = translation\ncaption_glossary = /config/glossary.txt\ninput_hotkey = Ctrl+Alt+I\nocr_hotkey = Ctrl+Alt+Z\ntts_target = both\ntts_rate = 0.8\ntts_voice = Microsoft Xiaoxiao\nauto_copy = false\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nscreenshot_hotkey = Ctrl+Alt+S\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_method = auto\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nasr_model_dir = /models/sense-voice\nocr_model_dir = /models/ocr\ncaption_enabled = true\ncaption_language = auto\ncaption_x = 640\ncaption_y = 960\ncaption_layout = translation\ncaption_glossary = /config/glossary.txt\ninput_hotkey = Ctrl+Alt+I\nocr_hotkey = Ctrl+Alt+Z\ntts_target = both\ntts_rate = 0.8\ntts_voice = Microsoft Xiaoxiao\ntts_engine = local\ntts_local_engine = fast\ntts_speaker = 3\ntts_speaker_zh = 3\ntts_speaker_en = 1\ntts_speaker_multi = 6\ntts_model_dir = /models/tts\nauto_copy = false\nunknown = x\n",
         )
         .unwrap();
 
@@ -271,6 +285,13 @@ mod tests {
         assert_eq!(config.tts_target.as_deref(), Some("both"));
         assert_eq!(config.tts_rate.as_deref(), Some("0.8"));
         assert_eq!(config.tts_voice.as_deref(), Some("Microsoft Xiaoxiao"));
+        assert_eq!(config.tts_engine.as_deref(), Some("local"));
+        assert_eq!(config.tts_local_engine.as_deref(), Some("fast"));
+        assert_eq!(config.tts_speaker.as_deref(), Some("3"));
+        assert_eq!(config.tts_speaker_zh.as_deref(), Some("3"));
+        assert_eq!(config.tts_speaker_en.as_deref(), Some("1"));
+        assert_eq!(config.tts_speaker_multi.as_deref(), Some("6"));
+        assert_eq!(config.tts_model_dir.as_deref(), Some("/models/tts"));
         assert_eq!(config.auto_copy.as_deref(), Some("false"));
     }
 

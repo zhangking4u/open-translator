@@ -87,6 +87,9 @@ pub const DEFAULT_ASR_DIR: &str = "sense-voice";
 /// screenshot translation.
 pub const DEFAULT_OCR_DIR: &str = "ocr";
 
+/// Directory (under `models_dir`) that holds the local text-to-speech model.
+pub const DEFAULT_TTS_DIR: &str = "tts";
+
 /// Glossary file (source=target lines) next to the config, used by live
 /// captions and available to other callers.
 pub const DEFAULT_GLOSSARY_FILE: &str = "glossary.txt";
@@ -139,6 +142,10 @@ pub fn default_asr_model_dir() -> Option<PathBuf> {
 
 pub fn default_ocr_model_dir() -> Option<PathBuf> {
     Some(models_dir()?.join(DEFAULT_OCR_DIR))
+}
+
+pub fn default_tts_model_dir() -> Option<PathBuf> {
+    Some(models_dir()?.join(DEFAULT_TTS_DIR))
 }
 
 pub fn glossary_path() -> Option<PathBuf> {
@@ -258,6 +265,16 @@ mod tests {
         assert_eq!(
             path.file_name().unwrap().to_string_lossy(),
             DEFAULT_OCR_DIR
+        );
+    }
+
+    #[test]
+    fn default_tts_model_dir_ends_with_tts_dir() {
+        let path = default_tts_model_dir().unwrap();
+
+        assert_eq!(
+            path.file_name().unwrap().to_string_lossy(),
+            DEFAULT_TTS_DIR
         );
     }
 

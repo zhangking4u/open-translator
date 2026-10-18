@@ -2,6 +2,7 @@
 
 mod caption;
 mod capture;
+mod local_tts;
 mod notify;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 mod screenshot;
@@ -27,6 +28,11 @@ use translator_service::domain::prompt::PromptStyle;
 use translator_service::domain::translation::{GlossaryTerm, TranslationRequest};
 use translator_service::engine::llama_cpp::LlamaCppEngine;
 
+use local_tts::{
+    download_tts_model, preload_tts_model, stop_local_tts, tts_engine_supported,
+    tts_model_status, tts_multi_speakers, tts_speakers, tts_synthesize, unload_tts_models,
+};
+
 const DEFAULT_HOTKEY: &str = "Ctrl+Alt+T";
 const DEFAULT_INPUT_HOTKEY: &str = "Ctrl+Alt+I";
 const DEFAULT_OCR_HOTKEY: &str = "Ctrl+Alt+Z";
@@ -34,6 +40,11 @@ const DEFAULT_OCR_HOTKEY: &str = "Ctrl+Alt+Z";
 /// Capture).
 const DEFAULT_SCREENSHOT_HOTKEY: &str = "Ctrl+Alt+S";
 const DEFAULT_N_CTX: u32 = 4096;
+
+/// Whether the bundled sherpa-onnx runtime can run the local TTS model.
+fn local_tts_supported() -> bool {
+    cfg!(any(target_os = "linux", target_os = "windows"))
+}
 
 struct InitialView(Mutex<Option<String>>);
 
@@ -195,6 +206,20 @@ struct SettingsPayload {
     tts_target: String,
     tts_rate: String,
     tts_voice: String,
+    tts_engine: String,
+    tts_local_engine: String,
+    tts_speaker_zh: i32,
+    tts_speaker_en: i32,
+    tts_speaker_multi: i32,
+    local_tts_supported: bool,
+    tts_model_installed: bool,
+    tts_kokoro_installed: bool,
+    tts_vits_installed: bool,
+    tts_supertonic_installed: bool,
+    tts_model_dir: String,
+    tts_kokoro_size: u64,
+    tts_vits_size: u64,
+    tts_supertonic_size: u64,
     model_path: String,
     default_model_path: String,
     auto_download: bool,
@@ -424,6 +449,7 @@ fn main() {
         .manage(Mutex::new(translate_config))
         .manage(InitialView(Mutex::new(initial_view)))
         .manage(UpdateSlot::default())
+        .manage(local_tts::LocalTtsState::default())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if argv.iter().any(|arg| arg == "--translate") {
                 trigger_translation(app);
@@ -495,6 +521,15 @@ fn main() {
             tts_voice_available,
             speak_text,
             stop_speaking,
+            tts_engine_supported,
+            tts_speakers,
+            tts_multi_speakers,
+            tts_model_status,
+            preload_tts_model,
+            download_tts_model,
+            tts_synthesize,
+            stop_local_tts,
+            unload_tts_models,
             retranslate,
             ball_hover,
             ball_click,
@@ -3053,6 +3088,14 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
         .hotkey_label
         .clone();
     let selection = *app.state::<AppState>().selection.lock().unwrap();
+    let tts_dir = local_tts::model_dir().ok();
+    let kokoro_installed = tts_dir
+        .as_deref()
+        .is_some_and(local_tts::kokoro_installed);
+    let vits_installed = tts_dir.as_deref().is_some_and(local_tts::vits_installed);
+    let supertonic_installed = tts_dir
+        .as_deref()
+        .is_some_and(local_tts::supertonic_installed);
 
     SettingsPayload {
         hotkey,
@@ -3082,6 +3125,47 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
             })
             .unwrap_or_else(|| "1".to_string()),
         tts_voice: config.tts_voice.clone().unwrap_or_default(),
+        tts_engine: config
+            .tts_engine
+            .clone()
+            .filter(|value| matches!(value.as_str(), "system" | "local"))
+            .unwrap_or_else(|| "system".to_string()),
+        tts_local_engine: config
+            .tts_local_engine
+            .clone()
+            .filter(|value| matches!(value.as_str(), "fast" | "natural"))
+            .unwrap_or_else(|| "fast".to_string()),
+        tts_speaker_zh: config
+            .tts_speaker_zh
+            .as_deref()
+            .or(config.tts_speaker.as_deref())
+            .and_then(|value| value.parse::<i32>().ok())
+            .filter(|speaker| (0..=102).contains(speaker))
+            .unwrap_or(3),
+        tts_speaker_en: config
+            .tts_speaker_en
+            .as_deref()
+            .and_then(|value| value.parse::<i32>().ok())
+            .filter(|speaker| (0..=102).contains(speaker))
+            .unwrap_or(0),
+        tts_speaker_multi: config
+            .tts_speaker_multi
+            .as_deref()
+            .and_then(|value| value.parse::<i32>().ok())
+            .filter(|speaker| (0..=9).contains(speaker))
+            .unwrap_or(6),
+        local_tts_supported: local_tts_supported(),
+        tts_model_installed: kokoro_installed || vits_installed || supertonic_installed,
+        tts_kokoro_installed: kokoro_installed,
+        tts_vits_installed: vits_installed,
+        tts_supertonic_installed: supertonic_installed,
+        tts_model_dir: tts_dir
+            .as_deref()
+            .map(|dir| dir.display().to_string())
+            .unwrap_or_default(),
+        tts_kokoro_size: translator_core::models::kokoro_model_total_size(),
+        tts_vits_size: translator_core::models::vits_zh_model_total_size(),
+        tts_supertonic_size: translator_core::models::supertonic_model_total_size(),
         model_path: config.model_path.clone().unwrap_or_default(),
         default_model_path: translator_core::paths::default_model_path()
             .map(|path| path.to_string_lossy().to_string())
@@ -3264,12 +3348,33 @@ fn save_ocr_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
 #[tauri::command]
 fn save_tts_setting(key: String, value: String) -> Result<(), String> {
     let key = match key.as_str() {
-        "tts_target" | "tts_rate" | "tts_voice" => key,
+        "tts_target" | "tts_rate" | "tts_voice" | "tts_engine" | "tts_local_engine"
+        | "tts_speaker" | "tts_speaker_zh" | "tts_speaker_en" | "tts_speaker_multi" => key,
         other => return Err(format!("unknown setting: {other}")),
     };
 
-    if key == "tts_target" && !matches!(value.as_str(), "translation" | "source" | "both") {
+    if key == "tts_target"
+        && !matches!(value.as_str(), "auto" | "translation" | "source" | "both")
+    {
         return Err(format!("unknown tts target: {value}"));
+    }
+
+    if key == "tts_engine" && !matches!(value.as_str(), "system" | "local") {
+        return Err(format!("unknown tts engine: {value}"));
+    }
+
+    if key == "tts_local_engine" && !matches!(value.as_str(), "fast" | "natural") {
+        return Err(format!("unknown local tts engine: {value}"));
+    }
+
+    if key.starts_with("tts_speaker") {
+        let speaker: i32 = value
+            .parse()
+            .map_err(|_| "invalid tts speaker".to_string())?;
+
+        if !(0..=102).contains(&speaker) {
+            return Err("tts speaker out of range".to_string());
+        }
     }
 
     if key == "tts_rate" {

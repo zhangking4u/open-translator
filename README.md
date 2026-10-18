@@ -95,11 +95,26 @@ target = zh
 # check_updates = true               # 启动时检查 GitHub 新版本并提示
 # hotkey = Ctrl+Alt+T                # 全局快捷键（也可用 TRANSLATOR_HOTKEY 覆盖）
 # serve_extension = true             # 运行期间在 127.0.0.1:17890 提供 HTTP 供浏览器扩展
+# tts_engine = system                # system / local（本地语音，Windows/Linux）
+# tts_local_engine = fast            # fast（MeloTTS 中文）/ natural（Kokoro 中英）
+# tts_speaker_zh = 3                 # Kokoro 中文音色（0–102）
+# tts_speaker_en = 0                 # Kokoro English 备用音色（0–2）
+# tts_speaker_multi = 6              # Supertonic 多语种音色（0–9）
+# tts_model_dir = /path/to/tts       # 本地朗读模型目录，默认 models/tts
 ```
 
 命令行参数 > 配置文件 > 环境变量 > 默认值。参数：`--autostart`（登录自启静默进托盘）、`--translate`（取词翻译并弹窗）、`--settings` / `--history`（打开设置/历史页）、`--stdin`/`--print`（脚本化）。
 
-弹窗内可用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语；⇄ 互换语言对，`Ctrl+1/2/3` 切换最近使用的目标语言。译文流式显示并同步显示已接收字数。卡片提供 复制译文 / 替换原文（Windows 与 Linux/X11）/ 朗读（Windows/macOS 用系统语音，Linux 经 speech-dispatcher，按目标语言选择语音，无对应语音时不显示）/ 重新翻译 / 固定，`Ctrl+Enter` 重译、`Ctrl+Shift+C` 复制；托盘菜单提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。
+弹窗内可用「源语言 / 目标语言」下拉切换（源语言含「自动检测」，会识别选中文本的语种并用于翻译；切换后自动重译并写回配置文件）。目标语言支持中文/英语/日语/韩语/法语/德语/西班牙语/俄语；⇄ 互换语言对，`Ctrl+1/2/3` 切换最近使用的目标语言。译文流式显示并同步显示已接收字数。卡片提供 复制译文 / 替换原文（Windows 与 Linux/X11）/ 朗读（默认用系统语音；Windows/macOS 用系统语音，Linux 经 speech-dispatcher；也可在设置 → 语音中切换到本地语音，见下）/ 重新翻译 / 固定，`Ctrl+Enter` 重译、`Ctrl+Shift+C` 复制；托盘菜单提供 显示窗口 / 历史… / 设置… / 有新版本 / 退出。
+
+**本地朗读模型（Windows / Linux）**：设置 → 语音 → 朗读引擎选择「本地模型」。
+- **多语种（Supertonic 3，约 145MB，OpenRAIL）**：默认用于英语、日语、韩语、法语、德语、西班牙语、俄语等 31 种语言，44.1kHz，10 个音色；这是阅读其他语言的主力模型。多语种音色支持悬停/选择自动试听，也可点「试听」；试听音频会缓存。
+- **中文引擎**：
+  - **流畅（MeloTTS，约 177MB，MIT）**：默认中文引擎，44.1kHz，单音色。
+  - **自然（Kokoro v1.1，约 180MB，Apache-2.0）**：103 个音色，中文音色可选；音质更自然，但 CPU 占用更高。
+
+原文和译文会按语言自动选引擎：非中文走 Supertonic；中文走所选中文引擎；Supertonic 未下载时英文回退 Kokoro，其他语言回退系统语音。设置里的「朗读内容」可选「自动」：源语言是外文时读原文，目标语言是外文时读译文，两边都是外文时都读。三个模型都来自 hf-mirror，带 SHA-256 校验与断点续传；未下载或加载失败时自动回退系统语音。模型放在 `models/tts/`（Windows `%LOCALAPPDATA%\open-translator\models\tts\`，Linux `~/.local/share/open-translator/models/tts/`），也可用配置项 `tts_model_dir` 指定其他目录。macOS 目前仍使用系统语音。
+
 
 ### 2.1 实时字幕（Linux / Windows）
 
@@ -168,12 +183,15 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 | Hy-MT2-1.8B（腾讯混元） | 文本翻译模型（从 ModelScope 下载） | 遵循模型仓库的 Hunyuan 社区许可 |
 | **SenseVoiceSmall**（FunASR，阿里巴巴通义实验室） | 实时字幕的语音识别（从 hf-mirror 下载） | [FunASR Model License](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE)：可免费使用/修改/分享，需注明出处与模型名称 |
 | Silero VAD（Silero Team） | 语音端点检测 | MIT |
+| **Kokoro-82M v1.1-zh**（hexgrad） | 本地朗读（中英双语，从 hf-mirror 下载） | Apache-2.0 |
+| **MeloTTS zh_en**（MyShell） | 本地朗读（快速中文引擎，从 hf-mirror 下载） | MIT |
+| **Supertonic 3**（Supertone） | 本地朗读（31 种非中文语言，从 hf-mirror 下载） | OpenRAIL |
 | **PP-OCRv6**（PaddleOCR，百度） | 截图翻译的文字识别（从 ModelScope 下载） | Apache-2.0 |
 | rapidocr-core | OCR 实现（源码内置 `vendor/rapidocr-core`，仅调整 ONNX Runtime 构建方式） | Apache-2.0 |
 | sherpa-onnx / onnxruntime | 语音识别与截图 OCR 运行时 | Apache-2.0 / MIT |
 | llama.cpp | 本地推理运行时 | MIT |
 
-语音识别基于 FunASR 的 **SenseVoiceSmall** 模型，经 sherpa-onnx 项目转换为 ONNX 格式；截图翻译使用 PaddleOCR 的 **PP-OCRv6** 模型。模型权重不随安装包分发，由客户端首次使用时下载。Windows/macOS 安装包附带固定版本的 ONNX Runtime（SHA-256 校验后打包，截图 OCR 使用）；Linux 安装包复用 sherpa-onnx 自带的运行时。
+语音识别基于 FunASR 的 **SenseVoiceSmall** 模型，经 sherpa-onnx 项目转换为 ONNX 格式；截图翻译使用 PaddleOCR 的 **PP-OCRv6** 模型；本地朗读使用 Supertone 的 **Supertonic 3**（多语种）、hexgrad 的 **Kokoro-82M v1.1-zh** 与 MyShell 的 **MeloTTS zh_en**，同样经 sherpa-onnx 转换。模型权重不随安装包分发，由客户端首次使用时下载。Windows/macOS 安装包附带固定版本的 ONNX Runtime（SHA-256 校验后打包，截图 OCR 使用）；Linux 安装包复用 sherpa-onnx 自带的运行时。
 
 ## 仓库结构
 
@@ -181,6 +199,7 @@ export WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=...  # 一次性申请：https://a
 core/translator-service/          核心服务（Rust）
 core/inference/                   进程内 llama.cpp 推理（Rust）
 core/asr/                         本地语音识别（SenseVoice + Silero VAD，sherpa-onnx）
+core/tts/                         本地朗读（Supertonic 3 + MeloTTS + Kokoro，sherpa-onnx）
 desktop/translator-popup-tauri/   桌面客户端（Tauri v2，Windows/macOS/Linux 发布包）
 desktop/install-windows.ps1       Windows 源码安装（Tauri）
 desktop/install-macos.sh          macOS 源码安装（Tauri）
@@ -196,6 +215,7 @@ docs/                             架构、状态、开发日志
 cd core/translator-service && cargo test    # 核心服务
 cd core/inference && cargo test             # 进程内推理（构建 llama.cpp 需 cmake + clang/libclang）
 cd core/asr && cargo test                   # 本地语音识别（构建时下载 sherpa-onnx 预编译共享库）
+cd core/tts && cargo test                   # 本地朗读（构建时下载 sherpa-onnx 预编译共享库）
 cd desktop/translator-core && cargo test    # 桌面共享库（跨平台：参数/配置/翻译调用/服务自启）
 cd desktop/translator-popup-tauri && cargo test  # 桌面客户端（Tauri；Linux 需 webkit2gtk-4.1 等构建依赖）
 ./browser/test.sh                           # Chrome MV3 端到端（服务未运行会自启 mock 引擎）

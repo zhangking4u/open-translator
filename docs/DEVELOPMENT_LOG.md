@@ -2674,6 +2674,98 @@ matrix.
   beside it.
 
 
+## Local TTS: Kokoro on sherpa-onnx
+
+- Added `core/tts` (`translator-tts`), wrapping `sherpa_onnx::OfflineTts` for
+  Kokoro v1.1-zh. The crate discovers the model layout (`model.int8.onnx`,
+  `voices.bin`, `tokens.txt`, lexicons, eSpeak data and Chinese FSTs), exposes
+  the 103-speaker model through a curated 15-voice list, writes mono 16-bit
+  24 kHz WAV bytes and supports cancellation through the generation callback.
+- `translator-core::models` now lists the Kokoro files individually (19 files,
+  SHA-256 pinned, hf-mirror first then huggingface.co), so the existing
+  resumable/verified downloader works without archive extraction. The `dict/`
+  directory and unused eSpeak voice variants are skipped; the minimal eSpeak
+  set (`phondata`, `phonindex`, `phontab`, `intonations`, `en_dict`, `cmn_dict`,
+  `yue_dict` and the `en`/`en-US`/`cmn`/`yue` language files) was verified with
+  a real Chinese synthesis. `extract_tar_bz2` plus `tar`/`bzip2` were added for
+  future archive-packaged ASR/TTS models.
+- New config: `tts_engine` (`system`/`local`), `tts_speaker`, `tts_model_dir`;
+  new path helper `default_tts_model_dir` (`models/tts`).
+- Tauri: `src/local_tts.rs` provides `tts_engine_supported`, `tts_speakers`,
+  `tts_model_status`, `download_tts_model`, `tts_synthesize` and
+  `stop_local_tts`. Downloads emit `tts-model-progress`/`tts-model-status`;
+  the engine is loaded lazily on a worker thread and cached in `LocalTtsState`.
+  The frontend plays the returned WAV with an `Audio` element, so no native
+  audio backend was added.
+- Settings → 语音 now has 朗读引擎, a local model download/status row and a
+  local speaker picker. The local engine is offered on Windows/Linux; macOS
+  keeps system voices because the Tauri client does not link the sherpa
+  runtime there. A missing model falls back to system speech with a status
+  hint.
+- Verification: `core/tts` 4 tests (including a real Chinese synthesis from the
+  downloaded model), `translator-core` 83 tests, Tauri `cargo check`, frontend
+  `node --check`. The dev machine could not reach GitHub/gh-proxy, so the
+  mirror path was verified through hf-mirror; the tar extraction path is
+  covered by unit tests only.
+
+
+## Local TTS follow-up: language voices and latency
+
+- First-run feedback: source and translation should use language-matched
+  voices, first sound was slow and sentence gaps were long.
+- Added `VitsEngine` for MeloTTS zh_en (MIT, 44.1 kHz, 1 voice) and kept
+  Kokoro as the natural option. `tts_local_engine` = `fast` (MeloTTS) or
+  `natural` (Kokoro); Chinese always uses the selected engine, English prefers
+  Kokoro. `tts_speaker_zh`/`tts_speaker_en` persist the two Kokoro voices.
+- Added per-model downloads and status (`download_tts_model(model)`), with
+  Kokoro (~180 MB) and MeloTTS (~177 MB) rows and per-model progress events.
+- Added `preload_tts_model(model)`; the frontend preloads the selected Chinese
+  engine (and Kokoro when English is involved), then overlaps synthesis of the
+  next chunk with playback. Chunks split at commas/sentence punctuation with a
+  60-character cap, so first audio arrives sooner.
+- Benchmarks on the i5-10210U dev machine: Kokoro int8 RTF ~3.3, Kokoro fp32
+  ~1.5, MeloTTS ~1.1, Piper huayan ~0.14 (4 threads). AISHELL3 was rejected
+  because that model is 8 kHz. The MeloTTS/Kokoro split gives Chinese a
+  synthesis speed close to playback while keeping a natural option.
+- Verification: real MeloTTS and Kokoro synthesis, `core/tts` 6 tests,
+  `translator-core` 84 tests, Tauri 24+1 tests, `node --check`; release build
+  replaced and relaunched on the dev machine.
+- Review follow-up: first-chunk local failures fall back to system speech;
+  stopping before the first audio cancels the backend; preload is limited to
+  languages that will actually be read; missing selected engines show a
+  fallback hint; kana/Hangul are checked before CJK; the Kokoro directory is
+  deterministic; `tts_synthesize` carries the selected local engine so a
+  just-saved setting cannot race; dead total-size state was removed.
+
+
+## Multi-language TTS: Supertonic 3
+
+- The user mainly reads English and other non-Chinese languages, so Chinese
+  TTS is no longer the priority. Added `SupertonicEngine` for Supertonic 3:
+  31 languages, 10 speakers, 44.1 kHz, OpenRAIL, ~145 MB. Language is passed
+  through `GenerationConfig.extra["lang"]`; `num_steps` is 8.
+- `translator-core::models` gained `SUPERTONIC_MODEL_FILES` (8 files with
+  SHA-256, hf-mirror first) and `supertonic_model_total_size`. `core/tts`
+  gained `find_supertonic_root` and the real-model test (English + Japanese).
+- Engine priority: non-Chinese → Supertonic; English → Kokoro only when
+  Supertonic is absent; Chinese → MeloTTS (fast) or Kokoro (natural).
+- Settings gained a 多语种模型 row, a 多语种音色 picker (`tts_speaker_multi`,
+  default 6) and per-model download/status. The Kokoro English voice row is
+  only a fallback and is hidden when Supertonic is installed. Preload now
+  derives the needed engines from the source/target languages actually read.
+- 朗读内容 gained 自动, which reads the non-Chinese side: the source when the
+  source is foreign, the translation when the target is foreign, and both when
+  both sides are foreign.
+- Voice previews: hovering a voice row or selecting a voice synthesizes a short
+  sample; the multi row also has a 试听 button. Samples use the current target
+  language (English fallback) and are cached per voice/language; starting a
+  preview stops the current reading.
+- Real synthesis: Supertonic 10 speakers at 44.1 kHz; English ~5.1 s for
+  4.95 s audio on the first run (including initialization), Japanese also
+  verified. `core/tts` 8 tests, `translator-core` 85 tests, Tauri 24+1 tests,
+  frontend syntax check; release build installed on the dev machine.
+
+
 ## Sprint 6
 
 Mobile client.

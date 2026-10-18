@@ -47,6 +47,26 @@ const ttsTargetSelect = document.getElementById("tts-target");
 const ttsRateSelect = document.getElementById("tts-rate");
 const ttsVoiceSelect = document.getElementById("tts-voice");
 const ttsVoiceRow = document.getElementById("tts-voice-row");
+const ttsEngineSelect = document.getElementById("tts-engine");
+const ttsEngineRow = document.getElementById("tts-engine-row");
+const ttsLocalEngineSelect = document.getElementById("tts-local-engine");
+const ttsLocalEngineRow = document.getElementById("tts-local-engine-row");
+const ttsSupertonicModelRow = document.getElementById("tts-supertonic-model-row");
+const ttsSupertonicModelStatus = document.getElementById("tts-supertonic-model-status");
+const ttsSupertonicModelDownload = document.getElementById("tts-supertonic-model-download");
+const ttsMultiSpeakerSelect = document.getElementById("tts-speaker-multi");
+const ttsMultiPreview = document.getElementById("tts-multi-preview");
+const ttsMultiSpeakerRow = document.getElementById("tts-multi-speaker-row");
+const ttsVitsModelRow = document.getElementById("tts-vits-model-row");
+const ttsVitsModelStatus = document.getElementById("tts-vits-model-status");
+const ttsVitsModelDownload = document.getElementById("tts-vits-model-download");
+const ttsKokoroModelRow = document.getElementById("tts-kokoro-model-row");
+const ttsKokoroModelStatus = document.getElementById("tts-kokoro-model-status");
+const ttsKokoroModelDownload = document.getElementById("tts-kokoro-model-download");
+const ttsSpeakerZhSelect = document.getElementById("tts-speaker-zh");
+const ttsSpeakerEnSelect = document.getElementById("tts-speaker-en");
+const ttsSpeakerZhRow = document.getElementById("tts-speaker-zh-row");
+const ttsSpeakerEnRow = document.getElementById("tts-speaker-en-row");
 const ttsTitle = document.getElementById("tts-title");
 const ttsGroup = document.getElementById("tts-group");
 const switchSelection = document.getElementById("switch-selection");
@@ -88,18 +108,144 @@ let speakVoiceAvailable = true;
 let speechGeneration = 0;
 let activeSpeechButton = null;
 let pendingSpeechEnd = null;
+let localTtsSupported = false;
+let ttsEngineValue = "system";
+let ttsLocalEngine = "fast";
+let ttsSpeakerZh = 3;
+let ttsSpeakerEn = 0;
+let ttsModelInstalled = false;
+let ttsKokoroInstalled = false;
+let ttsVitsInstalled = false;
+let ttsSupertonicInstalled = false;
+let ttsModelDownloading = false;
+let ttsDownloadingModel = "";
+let ttsDownloadError = "";
+let ttsDownloadErrorModel = "";
+let ttsKokoroSize = 179300000;
+let ttsVitsSize = 177500000;
+let ttsSupertonicSize = 145300000;
+let ttsSpeakerMulti = 6;
+let ttsMultiSpeakers = [];
+let ttsPreviewTimer = 0;
+let ttsPreviewGeneration = 0;
+const ttsPreviewCache = new Map();
+const TTS_PREVIEW_SAMPLES = {
+  en: "Hello, this is a voice preview.",
+  ja: "こんにちは、声の試聴です。",
+  ko: "안녕하세요. 음성 미리듣기입니다.",
+  fr: "Bonjour, ceci est un aperçu.",
+  de: "Hallo, dies ist eine Stimmprobe.",
+  es: "Hola, esta es una muestra de voz.",
+  ru: "Здравствуйте, это пример голоса.",
+};
+let ttsSpeakers = [];
+let localAudio = null;
 let ttsTargetValue = "translation";
 let ttsRateValue = 1;
 let ttsVoiceName = "";
 let ttsTargetControl = null;
 let ttsRateControl = null;
+let ttsEngineControl = null;
+let ttsLocalEngineControl = null;
 let hotkeyLabel = "Ctrl+Alt+T";
+
+function systemTtsSupported() {
+  return speakBackend === "spd-say" || "speechSynthesis" in window;
+}
+
+function updateSpeakSupport() {
+  speakSupported = localTtsSupported || systemTtsSupported();
+}
+
+function languageBase(lang) {
+  return String(lang || "").toLowerCase().split("-")[0];
+}
+
+function guessLanguage(text) {
+  const value = String(text || "");
+
+  if (/[\u3040-\u30ff]/.test(value)) {
+    return "ja";
+  }
+
+  if (/[\uac00-\ud7af]/.test(value)) {
+    return "ko";
+  }
+
+  if (/[\u4e00-\u9fff]/.test(value)) {
+    return "zh";
+  }
+
+  return "en";
+}
+
+function localEngineFor(lang) {
+  const base = languageBase(lang);
+
+  if (base === "zh" || base === "cmn" || base === "yue") {
+    if (ttsLocalEngine === "natural" && ttsKokoroInstalled) return "kokoro";
+    if (ttsLocalEngine === "fast" && ttsVitsInstalled) return "vits";
+    if (ttsKokoroInstalled) return "kokoro";
+    if (ttsVitsInstalled) return "vits";
+    return "";
+  }
+
+  if (ttsSupertonicInstalled) return "supertonic";
+
+  if (base === "en" && ttsKokoroInstalled) return "kokoro";
+
+  return "";
+}
+
+function localLanguageSupported(lang) {
+  return Boolean(localEngineFor(lang));
+}
+
+function speakerForLanguage(lang) {
+  const engine = localEngineFor(lang);
+  const base = languageBase(lang);
+
+  if (engine === "supertonic") return ttsSpeakerMulti;
+  if (engine === "vits") return 0;
+  if (base === "zh" || base === "cmn" || base === "yue") return ttsSpeakerZh;
+  return ttsSpeakerEn;
+}
+
+function partsSupportLocal(parts) {
+  return parts.every((part) => localLanguageSupported(part.lang));
+}
+
+function preloadLocalTtsModel() {
+  if (!localTtsSupported || ttsEngineValue !== "local") {
+    return;
+  }
+
+  const models = new Set();
+  const sourceLang = languageState.detected || languageState.source;
+  const targets = speechTargets(sourceLang, languageState.target);
+
+  if (targets.source && sourceLang !== "auto") {
+    const engine = localEngineFor(sourceLang);
+
+    if (engine) models.add(engine);
+  }
+
+  if (targets.translation) {
+    const engine = localEngineFor(languageState.target);
+
+    if (engine) models.add(engine);
+  }
+
+  for (const model of models) {
+    invoke("preload_tts_model", { model }).catch(() => {});
+  }
+}
 
 async function checkSpeakVoice(lang) {
   try {
     speakVoiceAvailable = await invoke("tts_voice_available", { lang });
 
-    if (!speakVoiceAvailable) {
+    if (!speakVoiceAvailable && ttsEngineValue !== "local") {
       speak.hidden = true;
     }
   } catch (error) {
@@ -151,6 +297,8 @@ function applyLanguageState(state) {
     populateTtsVoices();
     speak.title = speakTitle();
   }
+
+  preloadLocalTtsModel();
 }
 
 function syncInputLanguages() {
@@ -196,8 +344,16 @@ async function initLanguages() {
 
   if (globalThis.OTSegmented) {
     selectionMethodControl = OTSegmented.enhance(selectionMethodSelect, { title: "翻译方式" });
+    ttsEngineControl = OTSegmented.enhance(ttsEngineSelect, { title: "朗读引擎" });
+    ttsLocalEngineControl = OTSegmented.enhance(ttsLocalEngineSelect, {
+      title: "中文引擎",
+    });
     ttsTargetControl = OTSegmented.enhance(ttsTargetSelect, { title: "朗读内容" });
     ttsRateControl = OTSegmented.enhance(ttsRateSelect, { title: "语速" });
+  }
+
+  if (settings) {
+    await applyTtsSettings(settings);
   }
 
   applyLanguageState(await invoke("get_language_state"));
@@ -293,13 +449,25 @@ function stopSpeaking() {
     resolve();
   }
 
+  if (ttsEngineValue === "local" && localTtsSupported) {
+    invoke("stop_local_tts").catch(() => {});
+  }
+
+  if (localAudio) {
+    const audio = localAudio;
+    localAudio = null;
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+  }
+
   if (speakBackend === "spd-say") {
-    speechGeneration += 1;
     invoke("stop_speaking").catch(() => {});
   } else if ("speechSynthesis" in window) {
     window.speechSynthesis.cancel();
   }
 
+  speechGeneration += 1;
   setSpeaking(false);
 }
 
@@ -328,18 +496,92 @@ function pickVoice(lang) {
   );
 }
 
+function isChineseLang(lang) {
+  const base = languageBase(lang);
+  return base === "zh" || base === "cmn" || base === "yue";
+}
+
+function speechTargets(sourceLang, targetLang) {
+  if (ttsTargetValue === "source") {
+    return { source: true, translation: false };
+  }
+
+  if (ttsTargetValue === "translation") {
+    return { source: false, translation: true };
+  }
+
+  if (ttsTargetValue === "both") {
+    return { source: true, translation: true };
+  }
+
+  // Auto: read the non-Chinese side. If both sides are foreign, read both;
+  // if both are Chinese, read the translation.
+  const sourceKnown = sourceLang && sourceLang !== "auto";
+  const sourceChinese = Boolean(sourceKnown && isChineseLang(sourceLang));
+  const targetChinese = isChineseLang(targetLang);
+
+  if (!sourceKnown) {
+    return { source: false, translation: true };
+  }
+
+  if (!sourceChinese && targetChinese) {
+    return { source: true, translation: false };
+  }
+
+  if (sourceChinese && !targetChinese) {
+    return { source: false, translation: true };
+  }
+
+  if (sourceChinese && targetChinese) {
+    return { source: false, translation: true };
+  }
+
+  return { source: true, translation: true };
+}
+
 function buildSpeechParts(sourceText, sourceLang, translation, targetLang) {
+  const targets = speechTargets(sourceLang, targetLang);
   const parts = [];
 
-  if (ttsTargetValue !== "translation" && sourceText && sourceText.trim()) {
+  if (targets.source && sourceText && sourceText.trim()) {
     parts.push({ text: sourceText, lang: sourceLang });
   }
 
-  if (ttsTargetValue !== "source" && translation && translation.trim()) {
+  if (targets.translation && translation && translation.trim()) {
     parts.push({ text: translation, lang: targetLang });
   }
 
   return parts;
+}
+
+// Local synthesis runs in one blocking call per chunk. The first part also
+// splits at commas so the first sound arrives quickly; later parts keep whole
+// sentences to avoid choppy prosody.
+function splitLocalSpeech(text, splitCommas = false) {
+  const trimmed = String(text || "").trim();
+
+  if (!trimmed) {
+    return [];
+  }
+
+  const sentences = splitCommas
+    ? trimmed.match(/[^。！？!?；;\n.，,、]+[。！？!?；;.，,、]?/g) || [trimmed]
+    : trimmed.match(/[^。！？!?；;\n.]+[。！？!?；;.]?/g) || [trimmed];
+  const chunks = [];
+
+  for (const sentence of sentences) {
+    const value = sentence.trim();
+
+    if (!value) {
+      continue;
+    }
+
+    for (let index = 0; index < value.length; index += 60) {
+      chunks.push(value.slice(index, index + 60));
+    }
+  }
+
+  return chunks;
 }
 
 function speakWebviewParts(parts, button, reportError) {
@@ -416,6 +658,116 @@ async function speakSpdParts(parts, button, reportError) {
   stopSpeaking();
 }
 
+function playLocalAudio(wavBase64) {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio("data:audio/wav;base64," + wavBase64);
+    let settled = false;
+    localAudio = audio;
+    pendingSpeechEnd = resolve;
+
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+
+      if (localAudio === audio) localAudio = null;
+      if (pendingSpeechEnd === resolve) pendingSpeechEnd = null;
+      callback();
+    };
+
+    audio.onended = () => finish(resolve);
+    audio.onerror = () => finish(() => reject(new Error("音频播放失败")));
+    audio.play().catch((error) => finish(() => reject(error)));
+  });
+}
+
+function startLocalSynthesis(chunk, generation) {
+  return invoke("tts_synthesize", {
+    text: chunk.text,
+    lang: chunk.lang,
+    rate: ttsRateValue,
+    speaker: speakerForLanguage(chunk.lang),
+    localEngine: ttsLocalEngine,
+    generation,
+  })
+    .then((audio) => ({ audio }))
+    .catch((error) => ({ error }));
+}
+
+async function speakLocalParts(parts, button, reportError) {
+  const generation = ++speechGeneration;
+  const chunks = [];
+  let firstPart = true;
+
+  for (const part of parts) {
+    const partChunks = splitLocalSpeech(part.text, firstPart);
+
+    if (partChunks.length) {
+      firstPart = false;
+    }
+
+    for (const text of partChunks) {
+      chunks.push({ text, lang: part.lang });
+    }
+  }
+
+  if (!chunks.length) {
+    return;
+  }
+
+  setSpeaking(true, button);
+
+  // Synthesize the next chunk while the current one is playing. Synthesis is
+  // serialized in Rust, so this only overlaps playback with generation.
+  let pending = startLocalSynthesis(chunks[0], generation);
+  let playedAny = false;
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const result = await pending;
+
+    if (generation !== speechGeneration) return;
+
+    if (result.error) {
+      if (!playedAny && systemTtsSupported()) {
+        stopSpeaking();
+        reportError("本地朗读失败，已使用系统语音");
+        speakSystemParts(parts, button, reportError);
+        return;
+      }
+
+      stopSpeaking();
+      reportError(String(result.error));
+      return;
+    }
+
+    if (index + 1 < chunks.length) {
+      pending = startLocalSynthesis(chunks[index + 1], generation);
+    }
+
+    playedAny = true;
+
+    try {
+      await playLocalAudio(result.audio.wav_base64);
+    } catch (error) {
+      if (generation !== speechGeneration) return;
+      stopSpeaking();
+      reportError("音频播放失败：" + (error?.message || error));
+      return;
+    }
+
+    if (generation !== speechGeneration) return;
+  }
+
+  stopSpeaking();
+}
+
+function speakSystemParts(parts, button, reportError) {
+  if (speakBackend === "spd-say") {
+    speakSpdParts(parts, button, reportError);
+  } else {
+    speakWebviewParts(parts, button, reportError);
+  }
+}
+
 function toggleSpeechFor(button, parts, reportError) {
   if (!speakSupported) return;
 
@@ -424,20 +776,66 @@ function toggleSpeechFor(button, parts, reportError) {
     return;
   }
 
+  if (localAudio) {
+    stopSpeaking();
+  }
+
   if (!parts.length) return;
 
-  if (speakBackend === "spd-say") {
-    speakSpdParts(parts, button, reportError);
-  } else {
-    speakWebviewParts(parts, button, reportError);
+  if (ttsEngineValue === "local" && localTtsSupported) {
+    if (!partsSupportLocal(parts)) {
+      if (systemTtsSupported()) {
+        reportError("当前语言没有本地语音模型，已使用系统语音");
+        speakSystemParts(parts, button, reportError);
+      } else {
+        reportError("当前语言没有本地语音模型");
+      }
+
+      return;
+    }
+
+    if (!ttsModelInstalled) {
+      if (systemTtsSupported()) {
+        reportError("本地语音模型未下载，已使用系统语音");
+        speakSystemParts(parts, button, reportError);
+      } else {
+        reportError("本地语音模型未下载，请在设置 → 语音中下载");
+      }
+
+      return;
+    }
+
+    speakLocalParts(parts, button, reportError);
+    return;
   }
+
+  if (!systemTtsSupported()) {
+    if (localTtsSupported && ttsModelInstalled) {
+      reportError("系统语音不可用，已使用本地模型");
+      speakLocalParts(parts, button, reportError);
+    } else {
+      reportError(
+        localTtsSupported
+          ? "本地语音模型未下载，请在设置 → 语音中下载"
+          : "当前系统没有可用的语音引擎",
+      );
+    }
+
+    return;
+  }
+
+  speakSystemParts(parts, button, reportError);
 }
 
 function toggleCardSpeech() {
-  if (!speakVoiceAvailable) return;
+  if (ttsEngineValue !== "local" && !speakVoiceAvailable) return;
 
   const sourceLang =
-    languageState.detected || languageState.source || languageState.target;
+    languageState.detected ||
+    (languageState.source !== "auto"
+      ? languageState.source
+      : guessLanguage(lastSource)) ||
+    languageState.target;
 
   toggleSpeechFor(
     speak,
@@ -456,7 +854,7 @@ function toggleInputSpeech() {
   const source =
     inputResultContext.source && inputResultContext.source !== "auto"
       ? inputResultContext.source
-      : target;
+      : guessLanguage(inputResultContext.text);
 
   toggleSpeechFor(
     inputSpeak,
@@ -479,11 +877,8 @@ function updateInputSpeak() {
 
 function populateTtsVoices(selected = ttsVoiceName) {
   if (speakBackend === "spd-say" || !("speechSynthesis" in window)) {
-    ttsVoiceRow.hidden = true;
     return;
   }
-
-  ttsVoiceRow.hidden = false;
 
   const lang = (SPEECH_LANGS[languageState.target] || languageState.target).toLowerCase();
   const base = lang.split("-")[0];
@@ -511,6 +906,274 @@ function populateTtsVoices(selected = ttsVoiceName) {
   )
     ? selected
     : "";
+}
+
+async function loadTtsSpeakers() {
+  if (!localTtsSupported) {
+    return;
+  }
+
+  if (!ttsSpeakers.length) {
+    ttsSpeakers = await invoke("tts_speakers").catch(() => []);
+  }
+
+  if (!ttsMultiSpeakers.length) {
+    ttsMultiSpeakers = await invoke("tts_multi_speakers").catch(() => []);
+  }
+}
+
+function fillSpeakerSelect(select, language, selected, source = ttsSpeakers) {
+  select.replaceChildren();
+
+  const voices = source.filter((speaker) => speaker.language === language);
+
+  for (const speaker of voices) {
+    const option = document.createElement("option");
+    option.value = String(speaker.id);
+    option.textContent = speaker.name;
+    select.append(option);
+  }
+
+  const available = voices.some((speaker) => speaker.id === selected);
+
+  if (!available && Number.isInteger(selected) && selected >= 0 && selected <= 102) {
+    const option = document.createElement("option");
+    option.value = String(selected);
+    option.textContent = "音色 " + selected;
+    select.append(option);
+  } else if (!available) {
+    selected = voices.length ? voices[0].id : language === "zh" ? 3 : 0;
+  }
+
+  select.value = String(selected);
+  return selected;
+}
+
+function populateTtsSpeakers() {
+  ttsSpeakerZh = fillSpeakerSelect(ttsSpeakerZhSelect, "zh", ttsSpeakerZh);
+  ttsSpeakerEn = fillSpeakerSelect(ttsSpeakerEnSelect, "en", ttsSpeakerEn);
+  ttsSpeakerMulti = fillSpeakerSelect(
+    ttsMultiSpeakerSelect,
+    "multi",
+    ttsSpeakerMulti,
+    ttsMultiSpeakers,
+  );
+}
+
+function previewSpeaker(kind) {
+  if (!localTtsSupported || ttsEngineValue !== "local") {
+    return;
+  }
+
+  let speaker;
+  let lang;
+  let text;
+  let localEngine = ttsLocalEngine;
+  let cacheKey;
+
+  if (kind === "multi") {
+    if (!ttsSupertonicInstalled) {
+      return;
+    }
+
+    const target = languageBase(languageState.target);
+    lang = TTS_PREVIEW_SAMPLES[target] ? target : "en";
+    text = TTS_PREVIEW_SAMPLES[lang];
+    speaker = ttsSpeakerMulti;
+    cacheKey = `multi:${speaker}:${lang}`;
+  } else if (kind === "zh") {
+    if (!ttsKokoroInstalled || ttsLocalEngine !== "natural") {
+      return;
+    }
+
+    lang = "zh";
+    text = "你好，这是音色试听。";
+    speaker = ttsSpeakerZh;
+    localEngine = "natural";
+    cacheKey = `zh:${speaker}`;
+  } else {
+    if (!ttsKokoroInstalled || ttsSupertonicInstalled) {
+      return;
+    }
+
+    lang = "en";
+    text = TTS_PREVIEW_SAMPLES.en;
+    speaker = ttsSpeakerEn;
+    localEngine = "natural";
+    cacheKey = `en:${speaker}`;
+  }
+
+  window.clearTimeout(ttsPreviewTimer);
+  stopSpeaking();
+
+  const generation = ++ttsPreviewGeneration;
+  const cached = ttsPreviewCache.get(cacheKey);
+
+  if (cached) {
+    playLocalAudio(cached).catch(() => {});
+    return;
+  }
+
+  invoke("tts_synthesize", {
+    text,
+    lang,
+    rate: 1,
+    speaker,
+    localEngine,
+    generation,
+  })
+    .then((audio) => {
+      if (generation !== ttsPreviewGeneration) {
+        return;
+      }
+
+      ttsPreviewCache.set(cacheKey, audio.wav_base64);
+
+      if (ttsPreviewCache.size > 24) {
+        ttsPreviewCache.delete(ttsPreviewCache.keys().next().value);
+      }
+
+      return playLocalAudio(audio.wav_base64);
+    })
+    .catch(() => {});
+}
+
+function scheduleSpeakerPreview(kind) {
+  window.clearTimeout(ttsPreviewTimer);
+
+  const model = kind === "multi" ? "supertonic" : "kokoro";
+  const installed =
+    kind === "multi" ? ttsSupertonicInstalled : ttsKokoroInstalled;
+
+  if (installed) {
+    invoke("preload_tts_model", { model }).catch(() => {});
+  }
+
+  ttsPreviewTimer = window.setTimeout(() => previewSpeaker(kind), 350);
+}
+
+function cancelScheduledSpeakerPreview() {
+  window.clearTimeout(ttsPreviewTimer);
+}
+
+function applyModelStatus(status) {
+  if (!status) {
+    return;
+  }
+
+  ttsKokoroInstalled = Boolean(status.kokoro_installed);
+  ttsVitsInstalled = Boolean(status.vits_installed);
+  ttsSupertonicInstalled = Boolean(status.supertonic_installed);
+  ttsModelInstalled = Boolean(status.installed);
+  ttsKokoroSize = Number(status.kokoro_size) || ttsKokoroSize;
+  ttsVitsSize = Number(status.vits_size) || ttsVitsSize;
+  ttsSupertonicSize = Number(status.supertonic_size) || ttsSupertonicSize;
+}
+
+function setModelRow(statusElement, button, installed, size, model) {
+  if (ttsModelDownloading && ttsDownloadingModel === model) {
+    statusElement.textContent = "下载中…";
+    statusElement.title = "";
+  } else if (ttsDownloadErrorModel === model && ttsDownloadError) {
+    statusElement.textContent = "下载失败";
+    statusElement.title = ttsDownloadError;
+  } else if (installed) {
+    statusElement.textContent = "已下载";
+    statusElement.title = "";
+  } else {
+    statusElement.textContent =
+      "未下载 · " + Math.round(size / 1000000) + " MB";
+    statusElement.title = "";
+  }
+
+  button.disabled = ttsModelDownloading;
+  button.textContent = installed ? "校验" : "下载";
+}
+
+function syncTtsRows() {
+  const local = ttsEngineValue === "local" && localTtsSupported;
+  const natural = ttsLocalEngine === "natural";
+
+  ttsEngineRow.hidden = !localTtsSupported;
+  ttsLocalEngineRow.hidden = !local;
+  ttsSupertonicModelRow.hidden = !local;
+  ttsMultiSpeakerRow.hidden = !local || !ttsSupertonicInstalled;
+  ttsVitsModelRow.hidden = !local;
+  ttsKokoroModelRow.hidden = !local;
+  ttsSpeakerZhRow.hidden = !local || !natural || !ttsKokoroInstalled;
+  ttsSpeakerEnRow.hidden =
+    !local || ttsSupertonicInstalled || !ttsKokoroInstalled;
+  ttsVoiceRow.hidden =
+    local || speakBackend === "spd-say" || !("speechSynthesis" in window);
+
+  setModelRow(
+    ttsSupertonicModelStatus,
+    ttsSupertonicModelDownload,
+    ttsSupertonicInstalled,
+    ttsSupertonicSize,
+    "supertonic",
+  );
+  setModelRow(
+    ttsVitsModelStatus,
+    ttsVitsModelDownload,
+    ttsVitsInstalled,
+    ttsVitsSize,
+    "vits",
+  );
+  setModelRow(
+    ttsKokoroModelStatus,
+    ttsKokoroModelDownload,
+    ttsKokoroInstalled,
+    ttsKokoroSize,
+    "kokoro",
+  );
+
+  if (local && !ttsModelDownloading) {
+    if (!natural && !ttsVitsInstalled) {
+      ttsVitsModelStatus.textContent += ttsKokoroInstalled
+        ? "（当前回退 Kokoro）"
+        : "（当前回退系统语音）";
+    }
+
+    if (natural && !ttsKokoroInstalled) {
+      ttsKokoroModelStatus.textContent += ttsVitsInstalled
+        ? "（当前回退 MeloTTS）"
+        : "（当前回退系统语音）";
+    }
+  }
+
+  ttsModelInstalled =
+    ttsKokoroInstalled || ttsVitsInstalled || ttsSupertonicInstalled;
+
+  updateSpeakSupport();
+  ttsTitle.hidden = !speakSupported;
+  ttsGroup.hidden = !speakSupported;
+  speak.title = speakTitle();
+  updateInputSpeak();
+}
+
+async function downloadLocalTtsModel(model) {
+  if (ttsModelDownloading) return;
+
+  ttsModelDownloading = true;
+  ttsDownloadingModel = model;
+  ttsDownloadError = "";
+  ttsDownloadErrorModel = "";
+  syncTtsRows();
+
+  try {
+    const status = await invoke("download_tts_model", { model });
+    applyModelStatus(status);
+    ttsPreviewCache.clear();
+    preloadLocalTtsModel();
+  } catch (error) {
+    ttsDownloadError = String(error);
+    ttsDownloadErrorModel = model;
+  } finally {
+    ttsModelDownloading = false;
+    ttsDownloadingModel = "";
+    syncTtsRows();
+  }
 }
 
 function render(html) {
@@ -696,7 +1359,11 @@ function finish(translationText) {
   setCopyEnabled(current.length > 0);
   speak.hidden = !speakSupported;
 
-  if (speakSupported && speakBackend === "spd-say") {
+  if (
+    speakSupported &&
+    speakBackend === "spd-say" &&
+    ttsEngineValue !== "local"
+  ) {
     checkSpeakVoice(languageState.target);
   }
 
@@ -1578,6 +2245,7 @@ ttsTargetSelect.addEventListener("change", () => {
   invoke("save_tts_setting", { key: "tts_target", value: ttsTargetValue });
   if (ttsTargetControl) ttsTargetControl.sync();
   if (speakSupported) speak.title = speakTitle();
+  preloadLocalTtsModel();
 });
 
 ttsRateSelect.addEventListener("change", () => {
@@ -1590,6 +2258,96 @@ ttsVoiceSelect.addEventListener("change", () => {
   ttsVoiceName = ttsVoiceSelect.value;
   invoke("save_tts_setting", { key: "tts_voice", value: ttsVoiceName });
 });
+
+ttsEngineSelect.addEventListener("change", () => {
+  ttsEngineValue = ttsEngineSelect.value === "local" ? "local" : "system";
+  invoke("save_tts_setting", { key: "tts_engine", value: ttsEngineValue });
+  if (ttsEngineControl) ttsEngineControl.sync();
+  syncTtsRows();
+
+  if (ttsEngineValue === "local") {
+    preloadLocalTtsModel();
+  } else {
+    invoke("unload_tts_models").catch(() => {});
+  }
+});
+
+ttsLocalEngineSelect.addEventListener("change", () => {
+  ttsLocalEngine =
+    ttsLocalEngineSelect.value === "natural" ? "natural" : "fast";
+  invoke("save_tts_setting", {
+    key: "tts_local_engine",
+    value: ttsLocalEngine,
+  });
+  if (ttsLocalEngineControl) ttsLocalEngineControl.sync();
+  syncTtsRows();
+  preloadLocalTtsModel();
+});
+
+ttsSpeakerZhSelect.addEventListener("change", () => {
+  ttsSpeakerZh = Number(ttsSpeakerZhSelect.value) || 3;
+  invoke("save_tts_setting", {
+    key: "tts_speaker_zh",
+    value: String(ttsSpeakerZh),
+  });
+  previewSpeaker("zh");
+});
+
+ttsSpeakerEnSelect.addEventListener("change", () => {
+  ttsSpeakerEn = Number(ttsSpeakerEnSelect.value) || 0;
+  invoke("save_tts_setting", {
+    key: "tts_speaker_en",
+    value: String(ttsSpeakerEn),
+  });
+  previewSpeaker("en");
+});
+
+ttsVitsModelDownload.addEventListener("click", () => {
+  downloadLocalTtsModel("vits");
+});
+
+ttsKokoroModelDownload.addEventListener("click", () => {
+  downloadLocalTtsModel("kokoro");
+});
+
+ttsSupertonicModelDownload.addEventListener("click", () => {
+  downloadLocalTtsModel("supertonic");
+});
+
+ttsMultiSpeakerSelect.addEventListener("change", () => {
+  ttsSpeakerMulti = Number(ttsMultiSpeakerSelect.value) || 6;
+  invoke("save_tts_setting", {
+    key: "tts_speaker_multi",
+    value: String(ttsSpeakerMulti),
+  });
+  previewSpeaker("multi");
+});
+
+ttsMultiPreview.addEventListener("click", () => {
+  previewSpeaker("multi");
+});
+
+ttsMultiSpeakerSelect.addEventListener("mouseenter", () => {
+  scheduleSpeakerPreview("multi");
+});
+ttsMultiSpeakerSelect.addEventListener("mouseleave", cancelScheduledSpeakerPreview);
+ttsMultiPreview.addEventListener("mouseenter", () => {
+  scheduleSpeakerPreview("multi");
+});
+ttsMultiPreview.addEventListener("mouseleave", cancelScheduledSpeakerPreview);
+ttsMultiSpeakerSelect.addEventListener("focus", () => {
+  scheduleSpeakerPreview("multi");
+});
+
+ttsSpeakerZhSelect.addEventListener("mouseenter", () => {
+  scheduleSpeakerPreview("zh");
+});
+ttsSpeakerZhSelect.addEventListener("mouseleave", cancelScheduledSpeakerPreview);
+
+ttsSpeakerEnSelect.addEventListener("mouseenter", () => {
+  scheduleSpeakerPreview("en");
+});
+ttsSpeakerEnSelect.addEventListener("mouseleave", cancelScheduledSpeakerPreview);
 
 function setSwitch(id, checked) {
   const input = document.getElementById(id);
@@ -1730,6 +2488,51 @@ aboutBack.addEventListener("click", () => {
 });
 openAbout.addEventListener("click", showAbout);
 
+async function applyTtsSettings(settings) {
+  if (!settings) {
+    return;
+  }
+
+  ttsTargetValue = settings.tts_target || "translation";
+  ttsRateValue = Math.min(2, Math.max(0.5, Number(settings.tts_rate) || 1));
+  ttsVoiceName = settings.tts_voice || "";
+  localTtsSupported = Boolean(settings.local_tts_supported);
+  ttsEngineValue =
+    settings.tts_engine === "local" && localTtsSupported ? "local" : "system";
+  ttsLocalEngine =
+    settings.tts_local_engine === "natural" ? "natural" : "fast";
+  ttsSpeakerZh = Number(settings.tts_speaker_zh) || 3;
+  ttsSpeakerEn = Number(settings.tts_speaker_en);
+  if (Number.isNaN(ttsSpeakerEn)) ttsSpeakerEn = 0;
+  ttsSpeakerMulti = Number(settings.tts_speaker_multi);
+  if (Number.isNaN(ttsSpeakerMulti)) ttsSpeakerMulti = 6;
+  ttsKokoroInstalled = Boolean(settings.tts_kokoro_installed);
+  ttsVitsInstalled = Boolean(settings.tts_vits_installed);
+  ttsSupertonicInstalled = Boolean(settings.tts_supertonic_installed);
+  ttsModelInstalled = Boolean(settings.tts_model_installed);
+  ttsKokoroSize = Number(settings.tts_kokoro_size) || ttsKokoroSize;
+  ttsVitsSize = Number(settings.tts_vits_size) || ttsVitsSize;
+  ttsSupertonicSize =
+    Number(settings.tts_supertonic_size) || ttsSupertonicSize;
+  ttsTargetSelect.value = ttsTargetValue;
+  ttsRateSelect.value = String(ttsRateValue);
+  ttsEngineSelect.value = ttsEngineValue;
+  ttsLocalEngineSelect.value = ttsLocalEngine;
+  populateTtsVoices(ttsVoiceName);
+
+  if (localTtsSupported) {
+    await loadTtsSpeakers();
+    populateTtsSpeakers();
+  }
+
+  if (ttsTargetControl) ttsTargetControl.sync();
+  if (ttsRateControl) ttsRateControl.sync();
+  if (ttsEngineControl) ttsEngineControl.sync();
+  if (ttsLocalEngineControl) ttsLocalEngineControl.sync();
+  syncTtsRows();
+  preloadLocalTtsModel();
+}
+
 async function applySettingsToUi(settings) {
   mainHotkeyRecorder.setCurrent(settings.hotkey);
   inputHotkeyRecorder.setCurrent(settings.input_hotkey || DEFAULT_INPUT_HOTKEY);
@@ -1744,18 +2547,7 @@ async function applySettingsToUi(settings) {
   setSwitch("switch-extension", settings.serve_extension);
   setSwitch("switch-auto-copy", Boolean(settings.auto_copy));
   autoCopyEnabled = Boolean(settings.auto_copy);
-  ttsTargetValue = settings.tts_target || "translation";
-  ttsRateValue = Math.min(2, Math.max(0.5, Number(settings.tts_rate) || 1));
-  ttsVoiceName = settings.tts_voice || "";
-  ttsTargetSelect.value = ttsTargetValue;
-  ttsRateSelect.value = String(ttsRateValue);
-  populateTtsVoices(ttsVoiceName);
-  if (ttsTargetControl) ttsTargetControl.sync();
-  if (ttsRateControl) ttsRateControl.sync();
-  ttsVoiceRow.hidden = speakBackend === "spd-say";
-  ttsTitle.hidden = !speakSupported;
-  ttsGroup.hidden = !speakSupported;
-  speak.title = speakTitle();
+  await applyTtsSettings(settings);
   applySelectionSettings(settings);
   updateModelStatus(settings);
   updateExtensionStatus(settings);
@@ -2174,20 +2966,57 @@ invoke("get_settings").then((settings) => {
 
 }
 
-invoke("tts_backend").then((backend) => {
+Promise.all([
+  invoke("tts_backend").catch(() => "webview"),
+  invoke("tts_engine_supported").catch(() => false),
+  invoke("tts_model_status").catch(() => null),
+]).then(([backend, localSupported, modelStatus]) => {
   speakBackend = backend;
-  speakSupported =
-    backend === "spd-say" || (backend === "webview" && "speechSynthesis" in window);
+  localTtsSupported = Boolean(localSupported);
+
+  if (modelStatus) {
+    applyModelStatus(modelStatus);
+    ttsModelDownloading = Boolean(modelStatus.downloading);
+  }
+
+  updateSpeakSupport();
 
   if (speakSupported && current) {
     speak.hidden = false;
   }
 
-  ttsVoiceRow.hidden = speakBackend === "spd-say";
-  ttsTitle.hidden = !speakSupported;
-  ttsGroup.hidden = !speakSupported;
   populateTtsVoices();
+
+  if (localTtsSupported) {
+    loadTtsSpeakers().then(() => populateTtsSpeakers());
+  }
+
+  syncTtsRows();
   updateInputSpeak();
+  preloadLocalTtsModel();
+});
+
+listen("tts-model-progress", (event) => {
+  const { model, downloaded, total } = event.payload;
+  const percent = total ? Math.floor((downloaded * 100) / total) : null;
+  const statusElement =
+    model === "vits"
+      ? ttsVitsModelStatus
+      : model === "supertonic"
+        ? ttsSupertonicModelStatus
+        : ttsKokoroModelStatus;
+
+  statusElement.textContent =
+    percent === null
+      ? "下载中 · " + Math.round(downloaded / 1000000) + " MB"
+      : "下载中 " + percent + "%";
+});
+
+listen("tts-model-status", (event) => {
+  const modelStatus = event.payload;
+  applyModelStatus(modelStatus);
+  ttsModelDownloading = Boolean(modelStatus.downloading);
+  syncTtsRows();
 });
 
 listen("speech-ended", (event) => {

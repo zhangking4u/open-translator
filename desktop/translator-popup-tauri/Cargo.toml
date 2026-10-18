@@ -24,6 +24,7 @@ translator-service = { version = "0.1.0", path = "../../core/translator-service"
 
 [target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
 translator-asr = { version = "0.1.0", path = "../../core/asr" }
+translator-tts = { version = "0.1.0", path = "../../core/tts" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13", features = ["screenshot"] }
