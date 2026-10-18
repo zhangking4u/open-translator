@@ -2905,3 +2905,30 @@ Mobile client.
   so the card does not disappear while the user is deciding.
 - Verification: `node --check`, element-ID check, `git diff --check`; Rust
   unchanged from the zoom pass.
+
+## Settings Restructure (2026-10-18)
+
+- Settings now use an Apple-style home + detail navigation instead of one long
+  page: the home shows 自动复制翻译/划词翻译 switches plus 翻译方式, 快捷键,
+  朗读, 登录时启动, 高级 and 关于 rows with current-value summaries.
+- 翻译方式, 快捷键, 语音 and 高级 are separate pages with back chevrons and
+  internal scrolling; the settings window keeps one stable height (560 px,
+  clamped to the work area) so navigation no longer resizes the native window.
+- The selection master switch stays on the home page; its method and disabled
+  app list live under 翻译方式. The three hotkey recorders moved under 快捷键,
+  the TTS rows under 语音, and the model path/extension/config directory under
+  高级. 关于 now contains version/update only.
+- Focus/return behavior: opening a detail focuses its title, going back returns
+  focus to the row that opened it, and Escape goes detail → home → input.
+- Verification: JS syntax, unique element IDs, HTML tag balance, and whitespace
+  checks; Rust is unchanged.
+
+- Follow-up polish: the custom titlebar label follows the active page
+  (设置/关于/历史), voice-pack actions use quiet accent text buttons instead of
+  select-like chips, and settings pages reserve scrollbar space so navigation
+  does not shift rows horizontally.
+
+- 语音 splits one level further: 朗读 keeps engine/content/rate and a 语音包
+  row; 语音包 now owns the three local model downloads plus the multi/zh/en
+  speaker selectors. The home and voice rows show 1/2/3 个已就绪, and the packs
+  page returns to 语音 rather than 设置.

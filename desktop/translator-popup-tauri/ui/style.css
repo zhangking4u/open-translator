@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --ot-control-height: 28px;
   --ot-control-font: 12.5px;
 }
@@ -381,11 +381,67 @@ button.icon.active {
 }
 
 #settings-view,
+#settings-translation-view,
+#settings-shortcuts-view,
+#settings-voice-view,
+#settings-voice-packs-view,
+#settings-system-view,
 #about-view,
 #history-view {
   max-height: min(560px, var(--ot-view-max, 560px));
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+body.settings-mode .card {
+  height: calc(100vh - 20px);
+}
+
+body.settings-mode.os-windows .card {
+  height: 100vh;
+}
+
+body.settings-mode #settings-view,
+body.settings-mode #settings-translation-view,
+body.settings-mode #settings-shortcuts-view,
+body.settings-mode #settings-voice-view,
+body.settings-mode #settings-voice-packs-view,
+body.settings-mode #settings-system-view,
+body.settings-mode #about-view {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.back-button {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ot-label-2);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.back-button:hover:not(:disabled) {
+  background: var(--ot-fill);
+  color: var(--ot-label);
+}
+
+.page-title:focus {
+  outline: none;
+}
+
+body.settings-mode .page-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-top: 2px;
+  background: var(--ot-bg);
 }
 
 .page-head {
@@ -700,6 +756,24 @@ button.icon.active {
 
 .setting-select:hover {
   background-color: var(--ot-fill-hover);
+}
+
+.setting-action {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ot-accent);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.setting-action:hover:not(:disabled) {
+  background: var(--ot-fill-hover);
+}
+
+.setting-action:disabled {
+  color: var(--ot-label-3);
 }
 
 .hotkey-recorder {

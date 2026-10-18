@@ -7,6 +7,11 @@ const views = {
   translator: document.getElementById("translator-view"),
   input: document.getElementById("input-view"),
   settings: document.getElementById("settings-view"),
+  settingsTranslation: document.getElementById("settings-translation-view"),
+  settingsShortcuts: document.getElementById("settings-shortcuts-view"),
+  settingsVoice: document.getElementById("settings-voice-view"),
+  settingsVoicePacks: document.getElementById("settings-voice-packs-view"),
+  settingsSystem: document.getElementById("settings-system-view"),
   about: document.getElementById("about-view"),
   history: document.getElementById("history-view"),
 };
@@ -90,6 +95,24 @@ const aboutBack = document.getElementById("about-back");
 const aboutVersionLabel = document.getElementById("about-version-label");
 const modelStatus = document.getElementById("model-status");
 const extensionStatus = document.getElementById("extension-status");
+const switchSelectionRow = document.getElementById("switch-selection-row");
+const openTranslationSettings = document.getElementById("open-translation-settings");
+const openShortcutsSettings = document.getElementById("open-shortcuts-settings");
+const openVoiceSettings = document.getElementById("open-voice-settings");
+const openVoicePacksSettings = document.getElementById("open-voice-packs-settings");
+const openSystemSettings = document.getElementById("open-system-settings");
+const settingsModeSummary = document.getElementById("settings-mode-summary");
+const settingsShortcutsSummary = document.getElementById("settings-shortcuts-summary");
+const settingsVoiceSummary = document.getElementById("settings-voice-summary");
+const settingsVoicePacksSummary = document.getElementById("settings-voice-packs-summary");
+const settingsTranslationBack = document.getElementById("settings-translation-back");
+const settingsShortcutsBack = document.getElementById("settings-shortcuts-back");
+const settingsVoiceBack = document.getElementById("settings-voice-back");
+const settingsVoicePacksBack = document.getElementById("settings-voice-packs-back");
+const settingsSystemBack = document.getElementById("settings-system-back");
+const ttsPacksGroup = document.getElementById("tts-packs-group");
+let selectionSupported = false;
+let lastSettingsPage = "";
 let selectionMethodControl = null;
 let selectionModeValue = "off";
 let selectionMethodValue = "ball";
@@ -1183,8 +1206,10 @@ function syncTtsRows() {
   updateSpeakSupport();
   ttsTitle.hidden = !speakSupported;
   ttsGroup.hidden = !speakSupported;
+  ttsPacksGroup.hidden = !speakSupported;
   speak.title = speakTitle();
   updateInputSpeak();
+  updateSettingsSummaries();
 }
 
 async function downloadLocalTtsModel(model) {
@@ -1251,6 +1276,19 @@ async function applyResize() {
     document.documentElement.style.setProperty("--ot-view-max", viewMax + "px");
   }
 
+  // Settings/about use one stable window height; pages scroll inside instead
+  // of resizing the native window on every navigation.
+  if (document.body.classList.contains("settings-mode")) {
+    const height = Math.min(560, screenHeight ? screenHeight - 48 : 560);
+
+    if (Math.abs(height - lastWindowHeight) >= 1) {
+      lastWindowHeight = height;
+      await invoke("resize_window", { height });
+    }
+
+    return;
+  }
+
   const cardHeight = Math.ceil(
     document.querySelector(".card").getBoundingClientRect().height
   );
@@ -1269,9 +1307,23 @@ async function applyResize() {
 
 function showView(next) {
   view = next;
+  const settingsLike = next === "about" || next.startsWith("settings");
+  document.body.classList.toggle("settings-mode", settingsLike);
 
   for (const [name, element] of Object.entries(views)) {
     element.hidden = name !== next;
+  }
+
+  if (settingsLike && views[next]) {
+    views[next].scrollTop = 0;
+  }
+
+  if (isInputWindow) {
+    const title = document.getElementById("title");
+    if (title) {
+      const titles = { input: "输入翻译", history: "历史", about: "关于" };
+      title.textContent = titles[next] || (settingsLike ? "设置" : "输入翻译");
+    }
   }
 
   resize();
@@ -2052,8 +2104,14 @@ window.addEventListener("keydown", (event) => {
 
       if (view === "input") {
         invoke("hide_window");
+      } else if (view === "settingsVoicePacks") {
+        openSettingsPage("settingsVoice");
       } else if (view === "about") {
-        openSettings();
+        showSettingsHome();
+      } else if (view === "settings") {
+        showHomeView();
+      } else if (view.startsWith("settings")) {
+        showSettingsHome();
       } else {
         showHomeView();
       }
@@ -2333,6 +2391,7 @@ function createHotkeyRecorder(config) {
     }
     config.recorder.replaceChildren(...nodes);
     config.reset.hidden = !state.recording;
+    updateSettingsSummaries();
 
     resize();
   }
@@ -2610,6 +2669,54 @@ function updateSelectionMethodRow() {
     (selectionAutoSupported || selectionToolbarSupported) &&
     switchSelection.checked
   );
+
+  updateSettingsSummaries();
+}
+
+function updateSettingsSummaries() {
+  if (switchSelectionRow) {
+    switchSelectionRow.hidden = !selectionSupported;
+  }
+
+  if (openTranslationSettings) {
+    openTranslationSettings.hidden =
+      !selectionSupported || !switchSelection.checked;
+  }
+
+  if (settingsModeSummary) {
+    const option = selectionMethodSelect.selectedOptions[0];
+    settingsModeSummary.textContent = option ? option.textContent : "";
+  }
+
+  if (settingsShortcutsSummary) {
+    settingsShortcutsSummary.textContent = hotkeyLabel
+      ? hotkeyLabel + " 等"
+      : "";
+  }
+
+  if (settingsVoiceSummary) {
+    settingsVoiceSummary.textContent =
+      ttsEngineValue === "local" && localTtsSupported ? "本地模型" : "系统语音";
+  }
+
+  if (openVoiceSettings) {
+    openVoiceSettings.hidden = !speakSupported;
+  }
+
+  if (openVoicePacksSettings) {
+    openVoicePacksSettings.hidden = !localTtsSupported;
+  }
+
+  if (settingsVoicePacksSummary) {
+    const installed = [
+      ttsKokoroInstalled,
+      ttsVitsInstalled,
+      ttsSupertonicInstalled,
+    ].filter(Boolean).length;
+    settingsVoicePacksSummary.textContent = installed
+      ? installed + " 个已就绪"
+      : "需要下载";
+  }
 }
 
 function renderToolbarDisabledApps() {
@@ -2654,6 +2761,7 @@ function applySelectionSettings(settings) {
     selectionMethodValue = "ball";
   }
 
+  selectionSupported = Boolean(settings.selection_supported);
   selectionAutoSupported = settings.selection_auto_supported;
   selectionBallSupported = settings.selection_ball_supported;
   selectionToolbarSupported = settings.selection_toolbar_supported;
@@ -2700,11 +2808,13 @@ async function applySelectionMode() {
 
 switchSelection.addEventListener("change", () => {
   switchSelection.setAttribute("aria-checked", String(switchSelection.checked));
+  updateSettingsSummaries();
   applySelectionMode();
 });
 
 selectionMethodSelect.addEventListener("change", () => {
   selectionMethodValue = selectionMethodSelect.value;
+  updateSettingsSummaries();
   applySelectionMode();
 });
 
@@ -2758,11 +2868,31 @@ switchAutostart.addEventListener("change", async () => {
 });
 
 aboutBack.addEventListener("click", () => {
-  // Refetch so a tray mode change made while 关于 was open cannot leave a
-  // stale switch behind.
-  openSettings();
+  showSettingsHome();
 });
 openAbout.addEventListener("click", showAbout);
+openTranslationSettings.addEventListener("click", () =>
+  openSettingsPage("settingsTranslation")
+);
+openShortcutsSettings.addEventListener("click", () =>
+  openSettingsPage("settingsShortcuts")
+);
+openVoiceSettings.addEventListener("click", () =>
+  openSettingsPage("settingsVoice")
+);
+openVoicePacksSettings.addEventListener("click", () =>
+  openSettingsPage("settingsVoicePacks")
+);
+openSystemSettings.addEventListener("click", () =>
+  openSettingsPage("settingsSystem")
+);
+settingsTranslationBack.addEventListener("click", showSettingsHome);
+settingsShortcutsBack.addEventListener("click", showSettingsHome);
+settingsVoiceBack.addEventListener("click", showSettingsHome);
+settingsVoicePacksBack.addEventListener("click", () =>
+  openSettingsPage("settingsVoice")
+);
+settingsSystemBack.addEventListener("click", showSettingsHome);
 
 async function applyTtsSettings(settings) {
   if (!settings) {
@@ -2847,6 +2977,44 @@ async function applySettingsToUi(settings) {
   renderUpdate();
 }
 
+async function openSettingsPage(name) {
+  lastSettingsPage = name;
+  showView(name);
+  await resize();
+
+  const title = views[name]?.querySelector(".page-title");
+  if (title) {
+    title.setAttribute("tabindex", "-1");
+    title.focus({ preventScroll: true });
+  }
+}
+
+async function showSettingsHome({ center = false } = {}) {
+  showView("settings");
+  await resize();
+  if (center) await invoke("center_window");
+
+  const returnTarget = {
+    settingsTranslation: "open-translation-settings",
+    settingsShortcuts: "open-shortcuts-settings",
+    settingsVoice: "open-voice-settings",
+    settingsSystem: "open-system-settings",
+    about: "open-about",
+  }[lastSettingsPage];
+
+  lastSettingsPage = "";
+  const target = returnTarget && document.getElementById(returnTarget);
+  const first = views.settings?.querySelector(".group input, .group button");
+
+  if (target && !target.hidden) {
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "nearest" });
+  } else if (first) {
+    first.focus({ preventScroll: true });
+    first.scrollIntoView({ block: "nearest" });
+  }
+}
+
 async function openSettings() {
   if (!onboarding.hidden) dismissOnboarding();
   const settings = await invoke("get_settings");
@@ -2855,17 +3023,15 @@ async function openSettings() {
   const autostart = await invoke("autostart_enabled").catch(() => false);
   setSwitch("switch-autostart", autostart);
 
-  showView("settings");
-  await resize();
-  await invoke("center_window");
+  await showSettingsHome({ center: true });
 }
 
 async function showAbout() {
+  lastSettingsPage = "about";
   const settings = await invoke("get_settings");
   await applySettingsToUi(settings);
   showView("about");
   await resize();
-  await invoke("center_window");
 }
 
 async function openHistory() {
