@@ -111,6 +111,11 @@ button.primary:disabled {
   min-width: 76px;
 }
 
+#zoom {
+  min-width: 46px;
+  font-variant-numeric: tabular-nums;
+}
+
 #close {
   font-size: 16px;
   line-height: 1;
@@ -123,19 +128,25 @@ button.primary:disabled {
   }
 }
 
+#scroller {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 #stage {
   position: relative;
-  flex: none;
-  align-self: center;
+  width: max-content;
+  margin: 0 auto;
   line-height: 0;
 }
 
-/* Natural size: the window is sized around the image; max-width only shrinks
-   it when a large region was clamped to the monitor. */
 #image {
   display: block;
   width: auto;
-  max-width: 100%;
+  max-width: none;
   height: auto;
 }
 

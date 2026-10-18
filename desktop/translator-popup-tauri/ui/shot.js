@@ -24,7 +24,9 @@ let lastScreenX = 0;
 let lastScreenY = 0;
 
 function startWindowDrag(event) {
-  if (event.button !== 0 || !IS_WINDOWS) return;
+  if (event.button !== 0 || !IS_WINDOWS || event.target.closest("button")) {
+    return;
+  }
 
   dragging = true;
   lastScreenX = event.screenX;
@@ -61,13 +63,16 @@ const image = document.getElementById("image");
 const boxes = document.getElementById("boxes");
 const footer = document.getElementById("footer");
 const status = document.getElementById("status");
-const stage = document.getElementById("stage");
+const scroller = document.getElementById("scroller");
 const listBody = document.getElementById("list-body");
 const modeButton = document.getElementById("mode");
 const inPlaceButton = document.getElementById("inplace");
 const listButton = document.getElementById("list");
 const copyButton = document.getElementById("copy");
 const refreshButton = document.getElementById("refresh");
+const zoomOutButton = document.getElementById("zoom-out");
+const zoomButton = document.getElementById("zoom");
+const zoomInButton = document.getElementById("zoom-in");
 const closeButton = document.getElementById("close");
 
 for (const handle of [toolbar, footer]) {
@@ -81,6 +86,41 @@ let inPlaceMode = false;
 let sampleSource = "";
 let sampleCanvas = null;
 let sampleContext = null;
+let zoom = 1;
+let userZoomed = false;
+
+function fitZoom() {
+  if (!image.naturalWidth || !scroller.clientWidth) {
+    return 1;
+  }
+
+  return Math.min(1, scroller.clientWidth / image.naturalWidth);
+}
+
+function setZoom(value, markUser = true) {
+  if (!image.naturalWidth) {
+    return;
+  }
+
+  zoom = Math.min(3, Math.max(0.25, value));
+  image.style.width = Math.round(image.naturalWidth * zoom) + "px";
+  zoomButton.textContent = Math.round(zoom * 100) + "%";
+
+  if (markUser) {
+    userZoomed = true;
+  }
+
+  render();
+}
+
+function resetZoom() {
+  userZoomed = false;
+  setZoom(fitZoom(), false);
+}
+
+function onImageReady() {
+  resetZoom();
+}
 
 listen("shot-result", (event) => apply(event.payload));
 
@@ -90,7 +130,7 @@ function syncToolbarState() {
   inPlaceButton.setAttribute("aria-pressed", String(inPlaceMode));
   listButton.setAttribute("aria-pressed", String(listMode));
   listBody.hidden = !listMode;
-  stage.hidden = listMode;
+  scroller.hidden = listMode;
 }
 
 function setFooter(text) {
@@ -113,12 +153,16 @@ function apply(payload) {
   }
 
   copyButton.disabled = blocks.length === 0;
+  const hasImage = Boolean(payload.image);
+  zoomOutButton.disabled = !hasImage;
+  zoomButton.disabled = !hasImage;
+  zoomInButton.disabled = !hasImage;
 
   if (payload.image) {
     if (image.src === payload.image && image.complete) {
-      render();
+      onImageReady();
     } else {
-      image.onload = render;
+      image.onload = onImageReady;
       image.src = payload.image;
     }
   } else {
@@ -133,10 +177,28 @@ function apply(payload) {
 // with clientWidth 0; re-render as soon as layout gives the image a size, and
 // whenever the window is resized.
 new ResizeObserver(() => {
-  if (image.clientWidth) render();
+  if (listMode) {
+    return;
+  }
+
+  if (!userZoomed) {
+    resetZoom();
+  } else if (image.clientWidth) {
+    render();
+  }
 }).observe(image);
 
-window.addEventListener("resize", () => render());
+window.addEventListener("resize", () => {
+  if (listMode) {
+    return;
+  }
+
+  if (!userZoomed) {
+    resetZoom();
+  } else {
+    render();
+  }
+});
 
 function quadBoundingBox(quad) {
   let minX = Infinity;
@@ -357,7 +419,14 @@ listButton.addEventListener("click", () => {
   listMode = !listMode;
   syncToolbarState();
   setFooter("");
-  if (!listMode) render();
+
+  if (!listMode) {
+    if (userZoomed) {
+      render();
+    } else {
+      resetZoom();
+    }
+  }
 });
 
 copyButton.addEventListener("click", () => {
@@ -387,6 +456,23 @@ refreshButton.addEventListener("click", () => {
     copyButton.disabled = blocks.length === 0;
   });
 });
+
+zoomOutButton.addEventListener("click", () => setZoom(zoom / 1.2));
+zoomButton.addEventListener("click", () => resetZoom());
+zoomInButton.addEventListener("click", () => setZoom(zoom * 1.2));
+
+scroller.addEventListener(
+  "wheel",
+  (event) => {
+    if (!(event.ctrlKey || event.metaKey)) {
+      return;
+    }
+
+    event.preventDefault();
+    setZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));
+  },
+  { passive: false }
+);
 
 closeButton.addEventListener("click", () => invoke("shot_close"));
 
@@ -420,5 +506,11 @@ window.addEventListener("keydown", (event) => {
     listButton.click();
   } else if (key === "r") {
     refreshButton.click();
+  } else if (key === "+" || key === "=") {
+    setZoom(zoom * 1.2);
+  } else if (key === "-" || key === "_") {
+    setZoom(zoom / 1.2);
+  } else if (key === "0") {
+    resetZoom();
   }
 });

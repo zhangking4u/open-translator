@@ -48,6 +48,7 @@ const inputMore = document.getElementById("input-more");
 const inputActionsMenu = document.getElementById("input-actions-menu");
 const onboarding = document.getElementById("onboarding");
 const onboardingDone = document.getElementById("onboarding-done");
+const srStatus = document.getElementById("sr-status");
 const ttsTargetSelect = document.getElementById("tts-target");
 const ttsRateSelect = document.getElementById("tts-rate");
 const ttsVoiceSelect = document.getElementById("tts-voice");
@@ -136,6 +137,16 @@ let ttsVitsSize = 177500000;
 let ttsSupertonicSize = 145300000;
 let copyFeedbackTimer = 0;
 let retryableError = false;
+let announceTimer = 0;
+
+function announce(text) {
+  if (!srStatus) return;
+  srStatus.textContent = "";
+  window.clearTimeout(announceTimer);
+  announceTimer = window.setTimeout(() => {
+    srStatus.textContent = text;
+  }, 30);
+}
 let ttsSpeakerMulti = 6;
 let ttsMultiSpeakers = [];
 let ttsPreviewTimer = 0;
@@ -1305,6 +1316,7 @@ function showWaiting() {
   speak.hidden = true;
   setCopyEnabled(false);
   stopSpeaking();
+  translation.setAttribute("aria-busy", "false");
   render(
     '<div class="empty-state">' +
       '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
@@ -1319,6 +1331,7 @@ function showWaiting() {
       "</p>" +
       "</div>"
   );
+  announce("等待划词翻译");
 }
 
 function showEmpty() {
@@ -1332,7 +1345,9 @@ function showEmpty() {
   speak.hidden = true;
   setCopyEnabled(false);
   stopSpeaking();
+  translation.setAttribute("aria-busy", "false");
   render('<p class="hint">未选中文本</p><p class="sub">请在其它应用中选中要翻译的内容</p>');
+  announce("未选中文本");
 }
 
 function showSource(text, canReplace) {
@@ -1350,7 +1365,9 @@ function showSource(text, canReplace) {
   speak.hidden = true;
   stopSpeaking();
   setDot("loading");
+  translation.setAttribute("aria-busy", "true");
   render('<p class="hint">正在翻译…</p>');
+  announce("正在翻译");
 }
 
 function showProgress(downloaded, total) {
@@ -1360,6 +1377,7 @@ function showProgress(downloaded, total) {
   speak.hidden = true;
   stopSpeaking();
   setDot("loading");
+  translation.setAttribute("aria-busy", "true");
 
   const megabytes = (value) => (value / 1000000).toFixed(0);
   const percent = total ? Math.round((downloaded / total) * 100) : 0;
@@ -1378,6 +1396,8 @@ function showProgress(downloaded, total) {
 function showError(message, retryable) {
   current = "";
   streaming = false;
+  translation.setAttribute("aria-busy", "false");
+  announce("翻译失败：" + message);
   setCopyEnabled(false);
   speak.hidden = true;
   stopSpeaking();
@@ -1449,6 +1469,9 @@ function finish(translationText) {
   paragraph.classList.remove("streaming");
   paragraph.textContent = current;
   setCopyEnabled(current.length > 0);
+  translation.setAttribute("aria-busy", "false");
+  const spoken = current.length > 120 ? current.slice(0, 120) + "…" : current;
+  announce(spoken ? "翻译完成：" + spoken : "翻译完成");
   speak.hidden = !speakSupported;
 
   if (
@@ -1692,6 +1715,7 @@ function showInputEntry(entry) {
   inputSourceText.textContent = entry.text.replace(/\s+/g, " ");
   inputSourcePreview.title = "编辑原文：" + entry.text;
   inputResultText.textContent = entry.translation;
+  inputResultText.setAttribute("aria-busy", "false");
   inputSaved.hidden = true;
   showInputError("");
   inputCompose.hidden = true;
@@ -1706,6 +1730,7 @@ function showInputEntry(entry) {
   setInputMenu(false);
   updateInputActions();
   updateInputSpeak();
+  announce("已载入历史翻译");
   showView("input");
 }
 
@@ -1714,6 +1739,7 @@ function showInputCompose() {
   inputResultContext = null;
   clearInputAlternatives();
   setInputMenu(false);
+  inputResultText.setAttribute("aria-busy", "false");
   inputCompose.hidden = false;
   inputResult.hidden = true;
 }
@@ -1824,6 +1850,8 @@ async function doInputTranslate() {
   inputTranslate.textContent = "翻译中…";
   inputRetranslate.textContent = "翻译中…";
   showInputError("");
+  inputResultText.setAttribute("aria-busy", "true");
+  announce("正在翻译");
 
   try {
     const result = await invoke("translate_input", {
@@ -1842,6 +1870,12 @@ async function doInputTranslate() {
     inputCompose.hidden = true;
     inputResult.hidden = false;
     inputResultContext = { text, source: result.source || source, target };
+    inputResultText.setAttribute("aria-busy", "false");
+    const spoken =
+      result.translation.length > 120
+        ? result.translation.slice(0, 120) + "…"
+        : result.translation;
+    announce(spoken ? "翻译完成：" + spoken : "翻译完成");
     updateInputAlternateButton();
     updateInputSpeak();
 
@@ -1851,7 +1885,9 @@ async function doInputTranslate() {
     }
   } catch (message) {
     if (generation === inputGeneration) {
+      inputResultText.setAttribute("aria-busy", "false");
       showInputError(String(message));
+      announce("翻译失败：" + message);
     }
   } finally {
     if (generation === inputGeneration) {
@@ -1956,6 +1992,7 @@ copy.addEventListener("click", async () => {
   copy.classList.add("copied");
   copy.setAttribute("aria-label", "已复制");
   if (label) label.textContent = "已复制";
+  announce("已复制译文");
   window.clearTimeout(copyFeedbackTimer);
   copyFeedbackTimer = window.setTimeout(() => {
     copy.classList.remove("copied");
@@ -3033,6 +3070,28 @@ document.getElementById("confirm-accept").addEventListener("click", async () => 
 
 confirmDialog.addEventListener("click", (event) => {
   if (event.target === confirmDialog) closeConfirm();
+});
+
+confirmDialog.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    closeConfirm();
+    return;
+  }
+
+  if (event.key !== "Tab") return;
+
+  const cancel = document.getElementById("confirm-cancel");
+  const accept = document.getElementById("confirm-accept");
+
+  if (event.shiftKey && document.activeElement === cancel) {
+    event.preventDefault();
+    accept.focus();
+  } else if (!event.shiftKey && document.activeElement === accept) {
+    event.preventDefault();
+    cancel.focus();
+  }
 });
 
 // Card events are broadcast to every window; the input window must not react

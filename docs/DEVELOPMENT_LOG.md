@@ -2882,3 +2882,26 @@ Mobile client.
   to the background; the editing highlight keeps its own fixed contrast.
 - Verification: Tauri 29 unit tests + 1 capability test, translator-core 85
   tests, `cargo check`, `node --check`, `git diff --check`.
+
+## Screenshot Zoom Pass (2026-10-18)
+
+- The viewer image now lives in a scrollable stage with explicit sizing; `−`/
+  `100%`/`+` controls, Ctrl/Cmd+wheel, and `-`/`=`/`0` shortcuts zoom between
+  25% and 300%. The initial view fits the region to the available width, and
+  new captures reset to fit. Boxes and in-place covers scale with the image.
+- The toolbar no longer starts a window drag when the press lands on a button,
+  so zoom and mode controls cannot accidentally move the viewer.
+- Verification: `node --check`, `git diff --check`; Rust unchanged from the
+  caption-appearance commit.
+
+## Accessibility Feedback Pass (2026-10-18)
+
+- Added a shared `#sr-status` live region to the primary/card UI. Translation
+  start, completion (first 120 chars), failure, empty selection, history load
+  and copy now produce concise screen-reader announcements; streaming output
+  is marked with `aria-busy` instead of announcing every token.
+- The input result marks busy/final state and announces success/failure.
+- The confirm dialog now traps Tab between 取消/清空 and handles Escape locally,
+  so the card does not disappear while the user is deciding.
+- Verification: `node --check`, element-ID check, `git diff --check`; Rust
+  unchanged from the zoom pass.
