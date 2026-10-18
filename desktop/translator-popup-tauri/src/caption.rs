@@ -44,6 +44,8 @@ struct StatusPayload {
 #[derive(Clone, serde::Serialize)]
 struct ConfigPayload {
     layout: String,
+    font_scale: f64,
+    opacity: f64,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -262,6 +264,30 @@ fn caption_failure(app: &AppHandle, error: String) {
 
 /// Caption layout: `bilingual` (source + translation), `translation`
 /// (translation only) or `source` (no translation).
+pub fn font_scale() -> f64 {
+    let config = translator_core::settings::load_config();
+    parse_font_scale(config.caption_font_scale.as_deref())
+}
+
+pub fn opacity() -> f64 {
+    let config = translator_core::settings::load_config();
+    parse_opacity(config.caption_opacity.as_deref())
+}
+
+fn parse_font_scale(value: Option<&str>) -> f64 {
+    value
+        .and_then(|value| value.trim().parse::<f64>().ok())
+        .map(|value| value.clamp(0.8, 1.35))
+        .unwrap_or(1.0)
+}
+
+fn parse_opacity(value: Option<&str>) -> f64 {
+    value
+        .and_then(|value| value.trim().parse::<f64>().ok())
+        .map(|value| value.clamp(0.4, 0.95))
+        .unwrap_or(0.74)
+}
+
 pub fn layout() -> String {
     let config = translator_core::settings::load_config();
 
@@ -285,6 +311,8 @@ pub fn emit_config(app: &AppHandle) {
         EVENT_CONFIG,
         ConfigPayload {
             layout: layout(),
+            font_scale: font_scale(),
+            opacity: opacity(),
         },
     );
 }
@@ -1221,5 +1249,18 @@ mod tests {
             "[00:00:05] hello\n[00:00:05] 你好\n\n"
         );
         assert_eq!(transcript_entry(5.0, "hello", ""), "[00:00:05] hello\n\n");
+    }
+
+    #[test]
+    fn clamps_caption_appearance_values() {
+        assert_eq!(super::parse_font_scale(None), 1.0);
+        assert_eq!(super::parse_font_scale(Some("1.2")), 1.2);
+        assert_eq!(super::parse_font_scale(Some("0.1")), 0.8);
+        assert_eq!(super::parse_font_scale(Some("9")), 1.35);
+        assert_eq!(super::parse_font_scale(Some("nope")), 1.0);
+        assert_eq!(super::parse_opacity(None), 0.74);
+        assert_eq!(super::parse_opacity(Some("0.6")), 0.6);
+        assert_eq!(super::parse_opacity(Some("0.1")), 0.4);
+        assert_eq!(super::parse_opacity(Some("1.0")), 0.95);
     }
 }

@@ -25,8 +25,23 @@ function scheduleHide() {
 }
 
 listen("caption-config", (event) => {
-  layout = (event.payload && event.payload.layout) || "bilingual";
+  const payload = event.payload || {};
+  layout = payload.layout || "bilingual";
   document.body.dataset.layout = layout;
+
+  if (typeof payload.font_scale === "number") {
+    document.documentElement.style.setProperty(
+      "--caption-scale",
+      String(payload.font_scale)
+    );
+  }
+
+  if (typeof payload.opacity === "number") {
+    document.documentElement.style.setProperty(
+      "--caption-opacity",
+      String(payload.opacity)
+    );
+  }
 });
 
 listen("caption-segment", (event) => {

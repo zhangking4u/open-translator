@@ -2869,3 +2869,16 @@ Mobile client.
 - Verification: `cargo test --locked` green (28 unit + 1 capability test),
   `cargo check` clean, all frontend JavaScript passes `node --check`, and
   `git diff --check` is clean.
+
+## Caption Appearance Pass (2026-10-18)
+
+- Added `caption_font_scale` (0.8–1.35, presets 0.85/1.0/1.2) and
+  `caption_opacity` (0.4–0.95, presets 0.55/0.74/0.9), parsed and clamped in
+  `caption.rs` with unit tests.
+- The tray 实时字幕 submenu now nests 字幕外观 → 字号 (小/标准/大) and 背景
+  (淡/标准/浓). Changes persist, re-emit `caption-config`, and keep the radio
+  checkmarks in sync.
+- The overlay applies the scale to the source/translation/hint and the opacity
+  to the background; the editing highlight keeps its own fixed contrast.
+- Verification: Tauri 29 unit tests + 1 capability test, translator-core 85
+  tests, `cargo check`, `node --check`, `git diff --check`.

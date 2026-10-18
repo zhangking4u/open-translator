@@ -22,7 +22,7 @@ body {
   margin-bottom: 10px;
   padding: 9px 22px 12px;
   border-radius: 16px;
-  background: rgba(16, 16, 18, 0.74);
+  background: rgba(16, 16, 18, var(--caption-opacity, 0.74));
   color: #fff;
   text-align: center;
   opacity: 0;
@@ -41,13 +41,13 @@ body[data-state="error"] #caption {
 }
 
 #source {
-  font-size: 16px;
+  font-size: calc(16px * var(--caption-scale, 1));
   line-height: 1.4;
   opacity: 0.62;
 }
 
 #translation {
-  font-size: 26px;
+  font-size: calc(26px * var(--caption-scale, 1));
   line-height: 1.4;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -84,7 +84,7 @@ body[data-layout="source"] #translation {
 
 #hint {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: calc(13px * var(--caption-scale, 1));
   line-height: 1.4;
   opacity: 0.78;
 }

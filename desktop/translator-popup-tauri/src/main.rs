@@ -184,6 +184,12 @@ struct CaptionMenu {
     bilingual: CheckMenuItem<tauri::Wry>,
     translation: CheckMenuItem<tauri::Wry>,
     source: CheckMenuItem<tauri::Wry>,
+    font_small: CheckMenuItem<tauri::Wry>,
+    font_normal: CheckMenuItem<tauri::Wry>,
+    font_large: CheckMenuItem<tauri::Wry>,
+    opacity_low: CheckMenuItem<tauri::Wry>,
+    opacity_normal: CheckMenuItem<tauri::Wry>,
+    opacity_high: CheckMenuItem<tauri::Wry>,
 }
 
 /// Docked ball states: dim when nothing is selected, lit when text is ready,
@@ -2749,6 +2755,35 @@ fn set_caption_layout(app: &AppHandle, layout: &str) {
     }
 }
 
+/// Switches the caption font scale and syncs the appearance checkmarks.
+fn set_caption_font(app: &AppHandle, scale: f64) {
+    translator_core::settings::persist_value("caption_font_scale", &scale.to_string());
+    caption::emit_config(app);
+    sync_caption_appearance(app);
+}
+
+/// Switches the caption background opacity and syncs the appearance checkmarks.
+fn set_caption_opacity(app: &AppHandle, opacity: f64) {
+    translator_core::settings::persist_value("caption_opacity", &opacity.to_string());
+    caption::emit_config(app);
+    sync_caption_appearance(app);
+}
+
+fn sync_caption_appearance(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let scale = caption::font_scale();
+    let opacity = caption::opacity();
+
+    if let Some(menu) = state.caption_menu.lock().unwrap().as_ref() {
+        let _ = menu.font_small.set_checked((scale - 0.85).abs() < 0.01);
+        let _ = menu.font_normal.set_checked((scale - 1.0).abs() < 0.01);
+        let _ = menu.font_large.set_checked((scale - 1.2).abs() < 0.01);
+        let _ = menu.opacity_low.set_checked((opacity - 0.55).abs() < 0.01);
+        let _ = menu.opacity_normal.set_checked((opacity - 0.74).abs() < 0.01);
+        let _ = menu.opacity_high.set_checked((opacity - 0.9).abs() < 0.01);
+    }
+}
+
 /// Opens `glossary.txt` in the user's editor, creating it with a template on
 /// first use. Edits apply to the next caption segment (the file is re-read on
 /// every translation).
@@ -2846,6 +2881,82 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         caption_layout == "source",
         None::<&str>,
     )?;
+    let font_scale = caption::font_scale();
+    let caption_font_small = CheckMenuItem::with_id(
+        app,
+        "caption-font-small",
+        "小",
+        true,
+        (font_scale - 0.85).abs() < 0.01,
+        None::<&str>,
+    )?;
+    let caption_font_normal = CheckMenuItem::with_id(
+        app,
+        "caption-font-normal",
+        "标准",
+        true,
+        (font_scale - 1.0).abs() < 0.01,
+        None::<&str>,
+    )?;
+    let caption_font_large = CheckMenuItem::with_id(
+        app,
+        "caption-font-large",
+        "大",
+        true,
+        (font_scale - 1.2).abs() < 0.01,
+        None::<&str>,
+    )?;
+    let opacity = caption::opacity();
+    let caption_opacity_low = CheckMenuItem::with_id(
+        app,
+        "caption-opacity-low",
+        "淡",
+        true,
+        (opacity - 0.55).abs() < 0.01,
+        None::<&str>,
+    )?;
+    let caption_opacity_normal = CheckMenuItem::with_id(
+        app,
+        "caption-opacity-normal",
+        "标准",
+        true,
+        (opacity - 0.74).abs() < 0.01,
+        None::<&str>,
+    )?;
+    let caption_opacity_high = CheckMenuItem::with_id(
+        app,
+        "caption-opacity-high",
+        "浓",
+        true,
+        (opacity - 0.9).abs() < 0.01,
+        None::<&str>,
+    )?;
+    let caption_font_menu = Submenu::with_items(
+        app,
+        "字号",
+        true,
+        &[
+            &caption_font_small,
+            &caption_font_normal,
+            &caption_font_large,
+        ],
+    )?;
+    let caption_opacity_menu = Submenu::with_items(
+        app,
+        "背景",
+        true,
+        &[
+            &caption_opacity_low,
+            &caption_opacity_normal,
+            &caption_opacity_high,
+        ],
+    )?;
+    let caption_appearance_menu = Submenu::with_items(
+        app,
+        "字幕外观",
+        true,
+        &[&caption_font_menu, &caption_opacity_menu],
+    )?;
     let caption_glossary_item = MenuItem::with_id(
         app,
         "caption-glossary",
@@ -2884,6 +2995,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             &caption_bilingual,
             &caption_translation,
             &caption_source,
+            &caption_appearance_menu,
             &PredefinedMenuItem::separator(app)?,
             &caption_glossary_item,
             &caption_transcripts_item,
@@ -2973,6 +3085,12 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         bilingual: caption_bilingual,
         translation: caption_translation,
         source: caption_source,
+        font_small: caption_font_small,
+        font_normal: caption_font_normal,
+        font_large: caption_font_large,
+        opacity_low: caption_opacity_low,
+        opacity_normal: caption_opacity_normal,
+        opacity_high: caption_opacity_high,
     });
 
     let tray = TrayIconBuilder::with_id("main")
@@ -3022,6 +3140,12 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             "caption-layout-bilingual" => set_caption_layout(app, "bilingual"),
             "caption-layout-translation" => set_caption_layout(app, "translation"),
             "caption-layout-source" => set_caption_layout(app, "source"),
+            "caption-font-small" => set_caption_font(app, 0.85),
+            "caption-font-normal" => set_caption_font(app, 1.0),
+            "caption-font-large" => set_caption_font(app, 1.2),
+            "caption-opacity-low" => set_caption_opacity(app, 0.55),
+            "caption-opacity-normal" => set_caption_opacity(app, 0.74),
+            "caption-opacity-high" => set_caption_opacity(app, 0.9),
             "caption-glossary" => open_glossary_file(),
             "caption-transcripts" => open_captions_dir(),
             "caption-move" => caption::start_move(app),

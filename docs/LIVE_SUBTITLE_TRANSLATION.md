@@ -472,7 +472,10 @@ position comes from `caption_x`/`caption_y` or the bottom-center default.
 M2 result (2026-10-05): finished segments now run through the embedded
 llama.cpp engine and stream into the second line (`caption-translation`
 events; `caption-config` carries the layout). The tray 实时字幕 submenu holds
-开启实时字幕 + 双语字幕/仅译文/仅原文, persisted as `caption_layout`. A simple
+开启实时字幕 + 暂停字幕 + 双语字幕/仅译文/仅原文 + 字幕外观（字号/背景）,
+persisted as `caption_layout`, `caption_font_scale` and `caption_opacity`. Pausing
+keeps the capture stream alive but drops VAD segments before transcription, so
+resuming is instant. A simple
 glossary (`caption_glossary` or `glossary.txt` next to the config, `source=target`
 per line, max 50 terms) is appended to the prompt of every style; the runtime
 log confirmed terms reach the request. Measured from ASR completion: first
