@@ -1,10 +1,11 @@
 # Selection Translation (划词翻译) — Design & Landing
 
-Status: Linux uses the docked confirm ball (Wayland and X11); Windows/macOS offer
-the selection-following ball, the compact selection toolbar and direct
-translation. The Windows toolbar real-machine check passed 2026-10-18; the
-X11-session and Linux toolbar checks are still pending; macOS cannot be
-real-machine-verified (no Mac hardware) and ships as an experimental watcher.
+Status: Linux uses the compact toolbar on X11 and XWayland sessions and the
+docked confirm ball on pure Wayland; Windows/macOS offer the selection-following
+ball, the compact toolbar and direct translation. The Windows toolbar
+real-machine check passed 2026-10-18; the Linux X11/XWayland toolbar check is
+still pending; macOS cannot be real-machine-verified (no Mac hardware) and ships
+as an experimental watcher.
 
 
 ## 1. Goal
@@ -26,14 +27,15 @@ toolbar, or, where a mouse-release signal is observable, the opt-in direct mode
 | --- | --- | --- |
 | `off` (default) | nothing | nothing |
 | `ball` | docked confirm ball | selection-following ball |
-| `toolbar` | not offered; a config value falls back to `ball` | compact action bar above the selection; 翻译 opens the card |
+| `toolbar` | X11/XWayland: compact action bar at the pointer; pure Wayland: falls back to `ball` | compact action bar above the selection; 翻译 opens the card |
 | `auto` | not offered; a config value falls back to `ball` | direct card after the mouse-up settle |
 
 The settings UI exposes a 划词翻译 master switch plus a 翻译方式 choice
 (划词工具栏/悬浮球翻译/立即翻译); unsupported options are hidden per platform.
 The tray has the same choice as a 划词翻译 submenu and both stay in sync. New
-configs default to `toolbar` on Windows/macOS and `ball` on Linux; an explicit
-`selection_method` from an older config is preserved.
+configs default to `toolbar` on Windows/macOS and on Linux when an X display is
+available (X11 or XWayland); a pure Wayland session defaults to `ball`. An
+explicit `selection_method` from an older config is preserved.
 
 
 ## 3. Docked confirm ball (Linux)
@@ -113,11 +115,13 @@ single-flight: while one request streams, newer text only replaces a one-slot
 queued follow-up, so bursts cannot interleave streams or stack engine work.
 
 
-## 5. Selection toolbar (Windows/macOS)
+## 5. Selection toolbar (Windows/macOS/Linux X11)
 
 A compact 300×44 action bar appears above the selection end after the same
 settle as the ball. It follows the Yuanbao desktop pattern: the selection offers
-actions first and the result opens in place only after 翻译 is chosen.
+actions first and the result opens in place only after 翻译 is chosen. Linux
+shows it on X11 and on GNOME Wayland sessions through XWayland (the client
+prefers the X11 backend); a pure Wayland session keeps the docked ball.
 
 - **Actions**: 翻译 (primary, filled accent), 复制 (source text), 朗读 (original
   text through the configured local TTS engine or the system voice fallback)
@@ -126,19 +130,23 @@ actions first and the result opens in place only after 翻译 is chosen.
 - **Window**: separate `toolbar` window, transparent, frameless, always on top,
   no taskbar entry, non-focusable (`set_focusable(false)`), so clicking a button
   cannot steal the selection or the source application's focus. Placement
-  centers on the mouse-release anchor, prefers above with a 10 px gap, flips
-  below when there is no room and clamps to the monitor work area.
+  centers on the mouse-release anchor (Windows/macOS) or the last X11 pointer
+  position observed while the selection changed (XWayland root coordinates),
+  prefers above with a 10 px gap, flips below when there is no room and clamps
+  to the monitor work area.
 - **Result panel**: 翻译 hides the toolbar, records the source window for
-  replace-in-place, and reuses the existing card (`show_main_popup` +
-  `translate_text`), including streaming, copy, retranslate, alternatives and
-  replace. 复制 writes the captured text and closes after a short toast; 朗读
+  replace-in-place, and reuses the existing card (`show_main_popup` on
+  Windows/macOS, `show_main_popup_at_anchor` on Linux, then `translate_text`),
+  including streaming, copy, retranslate, alternatives and replace. 复制 writes the captured text and closes after a short toast; 朗读
   uses `speechSynthesis` with the detected source language and toggles to 停止.
-- **Dismissal**: clicking anywhere outside the toolbar, a new selection,
-  changing the mode, or a 10 s timeout hides it. The mouse hook/tap only touches
-  atomics and a channel; a worker thread performs the window hit-test and hide,
-  so the low-level callback never blocks on the Tauri event loop. The `−` menu
-  grows the same window downwards (44 → 128 px) instead of opening a second
-  window, and collapses it again when an action or a new selection resets it.
+- **Dismissal**: on Windows/macOS clicking anywhere outside the toolbar, on
+  every platform a new selection, changing the mode, or a 10 s timeout hides it.
+  The mouse hook/tap only touches atomics and a channel; a worker thread
+  performs the window hit-test and hide, so the low-level callback never blocks
+  on the Tauri event loop. Linux has no global click hook, so it relies on the
+  timeout/new-selection/mode-change paths. The `−` menu grows the same window
+  downwards (44 → 128 px) instead of opening a second window, and collapses it
+  again when an action or a new selection resets it.
 - **Per-app opt-out**: `toolbar_disabled_apps` is a JSON string array of
   executable names (legacy comma/semicolon values are still accepted,
   case-insensitive). The `−` menu stores the current foreground executable; the
@@ -146,8 +154,9 @@ actions first and the result opens in place only after 翻译 is chosen.
   the selection is read, so a disabled app is never inspected and never hits the
   synthetic Ctrl+C/Cmd+C clipboarding fallback; it does not fall back to the
   ball or direct mode. Windows resolves the executable through
-  `GetWindowThreadProcessId` + `QueryFullProcessImageNameW`; macOS currently
-  returns no name, so the per-app item stays hidden there.
+  `GetWindowThreadProcessId` + `QueryFullProcessImageNameW`; macOS resolves the
+  AX pid to a process name through `sysinfo`; Linux still returns no name, so
+  the per-app item stays hidden there until an X11 `_NET_WM_PID` resolver lands.
 - **Intent memory**: there is no “即划即用” toggle inside the toolbar. Selecting
   立即翻译 in the settings/tray is the equivalent and keeps the toolbar
   action-first by default.
@@ -189,10 +198,11 @@ stateDiagram-v2
 
 | platform | sensor | confirm UI | state |
 | --- | --- | --- | --- |
-| Linux/Wayland | XFixes events + one X11 read after quiet (AT-SPI typing filter) | docked ball | landed, GNOME Wayland manual pass passed 2026-10-04 |
-| Linux/X11 | PRIMARY via X11 | docked ball | landed, X11-session manual pass pending |
+| Linux/Wayland (XWayland) | XFixes events + one X11 read after quiet (AT-SPI typing filter) | toolbar (pointer anchor) / ball | toolbar landed, Linux real-machine pass pending |
+| Linux/Wayland (pure) | wl-paste polling fallback | docked ball | landed, GNOME Wayland manual pass passed 2026-10-04 |
+| Linux/X11 | PRIMARY via X11 + pointer anchor | toolbar / ball | toolbar landed, X11-session manual pass pending |
 | Windows | WH_MOUSE_LL + UIA | ball / toolbar / auto | landed; ball verified 2026-10-04, toolbar verified 2026-10-18 |
-| macOS | CGEventTap + AX | ball / toolbar / auto | landed, cross-target compile-checked only (no Mac hardware to verify), experimental watcher; toolbar has no per-app opt-out yet |
+| macOS | CGEventTap + AX | ball / toolbar / auto | landed, cross-target compile-checked only (no Mac hardware to verify), experimental watcher |
 
 
 ## 9. Files
@@ -224,6 +234,10 @@ stateDiagram-v2
   then appears in 设置 → 已禁用应用 and can be removed; clicking outside, a new
   selection, or 10 s idle hides the pill; repeat near the top edge and on a
   second monitor to check flipping/clamping.
+- Manual (Linux X11/XWayland): choose 划词工具栏, select text in a browser and
+  confirm the bar appears at the last pointer position, 翻译 opens the card
+  beside the selection, and a new selection/timeout hides it; a pure Wayland
+  session must hide the toolbar option and keep the docked ball.
 - Manual (Linux): choose 悬浮球翻译 in 选中文字后, confirm the ball appears at
   the right edge and is dim; select text → it lights up; move onto it → after
   ~150 ms the card opens beside it with the translation; hovering again

@@ -193,13 +193,9 @@ const BALL_BUSY: u64 = 2;
 
 /// Compact selection toolbar: a 300×44 pill that grows downwards while its
 /// `−` menu is open.
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 const TOOLBAR_WIDTH: f64 = 300.0;
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 const TOOLBAR_HEIGHT: f64 = 44.0;
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 const TOOLBAR_MENU_HEIGHT: f64 = 128.0;
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 const TOOLBAR_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
@@ -628,7 +624,6 @@ fn main() {
                 eprintln!("failed to create the selection ball window: {error}");
             }
 
-            #[cfg(any(target_os = "windows", target_os = "macos"))]
             if let Err(error) = build_toolbar_window(&handle) {
                 eprintln!("failed to create the selection toolbar window: {error}");
             }
@@ -1133,7 +1128,7 @@ fn apply_ball_visibility(app: &AppHandle) {
             return;
         };
 
-        let visible = settings.mode != selection_watch::SelectionMode::Off
+        let visible = settings.mode == selection_watch::SelectionMode::Ball
             && (settings.ball_visibility == selection_watch::BallVisibility::Always
                 || ball_state != BALL_IDLE);
         let was_visible = ball.is_visible().unwrap_or(false);
@@ -1245,6 +1240,64 @@ fn place_docked_ball(app: &AppHandle) {
     y = y.clamp(min_y, max_y.max(min_y));
 
     let _ = ball.set_position(PhysicalPosition::new(x, y));
+}
+
+/// Linux toolbar commit: show the card beside the selection anchor instead of
+/// the docked ball. The desktop client runs through X11/XWayland, so physical
+/// root coordinates are valid here.
+#[cfg(target_os = "linux")]
+fn show_main_popup_at_anchor(app: &AppHandle, anchor: (i32, i32)) {
+    let Some(card) = app.get_webview_window("main") else {
+        return;
+    };
+
+    app.state::<AppState>()
+        .popup
+        .store(true, Ordering::SeqCst);
+
+    let was_visible = card.is_visible().unwrap_or(false);
+
+    if !was_visible {
+        let _ = card.set_focusable(false);
+    }
+
+    let _ = card.show();
+
+    if was_visible {
+        pulse_above(app, &card);
+        return;
+    }
+
+    let Ok(size) = card.outer_size().or_else(|_| card.inner_size()) else {
+        return;
+    };
+
+    let Some(monitor) =
+        monitor_at(app, anchor).or_else(|| card.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+
+    let work = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let margin = (12.0 * scale) as i32;
+    let offset = (18.0 * scale) as i32;
+
+    let (x, y) = card_position(
+        anchor,
+        (size.width as i32, size.height as i32),
+        WorkArea {
+            x: work.position.x,
+            y: work.position.y,
+            width: work.size.width,
+            height: work.size.height,
+        },
+        margin,
+        offset,
+    );
+
+    let _ = card.set_position(PhysicalPosition::new(x, y));
+    pulse_above(app, &card);
 }
 
 /// The card appears beside the docked ball (predictable position): on the
@@ -1399,7 +1452,6 @@ fn show_ball(app: &AppHandle, text: String, anchor: (i32, i32), window: Option<i
 
 /// Places the compact toolbar above the selection end, flipping below when
 /// there is no room and staying inside the monitor work area.
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn toolbar_position(
     cursor: (i32, i32),
     size: (i32, i32),
@@ -1428,7 +1480,6 @@ fn toolbar_position(
     )
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn place_toolbar_window(app: &AppHandle, anchor: (i32, i32)) {
     let Some(toolbar) = app.get_webview_window("toolbar") else {
         return;
@@ -1489,7 +1540,6 @@ fn place_toolbar_window(app: &AppHandle, anchor: (i32, i32)) {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn show_toolbar(
     app: &AppHandle,
     text: String,
@@ -1544,7 +1594,6 @@ fn hide_toolbar(app: &AppHandle) {
         // Let the page cancel speech and close its menu before the window is
         // hidden; otherwise audio can continue with no visible stop control.
         let _ = toolbar.emit("toolbar-reset", ());
-        #[cfg(any(target_os = "windows", target_os = "macos"))]
         let _ = toolbar.set_size(LogicalSize::new(TOOLBAR_WIDTH, TOOLBAR_HEIGHT));
 
         let _ = toolbar.hide();
@@ -1669,6 +1718,12 @@ fn toolbar_action(app: AppHandle, action: String) -> Result<(), String> {
             *app.state::<AppState>().replace_window.lock().unwrap() = pending.window;
             mark_suppressed(&app, Duration::from_millis(1200));
 
+            #[cfg(target_os = "linux")]
+            match pending.anchor {
+                Some(anchor) => show_main_popup_at_anchor(&app, anchor),
+                None => show_card_next_to_ball(&app),
+            }
+
             #[cfg(not(target_os = "linux"))]
             show_main_popup(&app);
 
@@ -1688,36 +1743,29 @@ fn toolbar_hide(app: AppHandle) {
 /// compact pill above the original selection.
 #[tauri::command]
 fn toolbar_expanded(app: AppHandle, expanded: bool) {
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    {
-        let Some(toolbar) = app.get_webview_window("toolbar") else {
-            return;
-        };
+    let Some(toolbar) = app.get_webview_window("toolbar") else {
+        return;
+    };
 
-        let height = if expanded {
-            TOOLBAR_MENU_HEIGHT
-        } else {
-            TOOLBAR_HEIGHT
-        };
+    let height = if expanded {
+        TOOLBAR_MENU_HEIGHT
+    } else {
+        TOOLBAR_HEIGHT
+    };
 
-        let _ = toolbar.set_size(LogicalSize::new(TOOLBAR_WIDTH, height));
+    let _ = toolbar.set_size(LogicalSize::new(TOOLBAR_WIDTH, height));
 
-        if !expanded {
-            if let Some(anchor) = app
-                .state::<AppState>()
-                .pending_selection
-                .lock()
-                .unwrap()
-                .as_ref()
-                .and_then(|pending| pending.anchor)
-            {
-                place_toolbar_window(&app, anchor);
-            }
+    if !expanded {
+        if let Some(anchor) = app
+            .state::<AppState>()
+            .pending_selection
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|pending| pending.anchor)
+        {
+            place_toolbar_window(&app, anchor);
         }
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        let _ = (app, expanded);
     }
 }
 
@@ -1916,7 +1964,7 @@ fn place_ball_window(app: &AppHandle, anchor: (i32, i32)) {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(not(target_os = "macos"))]
 fn monitor_at(app: &AppHandle, point: (i32, i32)) -> Option<tauri::Monitor> {
     app.available_monitors().ok()?.into_iter().find(|monitor| {
         let position = monitor.position();
@@ -2477,9 +2525,8 @@ fn build_ball_window(app: &AppHandle) -> tauri::Result<()> {
 /// The selection toolbar is a frameless, non-focusable popover. It is mapped
 /// only while a settled selection is waiting; its `−` menu grows the window
 /// downwards instead of opening a second window.
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn build_toolbar_window(app: &AppHandle) -> tauri::Result<()> {
-    let toolbar = WebviewWindowBuilder::new(app, "toolbar", WebviewUrl::App("toolbar.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "toolbar", WebviewUrl::App("toolbar.html".into()))
         .title("OpenTranslator")
         .inner_size(TOOLBAR_WIDTH, TOOLBAR_HEIGHT)
         .decorations(false)
@@ -2488,9 +2535,15 @@ fn build_toolbar_window(app: &AppHandle) -> tauri::Result<()> {
         .skip_taskbar(true)
         .focused(false)
         .shadow(false)
-        .resizable(false)
-        .visible(false)
-        .build()?;
+        .visible(false);
+
+    // GTK applies `resizable(false)` before the size request is realized and
+    // locks an undecorated window at its default size (see the ball builder),
+    // so Linux keeps the builder resizable and only resizes programmatically.
+    #[cfg(not(target_os = "linux"))]
+    let builder = builder.resizable(false);
+
+    let toolbar = builder.build()?;
 
     // Same reason as the ball: keep it from taking focus away from the
     // document that owns the selection.
@@ -4140,7 +4193,6 @@ mod autostart {
     mod tests {
         use super::{desktop_exec_quote, powershell_quote, xml_escape};
 
-        #[cfg(any(target_os = "windows", target_os = "macos"))]
         #[test]
         fn places_toolbar_above_the_selection_end() {
             use crate::{WorkArea, toolbar_position};

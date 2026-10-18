@@ -65,6 +65,7 @@ function stopSpeech() {
 
   if (wasActive) {
     invoke("stop_local_tts").catch(() => {});
+    invoke("stop_speaking").catch(() => {});
   }
 
   speaking = false;
@@ -171,15 +172,28 @@ function playLocalAudio(wavBase64) {
 }
 
 function speakSystem(text, lang, settings) {
+  const parsedRate = Number.parseFloat(settings?.tts_rate);
+  const rate = Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 0.95;
+
+  // WebKitGTK has no speechSynthesis; Linux uses speech-dispatcher.
   if (!("speechSynthesis" in window)) {
-    showToast("当前系统不支持朗读");
+    const generation = ++speechGeneration;
+
+    speaking = true;
+    speak.querySelector("span").textContent = "停止";
+    invoke("speak_text", { text, lang, rate, generation }).catch((message) => {
+      if (generation === speechGeneration) {
+        finishSpeech();
+      }
+
+      showToast(String(message));
+    });
     return;
   }
 
   const synth = window.speechSynthesis;
   const voice = pickVoice(lang);
   const utterance = new SpeechSynthesisUtterance(text);
-  const rate = Number.parseFloat(settings?.tts_rate);
 
   if (voice) {
     utterance.voice = voice;
@@ -188,7 +202,7 @@ function speakSystem(text, lang, settings) {
     utterance.lang = lang;
   }
 
-  utterance.rate = Number.isFinite(rate) && rate > 0 ? rate : 0.95;
+  utterance.rate = rate;
   utterance.onend = finishSpeech;
   utterance.onerror = finishSpeech;
 
@@ -294,6 +308,12 @@ listen("toolbar-reset", () => {
   resetMenu();
   toast.hidden = true;
   refreshMenuState();
+});
+
+listen("speech-ended", (event) => {
+  if (event.payload?.generation === speechGeneration) {
+    finishSpeech();
+  }
 });
 
 window.addEventListener("blur", () => {

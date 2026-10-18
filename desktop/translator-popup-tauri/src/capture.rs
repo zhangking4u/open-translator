@@ -236,7 +236,23 @@ pub fn app_name_for_window(window: Option<isize>) -> Option<String> {
         .map(|name| name.to_string_lossy().to_string())
 }
 
-#[cfg(not(target_os = "windows"))]
+/// macOS returns the AX pid as the window handle; resolve it to the process
+/// name so the per-app toolbar opt-out can persist a stable identifier.
+#[cfg(target_os = "macos")]
+pub fn app_name_for_window(window: Option<isize>) -> Option<String> {
+    use sysinfo::{Pid, ProcessesToUpdate, System};
+
+    let pid = Pid::from_u32(window? as u32);
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+
+    system
+        .process(pid)
+        .map(|process| process.name().to_string_lossy().to_string())
+        .filter(|name| !name.is_empty())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn app_name_for_window(_window: Option<isize>) -> Option<String> {
     None
 }

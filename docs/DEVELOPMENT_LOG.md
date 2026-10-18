@@ -2794,5 +2794,12 @@ Mobile client.
   accepts `toolbar`; the `−` menu collapses when an action keeps the toolbar
   visible; toolbar 朗读 honors the configured local TTS engine/voice/rate and
   stops on dismissal.
+- Follow-up (same day): the toolbar now also lands on Linux X11 and GNOME
+  Wayland/XWayland — the watcher records the X11 pointer while the selection
+  changes, `toolbar_supported()` keys off `DISPLAY` + the X11 backend, and the
+  Linux card opens beside the anchor. Pure Wayland keeps the docked ball.
+  macOS gained a per-app opt-out through the AX pid + `sysinfo` process name.
+- Fixed the Ubuntu CI build: the Linux `apply_candidate` path now initializes
+  the new `PendingSelection` fields.
 - Verification: Tauri 28 tests, translator-core 85 tests, frontend `node
   --check`, capabilities JSON, release build installed on the dev machine.

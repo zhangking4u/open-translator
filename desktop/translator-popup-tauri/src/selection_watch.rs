@@ -115,12 +115,13 @@ impl SelectionSettings {
 
         let mode = SelectionMode::parse(config.selection_mode.as_deref());
 
-        // Direct translation and the selection-following toolbar both need a
-        // mouse-release anchor that the Linux watcher cannot provide yet; an
-        // old config value falls back to the ball.
+        // Direct translation needs a mouse-release signal; a pure Wayland
+        // session also has no toolbar anchor. Unsupported values fall back to
+        // the docked ball.
         #[cfg(target_os = "linux")]
         let mode = match mode {
-            SelectionMode::Auto | SelectionMode::Toolbar => SelectionMode::Ball,
+            SelectionMode::Auto => SelectionMode::Ball,
+            SelectionMode::Toolbar if !toolbar_supported() => SelectionMode::Ball,
             other => other,
         };
 
@@ -185,10 +186,21 @@ pub fn auto_supported() -> bool {
     }
 }
 
-/// The compact selection toolbar needs a screen anchor for the selection, which
-/// only the native mouse hooks provide. Linux keeps the docked ball for now.
+/// The compact selection toolbar needs a screen anchor for the selection.
+/// Windows/macOS provide one from the native mouse hook/tap; Linux can query
+/// the X server pointer, which also covers GNOME Wayland sessions because the
+/// desktop client runs through XWayland (`GDK_BACKEND=x11`). A pure Wayland
+/// session without DISPLAY keeps the docked ball.
 pub fn toolbar_supported() -> bool {
-    cfg!(any(target_os = "windows", target_os = "macos"))
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var_os("DISPLAY").is_some()
+            && std::env::var("GDK_BACKEND").as_deref() != Ok("wayland")
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
 }
 
 /// `toolbar_disabled_apps` is stored as a JSON string array so executable names
@@ -837,12 +849,14 @@ mod linux {
     fn run_xfixes(app: AppHandle, conn: RustConnection, primary: Atom) {
         let mut last_change: Option<Instant> = None;
         let mut last_seen: Option<String> = None;
+        let mut last_anchor: Option<(i32, i32)> = None;
 
         loop {
             while let Ok(Some(event)) = conn.poll_for_event() {
                 if let x11rb::protocol::Event::XfixesSelectionNotify(event) = event {
                     if event.selection == primary {
                         last_change = Some(Instant::now());
+                        last_anchor = pointer_position(&conn).or(last_anchor);
 
                         if crate::selection_debug() {
                             eprintln!("SELDBG xfix event");
@@ -874,7 +888,10 @@ mod linux {
             // user stopped changing the selection.
             last_change = None;
             let text = read_primary().unwrap_or_default();
-            apply_candidate(&app, text, &mut last_seen);
+            let anchor = last_anchor
+                .take()
+                .or_else(|| pointer_position(&conn));
+            apply_candidate(&app, text, &mut last_seen, anchor);
         }
     }
 
@@ -893,13 +910,28 @@ mod linux {
             }
 
             let text = read_primary().unwrap_or_default();
-            apply_candidate(&app, text, &mut last_seen);
+            apply_candidate(&app, text, &mut last_seen, None);
         }
+    }
+
+    /// X11 pointer in root coordinates. This works under XWayland too, which
+    /// is how the desktop client runs on GNOME Wayland. A pure Wayland session
+    /// has no X connection (the watcher uses the fallback poll instead).
+    fn pointer_position(conn: &RustConnection) -> Option<(i32, i32)> {
+        let root = conn.setup().roots.first()?.root;
+        let reply = conn.query_pointer(root).ok()?.reply().ok()?;
+
+        Some((reply.root_x as i32, reply.root_y as i32))
     }
 
     /// Dedupe + guards + arm; shared so the event and fallback loops behave
     /// identically.
-    fn apply_candidate(app: &AppHandle, text: String, last_seen: &mut Option<String>) {
+    fn apply_candidate(
+        app: &AppHandle,
+        text: String,
+        last_seen: &mut Option<String>,
+        anchor: Option<(i32, i32)>,
+    ) {
         if text.trim().is_empty() {
             *last_seen = None;
             crate::set_selection_pending(app, None);
@@ -941,7 +973,23 @@ mod linux {
         }
 
         let window = crate::capture::foreground_window();
-        crate::set_selection_pending(app, Some(crate::PendingSelection { text, window }));
+
+        if settings.mode == SelectionMode::Toolbar && super::toolbar_supported() {
+            if let Some(anchor) = anchor {
+                crate::show_toolbar(app, text, anchor, window);
+                return;
+            }
+        }
+
+        crate::set_selection_pending(
+            app,
+            Some(crate::PendingSelection {
+                text,
+                window,
+                anchor: None,
+                app: None,
+            }),
+        );
     }
 }
 
@@ -1407,18 +1455,18 @@ mod tests {
     }
 
     #[test]
-    fn linux_clamps_toolbar_to_the_docked_ball() {
+    fn clamps_toolbar_without_an_anchor() {
         let config = FileConfig {
             selection_mode: Some("toolbar".to_string()),
             ..FileConfig::default()
         };
         let settings = SelectionSettings::from_config(&config);
 
-        #[cfg(target_os = "linux")]
-        assert_eq!(settings.mode, SelectionMode::Ball);
-
-        #[cfg(not(target_os = "linux"))]
-        assert_eq!(settings.mode, SelectionMode::Toolbar);
+        if toolbar_supported() {
+            assert_eq!(settings.mode, SelectionMode::Toolbar);
+        } else {
+            assert_eq!(settings.mode, SelectionMode::Ball);
+        }
     }
 
     #[test]
