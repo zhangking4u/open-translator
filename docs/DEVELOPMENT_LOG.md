@@ -2932,3 +2932,8 @@ Mobile client.
   row; 语音包 now owns the three local model downloads plus the multi/zh/en
   speaker selectors. The home and voice rows show 1/2/3 个已就绪, and the packs
   page returns to 语音 rather than 设置.
+
+- Settings pickers: added `tauri-plugin-dialog` and native commands
+  `pick_model_file` / `pick_toolbar_disabled_app`. The model row has
+  选择文件…, and the disabled-app list shows 未禁用任何应用 plus 添加应用…
+  (the chosen executable name is persisted and added immediately).

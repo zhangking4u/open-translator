@@ -281,13 +281,14 @@
             <span id="selection-saved" class="ok-text" hidden>已保存</span>
           </div>
         </div>
-        <div class="setting-row stacked" id="toolbar-disabled-row" hidden>
+        <div class="setting-row stacked" id="toolbar-disabled-row">
           <span class="setting-name">已禁用应用</span>
           <div class="toolbar-disabled-list" id="toolbar-disabled-list"></div>
+          <button id="pick-disabled-app" class="setting-action" type="button">添加应用…</button>
         </div>
       </div>
       <p class="group-note">工具栏：选中后点击翻译；悬浮球：点击小球翻译；立即翻译：选中即翻译。</p>
-      <p class="group-note">在划词工具栏的 − 菜单中可禁用当前应用；这里可以恢复。</p>
+      <p class="group-note">在划词工具栏的 − 菜单中可禁用当前应用；也可以从这里选择可执行文件添加。</p>
     </div>
 
     <div id="settings-shortcuts-view" hidden>
@@ -465,6 +466,7 @@
           <span class="setting-name">模型文件</span>
           <div class="setting-control">
             <input id="model-input" class="text-input" placeholder="本地 .gguf 文件路径" spellcheck="false" />
+            <button id="pick-model" class="setting-action" type="button">选择文件…</button>
             <button id="open-model" class="icon-button" type="button" title="打开模型文件所在位置" aria-label="打开模型文件所在位置">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2h9A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" />

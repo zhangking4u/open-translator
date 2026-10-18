@@ -2275,6 +2275,8 @@ document.getElementById("open-config").addEventListener("click", () => {
 
 const modelInput = document.getElementById("model-input");
 const modelReset = document.getElementById("model-reset");
+const pickModel = document.getElementById("pick-model");
+const pickDisabledApp = document.getElementById("pick-disabled-app");
 let savedModelPath = "";
 let defaultModelPath = "";
 
@@ -2309,6 +2311,37 @@ modelReset.addEventListener("click", async () => {
 
 document.getElementById("open-model").addEventListener("click", () => {
   invoke("open_model_location");
+});
+
+pickModel.addEventListener("click", async () => {
+  try {
+    const path = await invoke("pick_model_file");
+    if (!path) return;
+    modelInput.value = path;
+    await saveModelPath();
+  } catch (message) {
+    setStatus(String(message));
+    window.setTimeout(() => setStatus(""), 3000);
+  }
+});
+
+pickDisabledApp.addEventListener("click", async () => {
+  try {
+    const appName = await invoke("pick_toolbar_disabled_app");
+    if (!appName) return;
+    if (
+      !toolbarDisabledApps.some(
+        (entry) => entry.toLowerCase() === appName.toLowerCase()
+      )
+    ) {
+      toolbarDisabledApps.push(appName);
+    }
+    renderToolbarDisabledApps();
+    resize();
+  } catch (message) {
+    setStatus(String(message));
+    window.setTimeout(() => setStatus(""), 3000);
+  }
 });
 
 modelInput.addEventListener("blur", saveModelPath);
@@ -2721,7 +2754,14 @@ function updateSettingsSummaries() {
 
 function renderToolbarDisabledApps() {
   toolbarDisabledList.replaceChildren();
-  toolbarDisabledRow.hidden = toolbarDisabledApps.length === 0;
+  toolbarDisabledRow.hidden = false;
+
+  if (toolbarDisabledApps.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "dim-text";
+    empty.textContent = "未禁用任何应用";
+    toolbarDisabledList.append(empty);
+  }
 
   for (const appName of toolbarDisabledApps) {
     const chip = document.createElement("span");

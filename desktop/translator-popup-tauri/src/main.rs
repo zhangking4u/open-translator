@@ -486,6 +486,7 @@ fn main() {
         .manage(InitialView(Mutex::new(initial_view)))
         .manage(UpdateSlot::default())
         .manage(local_tts::LocalTtsState::default())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if argv.iter().any(|arg| arg == "--translate") {
                 trigger_translation(app);
@@ -578,6 +579,7 @@ fn main() {
             toolbar_disable_app,
             toolbar_disable_all,
             remove_toolbar_disabled_app,
+            pick_toolbar_disabled_app,
             card_engaged,
             save_selection_mode,
             save_selection_method,
@@ -594,6 +596,7 @@ fn main() {
             save_ocr_hotkey,
             save_tts_setting,
             save_model_path,
+            pick_model_file,
             save_switch,
             open_config_dir,
             open_model_location,
@@ -4149,6 +4152,60 @@ fn save_tts_setting(key: String, value: String) -> Result<(), String> {
 #[tauri::command]
 fn save_model_path(value: String) {
     translator_core::settings::persist_value("model_path", value.trim());
+}
+
+/// Opens the native file picker for a `.gguf` model and returns the chosen
+/// path. The caller persists it through the existing model-path flow.
+#[tauri::command]
+fn pick_model_file(app: AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let Some(file) = app
+        .dialog()
+        .file()
+        .set_title("选择 GGUF 模型")
+        .add_filter("GGUF", &["gguf"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+
+    let path = file.into_path().map_err(|error| error.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// Picks an executable and adds its file name to the toolbar-disabled list.
+#[tauri::command]
+fn pick_toolbar_disabled_app(app: AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let Some(file) = app
+        .dialog()
+        .file()
+        .set_title("选择要禁用划词工具栏的应用")
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+
+    let path = file.into_path().map_err(|error| error.to_string())?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "无法读取应用名称".to_string())?
+        .to_string();
+
+    let state = app.state::<AppState>();
+    let mut apps = state.toolbar_disabled.lock().unwrap();
+
+    if !apps.iter().any(|entry| entry.eq_ignore_ascii_case(&name)) {
+        apps.push(name.clone());
+    }
+
+    drop(apps);
+    persist_toolbar_disabled(&state);
+    Ok(Some(name))
 }
 
 #[tauri::command]
