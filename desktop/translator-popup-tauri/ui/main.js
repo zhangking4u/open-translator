@@ -83,6 +83,7 @@ const ttsKokoroModelStatus = document.getElementById("tts-kokoro-model-status");
 const ttsKokoroModelDownload = document.getElementById("tts-kokoro-model-download");
 const ttsKokoroModelDelete = document.getElementById("tts-kokoro-model-delete");
 const ttsSpeakerZhSelect = document.getElementById("tts-speaker-zh");
+const ttsSpeakerZhNote = document.getElementById("tts-speaker-zh-note");
 const ttsSpeakerEnSelect = document.getElementById("tts-speaker-en");
 const ttsSpeakerZhRow = document.getElementById("tts-speaker-zh-row");
 const ttsSpeakerEnRow = document.getElementById("tts-speaker-en-row");
@@ -621,6 +622,150 @@ function buildSpeechParts(sourceText, sourceLang, translation, targetLang) {
   return parts;
 }
 
+// A Chinese phonemizer mangles embedded English words, and English engines
+// skip Han characters, so mixed text is split at script boundaries and each
+// run is synthesized with the matching voice. Common framework names also get
+// the pronunciation people actually use ("Mongo D B", "sequel lite").
+const SPEECH_TERMS = [
+  [/\bMongoDB\b/gi, "Mongo D B"],
+  [/\bPostgreSQL\b/gi, "Postgres Q L"],
+  [/\bMySQL\b/gi, "My S Q L"],
+  [/\bSQLite\b/gi, "sequel lite"],
+  [/\bNginx\b/gi, "engine X"],
+  [/\bNode\.js\b/gi, "Node J S"],
+  [/\.NET\b/g, "dot net"],
+  [/\bVue\b/g, "view"],
+  [/\biOS\b/g, "i O S"],
+  [/\bmacOS\b/g, "Mac O S"],
+  [/\bOpenAI\b/g, "Open A I"],
+  [/\bChatGPT\b/g, "Chat G P T"],
+  [/\bnpm\b/gi, "N P M"],
+  [/\bHTTPS\b/gi, "H T T P S"],
+  [/\bHTTP\b/gi, "H T T P"],
+  [/\bAPI\b/gi, "A P I"],
+  [/\bJSON\b/gi, "Jason"],
+  [/\bGUI\b/gi, "gooey"],
+  [/\bURL\b/gi, "U R L"],
+  [/\bLLM\b/gi, "L L M"],
+  [/\bSQL\b/gi, "S Q L"],
+];
+
+function normalizeSpeechTerms(text) {
+  let value = text;
+
+  for (const [pattern, replacement] of SPEECH_TERMS) {
+    value = value.replace(pattern, replacement);
+  }
+
+  return value;
+}
+
+function mergeSpeechRuns(runs) {
+  const merged = [];
+
+  for (const run of runs) {
+    const text = run.text;
+
+    if (!text) {
+      continue;
+    }
+
+    const previous = merged[merged.length - 1];
+
+    if (previous && previous.lang === run.lang) {
+      previous.text += text;
+    } else {
+      merged.push({ text, lang: run.lang });
+    }
+  }
+
+  return merged
+    .map((run) => ({ ...run, text: run.text.trim() }))
+    .filter((run) => /[A-Za-z0-9\u3400-\u4dbf\u4e00-\u9fff]/.test(run.text));
+}
+
+function splitMixedRuns(text, lang) {
+  const value = String(text || "");
+  const base = languageBase(lang);
+
+  if (!value.trim()) {
+    return [];
+  }
+
+  if (isChineseLang(base)) {
+    const runs = [];
+    const token = /[A-Za-z][A-Za-z0-9+#._/-]*/g;
+    let cursor = 0;
+
+    for (const match of value.matchAll(token)) {
+      const trailing = match[0].match(/[./_-]+$/);
+      const word = trailing ? match[0].slice(0, -trailing[0].length) : match[0];
+
+      if (!word) {
+        continue;
+      }
+
+      const start = match.index;
+      const end = start + word.length;
+
+      if (start > cursor) {
+        runs.push({ text: value.slice(cursor, start), lang: base });
+      }
+
+      runs.push({ text: normalizeSpeechTerms(word), lang: "en" });
+      cursor = end;
+    }
+
+    if (cursor < value.length) {
+      runs.push({ text: value.slice(cursor), lang: base });
+    }
+
+    return mergeSpeechRuns(runs);
+  }
+
+  if (base === "en") {
+    const runs = [];
+    const han = /[\u3400-\u4dbf\u4e00-\u9fff]+/g;
+    let cursor = 0;
+
+    for (const match of value.matchAll(han)) {
+      const start = match.index;
+      const end = start + match[0].length;
+
+      if (start > cursor) {
+        runs.push({
+          text: normalizeSpeechTerms(value.slice(cursor, start)),
+          lang: base,
+        });
+      }
+
+      runs.push({ text: match[0], lang: "zh" });
+      cursor = end;
+    }
+
+    if (cursor < value.length) {
+      runs.push({
+        text: normalizeSpeechTerms(value.slice(cursor)),
+        lang: base,
+      });
+    }
+
+    return mergeSpeechRuns(runs);
+  }
+
+  return [{ text: value, lang }];
+}
+
+function splitMixedParts(parts) {
+  const runs = [];
+
+  for (const part of parts) {
+    runs.push(...splitMixedRuns(part.text, part.lang));
+  }
+
+  return runs;
+}
+
 // Local synthesis runs in one blocking call per chunk. The first part also
 // splits at commas so the first sound arrives quickly; later parts keep whole
 // sentences to avoid choppy prosody.
@@ -631,9 +776,12 @@ function splitLocalSpeech(text, splitCommas = false) {
     return [];
   }
 
+  // Do not break at ASCII periods: they belong to version numbers, file
+  // names and framework names ("v1.2.3", "Node.js"); the length chunker below
+  // only cuts at spaces or CJK punctuation.
   const sentences = splitCommas
-    ? trimmed.match(/[^。！？!?；;\n.，,、]+[。！？!?；;.，,、]?/g) || [trimmed]
-    : trimmed.match(/[^。！？!?；;\n.]+[。！？!?；;.]?/g) || [trimmed];
+    ? trimmed.match(/[^。！？!?；;\n，,、]+[。！？!?；;，,、]?/g) || [trimmed]
+    : trimmed.match(/[^。！？!?；;\n]+[。！？!?；;]?/g) || [trimmed];
   const chunks = [];
 
   for (const sentence of sentences) {
@@ -643,8 +791,26 @@ function splitLocalSpeech(text, splitCommas = false) {
       continue;
     }
 
-    for (let index = 0; index < value.length; index += 60) {
-      chunks.push(value.slice(index, index + 60));
+    // Keep words (especially technical terms) intact at chunk boundaries.
+    for (let index = 0; index < value.length; ) {
+      let end = Math.min(index + 60, value.length);
+
+      if (end < value.length) {
+        const window = value.slice(index, end);
+        const cut = Math.max(
+          window.lastIndexOf(" "),
+          window.lastIndexOf("，"),
+          window.lastIndexOf("、"),
+          window.lastIndexOf(","),
+        );
+
+        if (cut > 20) {
+          end = index + cut + 1;
+        }
+      }
+
+      chunks.push(value.slice(index, end));
+      index = end;
     }
   }
 
@@ -663,7 +829,7 @@ function speakWebviewParts(parts, button, reportError) {
 
   const playable = [];
 
-  for (const part of parts) {
+  for (const part of splitMixedParts(parts)) {
     const voice = pickVoice(part.lang);
 
     if (voice) {
@@ -700,7 +866,7 @@ function speakWebviewParts(parts, button, reportError) {
 async function speakSpdParts(parts, button, reportError) {
   setSpeaking(true, button);
 
-  for (const part of parts) {
+  for (const part of splitMixedParts(parts)) {
     if (!activeSpeechButton) return;
 
     const generation = ++speechGeneration;
@@ -760,12 +926,38 @@ function startLocalSynthesis(chunk, generation) {
     .catch((error) => ({ error }));
 }
 
+// Runs that the installed local models cannot pronounce stay inside the host
+// part's language, so a Chinese-only pack still reads mixed text locally
+// instead of falling back to system speech for the whole selection.
+function localSpeechRuns(parts) {
+  const runs = [];
+
+  for (const part of parts) {
+    if (!localLanguageSupported(part.lang)) {
+      runs.push({ ...part });
+      continue;
+    }
+
+    for (const run of splitMixedRuns(part.text, part.lang)) {
+      if (localLanguageSupported(run.lang)) {
+        runs.push({ ...run });
+      } else if (runs.length) {
+        runs[runs.length - 1].text += " " + run.text;
+      } else {
+        runs.push({ text: run.text, lang: languageBase(part.lang) });
+      }
+    }
+  }
+
+  return runs;
+}
+
 async function speakLocalParts(parts, button, reportError) {
   const generation = ++speechGeneration;
   const chunks = [];
   let firstPart = true;
 
-  for (const part of parts) {
+  for (const part of localSpeechRuns(parts)) {
     const partChunks = splitLocalSpeech(part.text, firstPart);
 
     if (partChunks.length) {
@@ -1169,7 +1361,16 @@ function syncTtsRows() {
   ttsMultiSpeakerRow.hidden = !local || !ttsSupertonicInstalled;
   ttsVitsModelRow.hidden = !local;
   ttsKokoroModelRow.hidden = !local;
-  ttsSpeakerZhRow.hidden = !local || !natural || !ttsKokoroInstalled;
+  const kokoroChinese = natural && ttsKokoroInstalled;
+
+  // MeloTTS ships a single fixed speaker; keep the row visible with an
+  // explanation instead of hiding it, which reads like a missing feature.
+  ttsSpeakerZhRow.hidden = !local;
+  ttsSpeakerZhSelect.hidden = !kokoroChinese;
+  ttsSpeakerZhNote.hidden = kokoroChinese;
+  ttsSpeakerZhNote.textContent = natural
+    ? "Kokoro 未下载"
+    : "MeloTTS 为固定音色";
   ttsSpeakerEnRow.hidden =
     !local || ttsSupertonicInstalled || !ttsKokoroInstalled;
   ttsVoiceRow.hidden =

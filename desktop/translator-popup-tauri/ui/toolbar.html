@@ -9,6 +9,17 @@
   </head>
   <body data-menu="closed">
     <div class="toolbar" role="toolbar" aria-label="划词操作">
+      <div class="grip" id="grip" title="拖动工具栏" aria-hidden="true">
+        <svg viewBox="0 0 10 16">
+          <circle cx="3" cy="3" r="1.2" />
+          <circle cx="7" cy="3" r="1.2" />
+          <circle cx="3" cy="8" r="1.2" />
+          <circle cx="7" cy="8" r="1.2" />
+          <circle cx="3" cy="13" r="1.2" />
+          <circle cx="7" cy="13" r="1.2" />
+        </svg>
+      </div>
+
       <button class="action primary" id="translate" type="button" title="翻译选中文本">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="m5 8 6 6" />
@@ -38,22 +49,41 @@
         <span>朗读</span>
       </button>
 
+      <span class="spacer"></span>
+
       <button
         class="more"
         id="more"
         type="button"
-        title="更多"
+        title="更多选项"
         aria-haspopup="menu"
         aria-expanded="false"
-        aria-label="更多"
+        aria-label="更多选项"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 12h.01" />
+          <path d="M12 12h.01" />
+          <path d="M19 12h.01" />
+        </svg>
+      </button>
+
+      <button
+        class="more close"
+        id="close"
+        type="button"
+        title="关闭工具栏"
+        aria-label="关闭工具栏"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12" />
+          <path d="M18 6 6 18" />
+        </svg>
       </button>
     </div>
 
     <div class="menu" id="menu" role="menu" hidden>
       <button id="disable-app" type="button" role="menuitem" hidden>在此应用禁用</button>
-      <button id="disable-all" type="button" role="menuitem">关闭划词工具栏</button>
+      <button id="disable-all" type="button" role="menuitem">停用划词翻译</button>
     </div>
 
     <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>

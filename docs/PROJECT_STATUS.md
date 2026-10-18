@@ -890,3 +890,13 @@ Firefox extension MVP implemented and verified manually (context menu and `Alt+S
 - Voice rows preview automatically on hover or selection, and the multi row has an explicit 试听 button; preview samples use the current target language (falling back to English) and are cached per voice/language.
 - Real synthesis on the dev machine: Supertonic 10 speakers at 44.1 kHz, English ~5.1 s for 4.95 s audio on the first run (including initialization); Japanese synthesis also verified.
 - Verified: `core/tts` 8 tests, `translator-core` 85 tests, Tauri 24+1 tests, frontend syntax check. The release client was rebuilt and installed on the dev machine.
+
+
+## Linux client verification fixes (2026-10-18)
+
+- Fixed the missing `input` window on Linux/macOS: platform configs replace `app.windows` wholesale and only declared `main`, so tray 设置/历史 and `--settings`/`--history` silently did nothing. Both platform configs now declare `input`; `tests/window_capabilities.rs` checks that every platform config keeps every base window and that its windows stay covered by a capability.
+- System read-aloud stops reliably on Linux: speech-dispatcher 0.12 rejects the long `--stop`/`--cancel` forms ("option requires an argument"), so the client uses `-S`/`-C` and discards the helper output instead of spamming the log.
+- Mixed Chinese/English speech is split into script runs and routed to the matching voice: Han inside English is no longer skipped, and Latin terms inside Chinese stop being read with Chinese phonemes. Common framework names are respelled ("Mongo D B", "Postgres Q L", "sequel lite", "engine X", "Node J S", ...). This applies to the card, input window and selection toolbar; local synthesis pipelines the next run, and runs without a local engine fall back into the host language so a Chinese-only pack still reads mixed text locally.
+- Selection toolbar (Linux X11/XWayland): outside-click dismissal polls `XQueryPointer` (30 ms) while visible, with the 10 s timeout as fallback; the six-dot grip drags the bar through `move_toolbar_by` (clamped to the work area, not re-anchored when the menu collapses); a visible × hides the current bar, `⋯` replaces the ambiguous `−`, and the global action is labelled 停用划词翻译. Read-aloud holds the toolbar timeout so long readings are not cut off, and its language follows the selected text rather than the configured translation source.
+- Settings: the 语音包 entry is now 语音包与音色; 中文音色 stays visible and explains MeloTTS's fixed voice; notes state that Supertonic 3 does not include Chinese.
+- Verified on the Ubuntu dev machine: `cargo test --test window_capabilities` (2 tests), JSON/JS syntax checks, real-model synthesis for Kokoro/MeloTTS/Supertonic, and a rebuilt deb installed and restarted.

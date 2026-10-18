@@ -380,7 +380,7 @@
           </div>
         </div>
         <button id="open-voice-packs-settings" class="setting-row nav-row" type="button">
-          <span class="setting-name">语音包</span>
+          <span class="setting-name">语音包与音色</span>
           <span class="nav-value">
             <span id="settings-voice-packs-summary" class="dim-text"></span>
             <svg class="nav-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
@@ -393,13 +393,13 @@
           </div>
         </div>
       </div>
-      <p class="group-note">本地语音包在「语音包」中管理；未安装时自动回退系统语音。</p>
+      <p class="group-note">本地语音包与音色在「语音包与音色」中管理；未安装时自动回退系统语音。多语种模型不含中文，中文使用「中文引擎」的音色。</p>
     </div>
 
     <div id="settings-voice-packs-view" hidden>
       <div class="page-head">
         <button id="settings-voice-packs-back" class="back-button" type="button" aria-label="返回语音">‹</button>
-        <span class="page-title">语音包</span>
+        <span class="page-title">语音包与音色</span>
         <span class="spacer"></span>
       </div>
 
@@ -409,7 +409,7 @@
           <span class="setting-name">多语种模型</span>
           <div class="setting-control">
             <span id="tts-supertonic-model-status" class="dim-text">未下载</span>
-            <button id="tts-supertonic-model-download" class="setting-action" type="button" title="下载 Supertonic 3 多语种语音模型（31 种语言，约 145 MB，OpenRAIL）">下载</button>
+            <button id="tts-supertonic-model-download" class="setting-action" type="button" title="下载 Supertonic 3 多语种语音模型（31 种语言，不含中文，约 145 MB，OpenRAIL）">下载</button>
             <button id="tts-supertonic-model-delete" class="icon-button model-delete" type="button" title="删除 Supertonic 语音包" aria-label="删除 Supertonic 语音包" hidden>
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"></path><path d="M9 7V5h6v2"></path><path d="M6 7l1 13h10l1-13"></path></svg>
             </button>
@@ -442,7 +442,7 @@
         <div class="setting-row" id="tts-multi-speaker-row" hidden>
           <span class="setting-name">多语种音色</span>
           <div class="setting-control">
-            <select id="tts-speaker-multi" class="setting-select" title="多语种音色（悬停或选择会自动试听）"></select>
+            <select id="tts-speaker-multi" class="setting-select" title="多语种音色（Supertonic 3，不含中文；悬停或选择会自动试听）"></select>
             <button id="tts-multi-preview" class="setting-action" type="button" title="试听当前多语种音色">试听</button>
           </div>
         </div>
@@ -450,6 +450,7 @@
           <span class="setting-name">中文音色</span>
           <div class="setting-control">
             <select id="tts-speaker-zh" class="setting-select" title="中文音色"></select>
+            <span id="tts-speaker-zh-note" class="dim-text" hidden></span>
           </div>
         </div>
         <div class="setting-row" id="tts-speaker-en-row" hidden>
@@ -459,7 +460,7 @@
           </div>
         </div>
       </div>
-      <p class="group-note">模型只在需要时下载并校验；未安装时自动回退系统语音。音色悬停或选择会试听。</p>
+      <p class="group-note">多语种音色覆盖 31 种语言但不含中文；中文使用「中文音色」（MeloTTS / Kokoro）。模型只在需要时下载并校验；未安装时自动回退系统语音。音色悬停或选择会试听。</p>
     </div>
 
     <div id="settings-system-view" hidden>

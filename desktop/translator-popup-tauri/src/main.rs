@@ -119,6 +119,9 @@ struct AppState {
     /// Mirrors the toolbar window visibility for the native mouse callback,
     /// which must not call blocking Tauri getters.
     toolbar_visible: AtomicBool,
+    /// The user dragged the toolbar away from its selection anchor; keeping
+    /// the menu from re-anchoring it on collapse preserves that position.
+    toolbar_moved: AtomicBool,
     /// The watcher ignores selections until this instant after a hotkey
     /// trigger (the hotkey captures the same selection itself).
     suppress_until: Mutex<Option<Instant>>,
@@ -468,6 +471,7 @@ fn main() {
             ball_generation: AtomicU64::new(0),
             toolbar_generation: AtomicU64::new(0),
             toolbar_visible: AtomicBool::new(false),
+            toolbar_moved: AtomicBool::new(false),
             suppress_until: Mutex::new(None),
             translation_queue: translator_core::latest_wins::LatestWins::new(),
             popup: AtomicBool::new(false),
@@ -588,6 +592,7 @@ fn main() {
             autostart_enabled,
             set_autostart,
             move_ball_by,
+            move_toolbar_by,
             save_ball_position,
             move_caption_by,
             save_caption_position,
@@ -1581,8 +1586,83 @@ fn show_toolbar(
     app.state::<AppState>()
         .toolbar_visible
         .store(true, Ordering::SeqCst);
+    app.state::<AppState>()
+        .toolbar_moved
+        .store(false, Ordering::SeqCst);
 
     arm_toolbar_timeout(app, generation);
+
+    #[cfg(target_os = "linux")]
+    spawn_toolbar_dismiss_watch(app.clone(), generation);
+}
+
+/// X11 has no low-level mouse hook, but XWayland tracks the pointer in root
+/// coordinates even over native Wayland surfaces, so the same signal that
+/// anchors the toolbar also sees a click outside it. Poll while the toolbar is
+/// visible; the timeout stays as the fallback when the pointer state is not
+/// observable.
+#[cfg(target_os = "linux")]
+fn spawn_toolbar_dismiss_watch(app: AppHandle, generation: u64) {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{ConnectionExt as _, KeyButMask};
+
+    std::thread::spawn(move || {
+        let Ok((connection, screen_num)) = x11rb::connect(None) else {
+            return;
+        };
+        let root = connection.setup().roots[screen_num].root;
+
+        // A selection drag may still hold the button while the offer appears;
+        // start pressed so only a new press dismisses.
+        let mut pressed = true;
+
+        loop {
+            std::thread::sleep(Duration::from_millis(30));
+
+            let state = app.state::<AppState>();
+
+            if state.toolbar_generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
+
+            let visible = state.toolbar_visible.load(Ordering::SeqCst);
+            drop(state);
+
+            if !visible {
+                return;
+            }
+
+            let Ok(cookie) = connection.query_pointer(root) else {
+                continue;
+            };
+            let Ok(reply) = cookie.reply() else {
+                continue;
+            };
+
+            let down = reply.mask.contains(KeyButMask::BUTTON1);
+
+            if down && !pressed {
+                if let Some(toolbar) = app.get_webview_window("toolbar") {
+                    if let (Ok(position), Ok(size)) =
+                        (toolbar.outer_position(), toolbar.outer_size())
+                    {
+                        let (x, y) = (reply.root_x as i32, reply.root_y as i32);
+                        let inside = x >= position.x
+                            && x < position.x + size.width as i32
+                            && y >= position.y
+                            && y < position.y + size.height as i32;
+
+                        if !inside {
+                            hide_toolbar(&app);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            pressed = down;
+        }
+    });
 }
 
 /// Hides the toolbar after the timeout unless a newer generation superseded
@@ -1694,7 +1774,15 @@ fn toolbar_speech(app: AppHandle) -> Option<ToolbarSpeech> {
         .unwrap()
         .source
         .clone();
-    let (lang, _) = translator_core::detect::resolve_source(&source, &pending.text);
+
+    // Read the selection in its own language: the configured translation
+    // source may point the other way (e.g. 英译中 with a Chinese selection),
+    // which would otherwise pick a voice for the wrong language.
+    let lang = translator_core::detect::detect(&pending.text)
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            translator_core::detect::resolve_source(&source, &pending.text).0
+        });
 
     Some(ToolbarSpeech {
         text: pending.text,
@@ -1791,15 +1879,19 @@ fn toolbar_expanded(app: AppHandle, expanded: bool) {
     let _ = toolbar.set_size(LogicalSize::new(TOOLBAR_WIDTH, height));
 
     if !expanded {
-        if let Some(anchor) = app
-            .state::<AppState>()
-            .pending_selection
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|pending| pending.anchor)
-        {
-            place_toolbar_window(&app, anchor);
+        let moved = app.state::<AppState>().toolbar_moved.load(Ordering::SeqCst);
+
+        if !moved {
+            if let Some(anchor) = app
+                .state::<AppState>()
+                .pending_selection
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|pending| pending.anchor)
+            {
+                place_toolbar_window(&app, anchor);
+            }
         }
     }
 }
@@ -3330,6 +3422,47 @@ fn save_selection_method(value: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Live drag of the selection toolbar (deltas in logical pixels from
+/// `toolbar.js`); the toolbar is non-focusable, so this moves its native
+/// window directly instead of starting a compositor move loop.
+#[tauri::command]
+fn move_toolbar_by(app: AppHandle, dx: f64, dy: f64) {
+    let Some(toolbar) = app.get_webview_window("toolbar") else {
+        return;
+    };
+
+    let Ok(position) = toolbar.outer_position() else {
+        return;
+    };
+
+    let scale = toolbar.scale_factor().unwrap_or(1.0);
+    let mut x = position.x + (dx * scale).round() as i32;
+    let mut y = position.y + (dy * scale).round() as i32;
+
+    if let Some(monitor) = toolbar
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| toolbar.primary_monitor().ok().flatten())
+    {
+        let work = monitor.work_area();
+        let Ok(size) = toolbar.outer_size().or_else(|_| toolbar.inner_size()) else {
+            return;
+        };
+        let margin = (4.0 * monitor.scale_factor()) as i32;
+        let max_x = work.position.x + work.size.width as i32 - size.width as i32 - margin;
+        let max_y = work.position.y + work.size.height as i32 - size.height as i32 - margin;
+
+        x = x.clamp(work.position.x + margin, max_x.max(work.position.x + margin));
+        y = y.clamp(work.position.y + margin, max_y.max(work.position.y + margin));
+    }
+
+    app.state::<AppState>()
+        .toolbar_moved
+        .store(true, Ordering::SeqCst);
+    let _ = toolbar.set_position(PhysicalPosition::new(x, y));
+}
+
 /// Live drag of the docked ball (deltas in logical pixels from `ball.js`).
 #[tauri::command]
 fn move_ball_by(app: AppHandle, dx: f64, dy: f64) {
@@ -3717,10 +3850,22 @@ fn speak_text(
 fn stop_speaking() {
     #[cfg(target_os = "linux")]
     {
-        // `--stop` stops the currently spoken message, `--cancel` clears
-        // anything still queued for the connection.
-        spawn_reaped(std::process::Command::new("spd-say").arg("--stop"));
-        spawn_reaped(std::process::Command::new("spd-say").arg("--cancel"));
+        // `-S` stops the currently spoken message, `-C` clears anything still
+        // queued for the connection. The short options are used because
+        // speech-dispatcher 0.12 rejects the long `--stop`/`--cancel` forms on
+        // some distro builds ("option requires an argument").
+        spawn_reaped(
+            std::process::Command::new("spd-say")
+                .arg("-S")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null()),
+        );
+        spawn_reaped(
+            std::process::Command::new("spd-say")
+                .arg("-C")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null()),
+        );
     }
 }
 

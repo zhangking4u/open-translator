@@ -2947,3 +2947,11 @@ Mobile client.
   dialog asks for confirmation (删除/取消) before `delete_tts_model` unloads the
   local engines and removes the pack directory; the status event refreshes the
   row and the 已就绪 count. Re-download remains available on the same row.
+
+## Linux verification fixes (2026-10-18)
+
+- The platform Tauri configs replaced `app.windows` with only `main`, so the new `input` window never existed on Linux/macOS and settings/history requests were no-ops. Added `input` to `tauri.linux.conf.json`/`tauri.macos.conf.json` and extended `tests/window_capabilities.rs` to compare platform windows with the base config and capabilities.
+- TTS: `spd-say -S/-C` replaces the long stop/cancel flags rejected by speech-dispatcher 0.12; mixed Chinese/English text is split into script runs for per-language voices (with a small framework-name pronunciation map), chunking no longer breaks at ASCII periods, and unsupported local runs fold into the host language. The toolbar holds its auto-hide timer while speaking and detects the selection's own language.
+- Selection toolbar: X11 outside-click polling, a six-dot drag grip backed by `move_toolbar_by`, a visible × close button, and `⋯` instead of `−` for the options menu (global action renamed 停用划词翻译).
+- Voice settings: the packs page is now 语音包与音色, the 中文音色 row explains MeloTTS's single fixed voice, and the Supertonic notes mention the missing Chinese support.
+- Verification: `cargo test --test window_capabilities`, `node --check ui/main.js ui/toolbar.js`, `python3 -m json.tool` on the Tauri configs, real TTS model tests, then `packaging/linux/make-deb.sh` + install/restart on the dev machine.

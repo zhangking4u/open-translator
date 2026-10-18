@@ -13,6 +13,17 @@
         "skipTaskbar": true,
         "shadow": false,
         "transparent": true
+      },
+      {
+        "label": "input",
+        "title": "输入翻译",
+        "width": 520,
+        "height": 360,
+        "visible": false,
+        "decorations": false,
+        "resizable": false,
+        "shadow": false,
+        "transparent": true
       }
     ]
   }

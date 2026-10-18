@@ -28,6 +28,36 @@ body {
     0 8px 24px rgba(0, 0, 0, 0.18);
 }
 
+.grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 30px;
+  flex: none;
+  border-radius: 6px;
+  color: var(--ot-label-3);
+  cursor: grab;
+}
+
+.grip:hover {
+  color: var(--ot-label-2);
+}
+
+.grip:active {
+  cursor: grabbing;
+}
+
+.grip svg {
+  width: 10px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.spacer {
+  flex: 1;
+}
+
 .action {
   display: flex;
   align-items: center;
@@ -111,6 +141,17 @@ body {
 .more:hover,
 body[data-menu="open"] .more {
   background: var(--ot-fill-hover);
+  color: var(--ot-label);
+}
+
+.close {
+  margin-left: 0;
+  background: transparent;
+  color: var(--ot-label-3);
+}
+
+.close:hover {
+  background: var(--ot-fill);
   color: var(--ot-label);
 }
 
