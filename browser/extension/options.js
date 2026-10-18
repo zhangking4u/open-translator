@@ -100,9 +100,7 @@ api.storage.local.get(DEFAULTS).then((settings) => {
   renderSites();
 });
 
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
-
+function settingsFromForm() {
   const minLength = Math.min(
     50,
     Math.max(1, Number(autoMinLengthInput.value) || DEFAULTS.autoTranslateMinLength)
@@ -112,24 +110,66 @@ form.addEventListener("submit", (event) => {
     Math.max(1, Number(typeMinLengthInput.value) || DEFAULTS.typeTranslateMinLength)
   );
 
-  api.storage.local
-    .set({
-      serviceUrl: serviceUrlInput.value.trim() || DEFAULTS.serviceUrl,
-      source: sourceInput.value,
-      target: targetInput.value,
-      autoTranslate: autoTranslateInput.checked,
-      autoTranslateMinLength: minLength,
-      autoTranslateDelay: Number(autoDelayInput.value) || DEFAULTS.autoTranslateDelay,
-      typeTranslate: typeTranslateInput.checked,
-      typeTranslateMinLength: typeMinLength,
-      typeTranslateDelay:
-        Number(typeDelayInput.value) || DEFAULTS.typeTranslateDelay,
-    })
-    .then(() => {
-      autoMinLengthInput.value = String(minLength);
-      typeMinLengthInput.value = String(typeMinLength);
-      statusEl.textContent = "已保存。";
-    });
+  return {
+    serviceUrl: serviceUrlInput.value.trim() || DEFAULTS.serviceUrl,
+    source: sourceInput.value,
+    target: targetInput.value,
+    autoTranslate: autoTranslateInput.checked,
+    autoTranslateMinLength: minLength,
+    autoTranslateDelay: Number(autoDelayInput.value) || DEFAULTS.autoTranslateDelay,
+    typeTranslate: typeTranslateInput.checked,
+    typeTranslateMinLength: typeMinLength,
+    typeTranslateDelay:
+      Number(typeDelayInput.value) || DEFAULTS.typeTranslateDelay,
+  };
+}
+
+async function saveSettings() {
+  const url = serviceUrlInput.value.trim();
+
+  if (url && !serviceUrlInput.checkValidity()) {
+    statusEl.textContent = "请输入有效的服务地址";
+    return;
+  }
+
+  const settings = settingsFromForm();
+  await api.storage.local.set(settings);
+  autoMinLengthInput.value = String(settings.autoTranslateMinLength);
+  typeMinLengthInput.value = String(settings.typeTranslateMinLength);
+  statusEl.textContent = "已保存";
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveSettings();
+});
+
+for (const element of form.elements) {
+  if (element.matches("input, select")) {
+    element.addEventListener("change", saveSettings);
+  }
+}
+
+document.getElementById("reset").addEventListener("click", async () => {
+  serviceUrlInput.value = DEFAULTS.serviceUrl;
+  sourceInput.value = DEFAULTS.source;
+  targetInput.value = DEFAULTS.target;
+  autoTranslateInput.checked = DEFAULTS.autoTranslate;
+  autoMinLengthInput.value = String(DEFAULTS.autoTranslateMinLength);
+  autoDelayInput.value = String(DEFAULTS.autoTranslateDelay);
+  typeTranslateInput.checked = DEFAULTS.typeTranslate;
+  typeMinLengthInput.value = String(DEFAULTS.typeTranslateMinLength);
+  typeDelayInput.value = String(DEFAULTS.typeTranslateDelay);
+  disabledSites = [];
+  renderSites();
+
+  if (globalThis.OTSelect) {
+    OTSelect.sync(sourceInput);
+    OTSelect.sync(targetInput);
+  }
+
+  await api.storage.local.set(DEFAULTS);
+  statusEl.textContent = "已恢复默认设置";
 });
 
 document.getElementById("test").addEventListener("click", async () => {

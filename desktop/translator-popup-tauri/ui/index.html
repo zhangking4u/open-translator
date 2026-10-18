@@ -155,17 +155,32 @@
       </div>
 
       <div id="input-result" class="input-result" hidden>
-        <button id="input-source-preview" class="input-source-preview" type="button" title="编辑原文"></button>
+        <button id="input-source-preview" class="input-source-preview" type="button" title="编辑原文">
+          <span id="input-source-text" class="input-source-text"></span>
+          <span class="input-source-edit">编辑</span>
+        </button>
         <div class="input-divider"></div>
         <div id="input-result-text" class="input-output"></div>
         <div id="input-alternatives" class="input-alternatives" hidden></div>
         <div class="input-foot">
           <span id="input-saved" class="ok-text" hidden>已复制</span>
           <span class="spacer"></span>
-          <button id="input-speak" class="input-secondary" type="button" hidden>朗读</button>
-          <button id="input-alternate" class="input-secondary" type="button">换一种译法</button>
-          <button id="input-retranslate" class="input-secondary" type="button">重新翻译</button>
-          <button id="input-copy" class="primary input-primary" type="button">复制</button>
+          <div class="input-actions">
+            <button
+              id="input-more"
+              class="input-more"
+              type="button"
+              aria-label="更多操作"
+              aria-haspopup="menu"
+              aria-expanded="false"
+            >⋯</button>
+            <div id="input-actions-menu" class="input-actions-menu" role="menu" hidden>
+              <button id="input-speak" class="input-menu-item" type="button" role="menuitem" hidden>朗读</button>
+              <button id="input-alternate" class="input-menu-item" type="button" role="menuitem">换个说法</button>
+              <button id="input-retranslate" class="input-menu-item" type="button" role="menuitem">重试</button>
+            </div>
+            <button id="input-copy" class="primary input-primary" type="button">复制</button>
+          </div>
         </div>
       </div>
     </div>
@@ -178,6 +193,21 @@
         </div>
 
         <p class="group-title">翻译</p>
+        <div class="group">
+          <label class="setting-row switch-row">
+            <span class="setting-name">自动复制翻译</span>
+            <input
+              type="checkbox"
+              id="switch-auto-copy"
+              class="switch"
+              role="switch"
+              aria-checked="false"
+              title="翻译完成后自动把结果写入剪贴板。"
+            />
+          </label>
+        </div>
+
+        <p class="group-title" id="selection-title">划词与快捷键</p>
         <div class="group" id="selection-group">
           <label class="setting-row switch-row">
             <span class="setting-name">划词翻译</span>
@@ -268,17 +298,6 @@
               <span id="ocr-hotkey-error" class="error-text" hidden></span>
             </div>
           </div>
-          <label class="setting-row switch-row">
-            <span class="setting-name">自动复制翻译</span>
-            <input
-              type="checkbox"
-              id="switch-auto-copy"
-              class="switch"
-              role="switch"
-              aria-checked="false"
-              title="翻译完成后自动把结果写入剪贴板。"
-            />
-          </label>
         </div>
 
         <p class="group-title" id="tts-title">语音</p>
@@ -586,6 +605,43 @@
           <button id="history-clear" class="setting-row danger-row" type="button" hidden>
             清空历史
           </button>
+        </div>
+      </div>
+
+      <div id="onboarding" class="onboarding" hidden>
+        <div
+          class="onboarding-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="onboarding-title"
+        >
+          <p class="onboarding-eyebrow">OpenTranslator</p>
+          <h2 id="onboarding-title" class="onboarding-title">三种方式，随时翻译</h2>
+          <p class="onboarding-sub">选中文字或直接输入，译文只在本机生成。</p>
+          <div class="onboarding-list">
+            <div class="onboarding-item">
+              <span class="onboarding-icon" aria-hidden="true">译</span>
+              <div>
+                <strong>划词翻译</strong>
+                <span>选中文字后按 <kbd id="onboarding-hotkey">Ctrl+Alt+T</kbd></span>
+              </div>
+            </div>
+            <div class="onboarding-item">
+              <span class="onboarding-icon" aria-hidden="true">✎</span>
+              <div>
+                <strong>输入翻译</strong>
+                <span>按 <kbd id="onboarding-input-hotkey">Ctrl+Alt+I</kbd> 打开这个窗口</span>
+              </div>
+            </div>
+            <div class="onboarding-item" id="onboarding-ocr">
+              <span class="onboarding-icon" aria-hidden="true">▣</span>
+              <div>
+                <strong>截图取字</strong>
+                <span>按 <kbd id="onboarding-ocr-hotkey">Ctrl+Alt+Z</kbd> 框选屏幕文字并复制</span>
+              </div>
+            </div>
+          </div>
+          <button id="onboarding-done" class="primary onboarding-done" type="button">开始使用</button>
         </div>
       </div>
 

@@ -27,18 +27,22 @@
     button:hover { background: var(--ot-fill-hover); }
     button:focus-visible { outline: 2px solid var(--ot-accent); outline-offset: 1px; }
     .row button { flex: 1; }
+    #translateSelection { width: 100%; margin: 0 0 10px; background: var(--ot-accent); color: #ffffff; font-weight: 600; }
+    #translateSelection:hover { background: var(--ot-accent); filter: brightness(1.05); }
     #history { list-style: none; margin: 0; padding: 0; max-height: 168px; overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(120,120,128,.4) transparent; }
     #history::-webkit-scrollbar { width: 6px; }
     #history::-webkit-scrollbar-thumb { background: rgba(120,120,128,.4); border-radius: 3px; }
     #history li { margin-bottom: 2px; }
     #history .entry { display: block; width: 100%; text-align: left; padding: 5px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; }
     #history .entry:hover { background: var(--ot-fill); }
+    #history .empty { padding: 4px 8px; color: var(--ot-label-2); font-size: 12px; }
     .hint { color: var(--ot-label-2); font-size: 11px; margin: 10px 0 0; }
   </style>
 </head>
 <body>
   <h1>OpenTranslator</h1>
-  <p id="status">检查服务状态…</p>
+  <p id="status" role="status">检查服务状态…</p>
+  <button type="button" id="translateSelection">翻译选中文本</button>
   <label>目标语言
     <select id="target"></select>
   </label>

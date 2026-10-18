@@ -36,6 +36,7 @@ const inputTranslate = document.getElementById("input-translate");
 const inputError = document.getElementById("input-error");
 const inputResult = document.getElementById("input-result");
 const inputSourcePreview = document.getElementById("input-source-preview");
+const inputSourceText = document.getElementById("input-source-text");
 const inputResultText = document.getElementById("input-result-text");
 const inputCopy = document.getElementById("input-copy");
 const inputRetranslate = document.getElementById("input-retranslate");
@@ -43,6 +44,10 @@ const inputSaved = document.getElementById("input-saved");
 const inputAlternate = document.getElementById("input-alternate");
 const inputAlternativesContainer = document.getElementById("input-alternatives");
 const inputSpeak = document.getElementById("input-speak");
+const inputMore = document.getElementById("input-more");
+const inputActionsMenu = document.getElementById("input-actions-menu");
+const onboarding = document.getElementById("onboarding");
+const onboardingDone = document.getElementById("onboarding-done");
 const ttsTargetSelect = document.getElementById("tts-target");
 const ttsRateSelect = document.getElementById("tts-rate");
 const ttsVoiceSelect = document.getElementById("tts-voice");
@@ -74,6 +79,7 @@ const selectionMethodSelect = document.getElementById("selection-method");
 const selectionMethodRow = document.getElementById("selection-method-row");
 const selectionSaved = document.getElementById("selection-saved");
 const selectionGroup = document.getElementById("selection-group");
+const selectionTitle = document.getElementById("selection-title");
 const toolbarDisabledRow = document.getElementById("toolbar-disabled-row");
 const toolbarDisabledList = document.getElementById("toolbar-disabled-list");
 const switchAutostart = document.getElementById("switch-autostart");
@@ -1471,6 +1477,66 @@ inputCopy.addEventListener("click", async () => {
   flashInputSaved();
 });
 
+onboardingDone.addEventListener("click", dismissOnboarding);
+onboarding.addEventListener("keydown", (event) => {
+  if (event.key === "Tab") {
+    event.preventDefault();
+    onboardingDone.focus();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    dismissOnboarding();
+  }
+});
+
+function setInputMenu(open) {
+  inputActionsMenu.hidden = !open;
+  inputMore.setAttribute("aria-expanded", String(open));
+
+  if (open) {
+    const first = inputActionsMenu.querySelector(
+      "button:not([hidden]):not(:disabled)"
+    );
+    if (first) first.focus();
+  }
+}
+
+inputMore.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setInputMenu(inputActionsMenu.hidden);
+});
+
+inputActionsMenu.addEventListener("click", (event) => {
+  const item = event.target.closest("button");
+  if (!item || item.disabled) return;
+  // 换个说法 keeps the menu open so its progress text stays visible.
+  if (item !== inputAlternate) setInputMenu(false);
+});
+
+document.addEventListener("click", (event) => {
+  if (
+    inputActionsMenu.hidden ||
+    inputMore.contains(event.target) ||
+    inputActionsMenu.contains(event.target)
+  ) {
+    return;
+  }
+
+  setInputMenu(false);
+});
+
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key !== "Escape" || inputActionsMenu.hidden) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setInputMenu(false);
+    inputMore.focus();
+  },
+  true
+);
+
 inputAlternate.addEventListener("click", async () => {
   if (inputAlternateBusy || inputAlternatives.length >= 2 || !inputResultContext) {
     return;
@@ -1562,7 +1628,41 @@ inputSourcePreview.addEventListener("click", () => {
   inputText.focus();
 });
 
+function showOnboardingIfNeeded() {
+  if (!isInputWindow) {
+    return;
+  }
+
+  let seen = false;
+
+  try {
+    seen = localStorage.getItem("ot.onboarding.done") === "1";
+  } catch {
+    seen = false;
+  }
+
+  if (seen) {
+    return;
+  }
+
+  onboarding.hidden = false;
+  onboardingDone.focus();
+}
+
+function dismissOnboarding() {
+  onboarding.hidden = true;
+
+  try {
+    localStorage.setItem("ot.onboarding.done", "1");
+  } catch {
+    // The overlay still closes for this session when storage is unavailable.
+  }
+
+  inputText.focus();
+}
+
 function showInputHome() {
+  setInputMenu(false);
   showView("input");
   inputText.focus();
 }
@@ -1570,7 +1670,7 @@ function showInputHome() {
 function openInputCompose() {
   inputText.value = "";
   inputResultText.textContent = "";
-  inputSourcePreview.textContent = "";
+  inputSourceText.textContent = "";
   inputSaved.hidden = true;
   showInputError("");
   showInputCompose();
@@ -1589,7 +1689,7 @@ function showInputEntry(entry) {
 
   syncInputLanguages();
   inputText.value = entry.text;
-  inputSourcePreview.textContent = entry.text.replace(/\s+/g, " ");
+  inputSourceText.textContent = entry.text.replace(/\s+/g, " ");
   inputSourcePreview.title = "编辑原文：" + entry.text;
   inputResultText.textContent = entry.translation;
   inputSaved.hidden = true;
@@ -1603,6 +1703,7 @@ function showInputEntry(entry) {
     target: entry.target,
   };
   clearInputAlternatives();
+  setInputMenu(false);
   updateInputActions();
   updateInputSpeak();
   showView("input");
@@ -1612,6 +1713,7 @@ function showInputCompose() {
   inputGeneration += 1;
   inputResultContext = null;
   clearInputAlternatives();
+  setInputMenu(false);
   inputCompose.hidden = false;
   inputResult.hidden = true;
 }
@@ -1631,7 +1733,7 @@ function updateInputAlternateButton() {
     ? "生成中…"
     : full
       ? "已生成 2 个备选"
-      : "换一种译法";
+      : "换个说法";
 }
 
 function renderInputAlternatives() {
@@ -1673,6 +1775,10 @@ function renderInputAlternatives() {
 
   inputAlternativesContainer.hidden = inputAlternatives.length === 0;
   updateInputAlternateButton();
+
+  if (!inputAlternativesContainer.hidden) {
+    setInputMenu(false);
+  }
 }
 
 function updateInputActions() {
@@ -1711,6 +1817,7 @@ async function doInputTranslate() {
   const target = inputTarget.value;
   const generation = ++inputGeneration;
   inputResultContext = null;
+  setInputMenu(false);
   clearInputAlternatives();
   inputTranslate.disabled = true;
   inputRetranslate.disabled = true;
@@ -1730,7 +1837,7 @@ async function doInputTranslate() {
     }
 
     inputResultText.textContent = result.translation;
-    inputSourcePreview.textContent = text.replace(/\s+/g, " ");
+    inputSourceText.textContent = text.replace(/\s+/g, " ");
     inputSourcePreview.title = "编辑原文：" + text;
     inputCompose.hidden = true;
     inputResult.hidden = false;
@@ -1749,7 +1856,7 @@ async function doInputTranslate() {
   } finally {
     if (generation === inputGeneration) {
       inputTranslate.textContent = "翻译";
-      inputRetranslate.textContent = "重新翻译";
+      inputRetranslate.textContent = "重试";
       inputRetranslate.disabled = false;
       updateInputActions();
     }
@@ -2518,6 +2625,7 @@ function applySelectionSettings(settings) {
     : [];
   removeUnsupportedSelectionOptions(settings);
   selectionGroup.hidden = !settings.selection_supported;
+  selectionTitle.hidden = !settings.selection_supported;
 
   switchSelection.checked = selectionModeValue !== "off";
   switchSelection.setAttribute("aria-checked", String(switchSelection.checked));
@@ -2703,6 +2811,7 @@ async function applySettingsToUi(settings) {
 }
 
 async function openSettings() {
+  if (!onboarding.hidden) dismissOnboarding();
   const settings = await invoke("get_settings");
   await applySettingsToUi(settings);
 
@@ -2723,6 +2832,7 @@ async function showAbout() {
 }
 
 async function openHistory() {
+  if (!onboarding.hidden) dismissOnboarding();
   await loadHistory();
   renderHistory();
   showView("history");
@@ -3069,6 +3179,10 @@ listen("update-error", (event) => {
 });
 
 if (!isInputWindow) {
+  // The selection card is a result surface; settings and history live in the
+  // primary input window.
+  document.getElementById("open-history").hidden = true;
+  document.getElementById("open-settings").hidden = true;
   showWaiting();
   setDot("loading");
   resize();
@@ -3078,6 +3192,19 @@ if (!isInputWindow) {
   document.getElementById("pin").hidden = true;
   updateInputActions();
   showInputHome();
+
+  invoke("get_settings")
+    .then((settings) => {
+      hotkeyLabel = settings.hotkey || hotkeyLabel;
+      document.getElementById("onboarding-hotkey").textContent = hotkeyLabel;
+      document.getElementById("onboarding-input-hotkey").textContent =
+        settings.input_hotkey || "Ctrl+Alt+I";
+      document.getElementById("onboarding-ocr-hotkey").textContent =
+        settings.ocr_hotkey || "Ctrl+Alt+Z";
+    })
+    .catch(() => {});
+
+  showOnboardingIfNeeded();
 }
 
 initLanguages();
@@ -3178,6 +3305,7 @@ invoke("platform").then((os) => {
   // Windows keeps the window opaque, so the card fills it instead of floating.
   document.body.classList.toggle("os-windows", os === "windows");
   document.getElementById("ocr-hotkey-row").hidden = os === "macos";
+  document.getElementById("onboarding-ocr").hidden = os === "macos";
   resize();
 });
 

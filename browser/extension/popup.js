@@ -19,6 +19,7 @@ const siteInput = document.getElementById("siteDisabled");
 const historyEl = document.getElementById("history");
 const clearHistoryButton = document.getElementById("clearHistory");
 const settingsButton = document.getElementById("openSettings");
+const translateSelectionButton = document.getElementById("translateSelection");
 
 let hostname = null;
 let disabledSites = [];
@@ -43,7 +44,8 @@ async function renderHistory() {
 
   if (!history.length) {
     const item = document.createElement("li");
-    item.textContent = "（无）";
+    item.className = "empty";
+    item.textContent = "还没有翻译记录";
     historyEl.append(item);
     return;
   }
@@ -103,16 +105,17 @@ api.runtime
   .then((health) => {
     if (health && health.ok) {
       statusEl.classList.add("ok");
-      statusEl.textContent =
-        "服务正常：" + health.engine + (health.model ? " / " + health.model : "");
+      statusEl.textContent = "本地服务已连接";
+      statusEl.title =
+        health.engine + (health.model ? " / " + health.model : "");
     } else {
       statusEl.classList.add("bad");
-      statusEl.textContent = "无法连接本地翻译服务，请先启动客户端";
+      statusEl.textContent = "本地服务未运行，请先启动客户端";
     }
   })
   .catch(() => {
     statusEl.classList.add("bad");
-    statusEl.textContent = "无法连接本地翻译服务，请先启动客户端";
+    statusEl.textContent = "本地服务未运行，请先启动客户端";
   });
 
 targetSelect.addEventListener("change", () => {
@@ -141,6 +144,24 @@ siteInput.addEventListener("change", () => {
 clearHistoryButton.addEventListener("click", async () => {
   await api.storage.local.set({ history: [] });
   renderHistory();
+});
+
+translateSelectionButton.addEventListener("click", async () => {
+  try {
+    const tabs = await api.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs && tabs[0];
+
+    if (!tab || tab.id === undefined) {
+      throw new Error("no active tab");
+    }
+
+    await api.tabs.sendMessage(tab.id, { type: "start-translate" });
+    window.close();
+  } catch {
+    statusEl.classList.remove("ok");
+    statusEl.classList.add("bad");
+    statusEl.textContent = "当前页面不支持划词翻译";
+  }
 });
 
 settingsButton.addEventListener("click", () => api.runtime.openOptionsPage());

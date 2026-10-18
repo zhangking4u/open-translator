@@ -26,7 +26,7 @@
   const LABEL = "button, [role='button']";
   const CHROME_LABEL = "span, a, [role='link']";
   const SKIP_CLOSEST =
-    "[data-ot-reading], pre, code, script, style, noscript, textarea, select, [contenteditable], [translate=no], .ot-reading-translation";
+    "[data-ot-reading], [data-ot-reading-ui], pre, code, script, style, noscript, textarea, select, [contenteditable], [translate=no], .ot-reading-translation";
   const MIN_CHARS = 12;
   const MIN_HEADING_CHARS = 3;
   const MIN_NAV_CHARS = 4;
@@ -95,6 +95,37 @@
   .ot-reading-translation.ot-reading-pending { color: #8e8e93; border-left-color: #48484a; }
   .ot-reading-translation.ot-reading-error { color: #ff6961; border-left-color: #ff6961; }
 }
+#ot-reading-indicator {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 999px;
+  background: rgba(28, 28, 30, .82);
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.2;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+#ot-reading-indicator button {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+#ot-reading-indicator button:hover {
+  background: rgba(255, 255, 255, .28);
+}
 `;
 
   let enabled = DEFAULTS.readingEnabled;
@@ -104,6 +135,7 @@
   let observer = null;
   let scrollTimer = null;
   let offscreenTimer = null;
+  let indicator = null;
 
   const cache = new Map();
   const queue = [];
@@ -745,11 +777,42 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
+  function showIndicator() {
+    if (indicator) return;
+
+    indicator = document.createElement("div");
+    indicator.id = "ot-reading-indicator";
+    indicator.dataset.otReadingUi = "";
+
+    const label = document.createElement("span");
+    label.textContent = "网页双语";
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "关闭";
+    close.title = "关闭网页翻译";
+    close.setAttribute("aria-label", "关闭网页翻译");
+    close.addEventListener("click", () => {
+      api.storage.local.set({ readingEnabled: false });
+    });
+
+    indicator.append(label, close);
+    document.documentElement.append(indicator);
+  }
+
+  function hideIndicator() {
+    if (indicator) {
+      indicator.remove();
+      indicator = null;
+    }
+  }
+
   function start() {
     if (started || !shouldRun()) return;
 
     started = true;
     injectStyle();
+    showIndicator();
     observe();
     window.addEventListener("scroll", onViewportChange, { passive: true });
     window.addEventListener("resize", onViewportChange);
@@ -765,6 +828,7 @@
     if (!started) return;
 
     started = false;
+    hideIndicator();
 
     if (observer) {
       observer.disconnect();

@@ -1,4 +1,4 @@
-# OpenTranslator Development Log
+﻿# OpenTranslator Development Log
 
 
 # 2026-09-29
@@ -2833,3 +2833,24 @@ Mobile client.
   token copies byte-identical, generated `tokens.js` matches the sync script,
   `cargo check` clean, and Tauri `cargo test --locked` green (28 unit +
   1 capability test).
+
+## UX P1 Pass (2026-10-18)
+
+- Information architecture: the selection card is now result-only — its
+  history/settings buttons are hidden and those destinations stay in the
+  primary input window. Settings gained a dedicated 翻译 group (auto-copy) and
+  a 划词与快捷键 group, so hiding selection support no longer hides auto-copy
+  or leaves an empty group title.
+- Input result: the source line is an explicit 编辑 affordance; 朗读/换个说法/
+  重试 moved into an overflow menu, leaving 复制 as the single primary action.
+  The menu supports click-away, Escape and focus restoration, and closes once
+  alternatives are rendered.
+- First run: the input window shows a three-step quick-start card (划词/输入/
+  截图取字) with the effective hotkeys and a 开始使用 action; dismissal is stored
+  locally and the overlay is never shown on the selection card.
+- Browser extension: the popup gained 翻译选中文本 as its primary action and a
+  plain-language service status (engine/model moved to the tooltip); options
+  now auto-save on change, validate the service URL, and offer 恢复默认. The
+  bilingual reading mode shows a persistent 网页双语 pill with a 关闭 action.
+- Verification: `node --check` on all desktop/extension/shared JavaScript and
+  `git diff --check` clean. Rust is unchanged from the P0 commit.

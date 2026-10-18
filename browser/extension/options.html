@@ -23,6 +23,7 @@
     button { font: inherit; font-size: 13px; padding: 5px 14px; min-height: 28px; margin-right: 8px; cursor: pointer; color: var(--ot-label); background: var(--ot-fill); border: 0; border-radius: 8px; transition: background-color .15s ease; }
     button:hover { background: var(--ot-fill-hover); }
     button:focus-visible { outline: 2px solid var(--ot-accent); outline-offset: 1px; }
+    .row { display: flex; gap: 8px; margin-top: 4px; }
     #status { color: var(--ot-label-2); min-height: 1.6em; }
     #sites { list-style: none; padding: 0; margin: 0; }
     #sites li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }
@@ -32,6 +33,7 @@
 </head>
 <body>
   <h1>OpenTranslator</h1>
+  <p class="hint">修改会自动保存。</p>
   <form id="form">
     <label>服务地址
       <input id="serviceUrl" type="url" required>
@@ -71,10 +73,12 @@
         <option value="1000">1000 毫秒</option>
       </select>
     </label>
-    <button type="submit">保存</button>
-    <button type="button" id="test">测试连接</button>
+    <div class="row">
+      <button type="button" id="test">测试连接</button>
+      <button type="button" id="reset">恢复默认</button>
+    </div>
   </form>
-  <p id="status"></p>
+  <p id="status" role="status"></p>
   <h2>已关闭自动翻译的网站</h2>
   <ul id="sites"></ul>
   <p class="hint">译文仅在本机生成（127.0.0.1），不会上传云端。快捷键可在浏览器的扩展快捷键页面修改（chrome://extensions/shortcuts 或 edge://extensions/shortcuts）。</p>
