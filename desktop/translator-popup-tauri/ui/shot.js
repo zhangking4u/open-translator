@@ -60,6 +60,7 @@ const toolbar = document.getElementById("toolbar");
 const image = document.getElementById("image");
 const boxes = document.getElementById("boxes");
 const footer = document.getElementById("footer");
+const status = document.getElementById("status");
 const stage = document.getElementById("stage");
 const listBody = document.getElementById("list-body");
 const modeButton = document.getElementById("mode");
@@ -83,18 +84,35 @@ let sampleContext = null;
 
 listen("shot-result", (event) => apply(event.payload));
 
+function syncToolbarState() {
+  modeButton.hidden = inPlaceMode;
+  modeButton.setAttribute("aria-pressed", String(showOriginal));
+  inPlaceButton.setAttribute("aria-pressed", String(inPlaceMode));
+  listButton.setAttribute("aria-pressed", String(listMode));
+  listBody.hidden = !listMode;
+  stage.hidden = listMode;
+}
+
+function setFooter(text) {
+  footer.textContent = text;
+  status.textContent = text;
+}
+
 function apply(payload) {
   blocks = Array.isArray(payload.blocks) ? payload.blocks : [];
   showOriginal = false;
   listMode = false;
+  syncToolbarState();
 
-  modeButton.textContent = "显示原文";
-  modeButton.hidden = inPlaceMode;
-  inPlaceButton.textContent = inPlaceMode ? "对照" : "原位";
-  listButton.textContent = "列表";
-  listBody.hidden = true;
-  stage.hidden = false;
-  footer.textContent = payload.error || "";
+  if (payload.error) {
+    setFooter(payload.error);
+  } else if (blocks.length) {
+    setFooter(blocks.length + " 处译文 · 点击译文可复制");
+  } else {
+    setFooter("没有识别到可翻译的文字");
+  }
+
+  copyButton.disabled = blocks.length === 0;
 
   if (payload.image) {
     if (image.src === payload.image && image.complete) {
@@ -319,7 +337,7 @@ function renderList() {
 
 modeButton.addEventListener("click", () => {
   showOriginal = !showOriginal;
-  modeButton.textContent = showOriginal ? "显示译文" : "显示原文";
+  syncToolbarState();
   render();
 });
 
@@ -328,25 +346,26 @@ inPlaceButton.addEventListener("click", () => {
 
   if (inPlaceMode) {
     showOriginal = false;
-    modeButton.textContent = "显示原文";
   }
 
-  modeButton.hidden = inPlaceMode;
-  inPlaceButton.textContent = inPlaceMode ? "对照" : "原位";
-  footer.textContent = inPlaceMode ? "原位：已覆盖原文，点击译文可复制" : "";
+  syncToolbarState();
+  setFooter(inPlaceMode ? "已覆盖原文 · 点击译文可复制" : "");
   render();
 });
 
 listButton.addEventListener("click", () => {
   listMode = !listMode;
-  listButton.textContent = listMode ? "贴图" : "列表";
-  listBody.hidden = !listMode;
-  stage.hidden = listMode;
-  footer.textContent = "";
+  syncToolbarState();
+  setFooter("");
   if (!listMode) render();
 });
 
 copyButton.addEventListener("click", () => {
+  if (!blocks.length) {
+    setFooter("没有可复制的译文");
+    return;
+  }
+
   const text = blocks
     .map((block) => block.translation || "")
     .filter(Boolean)
@@ -354,14 +373,52 @@ copyButton.addEventListener("click", () => {
 
   invoke("copy_text", { text });
   copyButton.textContent = "已复制";
+  setFooter("已复制全部译文");
   setTimeout(() => {
-    copyButton.textContent = "复制译文";
+    copyButton.textContent = "复制全部";
   }, 1200);
 });
 
-refreshButton.addEventListener("click", () => invoke("shot_refresh"));
+refreshButton.addEventListener("click", () => {
+  setFooter("正在重新识别并翻译…");
+  copyButton.disabled = true;
+  invoke("shot_refresh").catch((message) => {
+    setFooter(String(message));
+    copyButton.disabled = blocks.length === 0;
+  });
+});
+
 closeButton.addEventListener("click", () => invoke("shot_close"));
 
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") invoke("shot_close");
+  const key = event.key.toLowerCase();
+
+  if (event.key === "Escape") {
+    invoke("shot_close");
+    return;
+  }
+
+  if (event.repeat) {
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && key === "c" && !event.shiftKey) {
+    event.preventDefault();
+    copyButton.click();
+    return;
+  }
+
+  if (event.ctrlKey || event.metaKey || event.altKey) {
+    return;
+  }
+
+  if (key === "o" && !inPlaceMode) {
+    modeButton.click();
+  } else if (key === "i") {
+    inPlaceButton.click();
+  } else if (key === "l") {
+    listButton.click();
+  } else if (key === "r") {
+    refreshButton.click();
+  }
 });

@@ -2854,3 +2854,18 @@ Mobile client.
   bilingual reading mode shows a persistent 网页双语 pill with a 关闭 action.
 - Verification: `node --check` on all desktop/extension/shared JavaScript and
   `git diff --check` clean. Rust is unchanged from the P0 commit.
+
+## UX P2 Pass (2026-10-18)
+
+- Screenshot viewer: toolbar actions now describe stable states (`原文`/
+  `覆盖`/`列表` as pressed toggles, plus `复制全部` as the primary action) and
+  expose the current mode through `aria-pressed`. Added shortcuts (Esc, Ctrl/Cmd
+  +C, O/I/L/R), a screen-reader status region, stable copy-label width, disabled
+  copy when there is nothing to copy, and a refresh status with retry feedback.
+- Live captions: the tray 实时字幕 submenu gained 暂停字幕. Pausing keeps the
+  audio capture stream alive but drops VAD segments before transcription and
+  suppresses in-flight translation events, so resuming is immediate. The
+  overlay shows 实时字幕已暂停 with a hint and hides immediately on resume.
+- Verification: `cargo test --locked` green (28 unit + 1 capability test),
+  `cargo check` clean, all frontend JavaScript passes `node --check`, and
+  `git diff --check` is clean.

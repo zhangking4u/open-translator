@@ -34,6 +34,7 @@ body {
 }
 
 body[data-state="visible"] #caption,
+body[data-state="paused"] #caption,
 body[data-state="error"] #caption {
   opacity: 1;
   transform: none;

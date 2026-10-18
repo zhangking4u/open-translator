@@ -11,12 +11,12 @@
     <div id="panel">
       <div id="toolbar" data-tauri-drag-region>
         <span id="title" data-tauri-drag-region>截图翻译</span>
-        <button id="mode">显示原文</button>
-        <button id="inplace">原位</button>
-        <button id="list">列表</button>
-        <button id="refresh">刷新</button>
-        <button id="copy">复制译文</button>
-        <button id="close" title="关闭">×</button>
+        <button id="mode" type="button" title="切换原文 / 译文（O）" aria-pressed="false">原文</button>
+        <button id="inplace" type="button" title="用译文覆盖原文（I）" aria-pressed="false">覆盖</button>
+        <button id="list" type="button" title="切换双语列表（L）" aria-pressed="false">列表</button>
+        <button id="refresh" type="button" title="重新截图并翻译（R）">刷新</button>
+        <button id="copy" class="primary" type="button" title="复制全部译文（Ctrl+C）">复制全部</button>
+        <button id="close" type="button" title="关闭（Esc）" aria-label="关闭">×</button>
       </div>
       <div id="stage">
         <img id="image" alt="" />
@@ -24,6 +24,7 @@
       </div>
       <div id="list-body" hidden></div>
       <div id="footer" data-tauri-drag-region></div>
+      <div id="status" class="sr-only" role="status" aria-live="polite"></div>
     </div>
     <script src="shot.js"></script>
   </body>

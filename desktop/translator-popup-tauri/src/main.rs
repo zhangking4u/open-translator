@@ -180,6 +180,7 @@ struct SelectionMenu {
 /// 实时字幕 tray submenu: the capture switch and the three layouts.
 struct CaptionMenu {
     toggle: CheckMenuItem<tauri::Wry>,
+    pause: CheckMenuItem<tauri::Wry>,
     bilingual: CheckMenuItem<tauri::Wry>,
     translation: CheckMenuItem<tauri::Wry>,
     source: CheckMenuItem<tauri::Wry>,
@@ -2677,6 +2678,8 @@ fn set_caption_enabled(app: &AppHandle, enabled: bool) {
 
             if let Some(menu) = state.caption_menu.lock().unwrap().as_ref() {
                 let _ = menu.toggle.set_checked(false);
+                let _ = menu.pause.set_enabled(false);
+                let _ = menu.pause.set_checked(false);
             }
 
             return;
@@ -2710,6 +2713,25 @@ fn set_caption_enabled(app: &AppHandle, enabled: bool) {
 
     if let Some(menu) = state.caption_menu.lock().unwrap().as_ref() {
         let _ = menu.toggle.set_checked(enabled);
+        let _ = menu.pause.set_enabled(enabled);
+        let _ = menu.pause.set_checked(false);
+    }
+}
+
+/// Tray entry point for pausing live captions without stopping the capture
+/// stream; resuming is immediate and does not reload the model.
+fn toggle_caption_pause(app: &AppHandle) {
+    let state = app.state::<AppState>();
+
+    if !state.caption.is_active() {
+        return;
+    }
+
+    let paused = !caption::CaptionRuntime::is_paused();
+    caption::CaptionRuntime::set_paused(app, paused);
+
+    if let Some(menu) = state.caption_menu.lock().unwrap().as_ref() {
+        let _ = menu.pause.set_checked(paused);
     }
 }
 
@@ -2792,6 +2814,14 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         caption_on,
         None::<&str>,
     )?;
+    let caption_pause = CheckMenuItem::with_id(
+        app,
+        "caption-pause",
+        "暂停字幕",
+        cfg!(any(target_os = "linux", target_os = "windows")) && caption_on,
+        caption::CaptionRuntime::is_paused(),
+        None::<&str>,
+    )?;
     let caption_bilingual = CheckMenuItem::with_id(
         app,
         "caption-layout-bilingual",
@@ -2850,6 +2880,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         true,
         &[
             &caption_toggle,
+            &caption_pause,
             &caption_bilingual,
             &caption_translation,
             &caption_source,
@@ -2938,6 +2969,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     });
     *app.state::<AppState>().caption_menu.lock().unwrap() = Some(CaptionMenu {
         toggle: caption_toggle,
+        pause: caption_pause,
         bilingual: caption_bilingual,
         translation: caption_translation,
         source: caption_source,
@@ -2986,6 +3018,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
                 set_selection_mode_from_menu(app, selection_watch::SelectionMode::Auto)
             }
             "caption-toggle" => toggle_caption(app),
+            "caption-pause" => toggle_caption_pause(app),
             "caption-layout-bilingual" => set_caption_layout(app, "bilingual"),
             "caption-layout-translation" => set_caption_layout(app, "translation"),
             "caption-layout-source" => set_caption_layout(app, "source"),

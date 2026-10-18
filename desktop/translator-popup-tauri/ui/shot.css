@@ -80,10 +80,47 @@ button:focus-visible {
   outline-offset: 1px;
 }
 
+button:disabled {
+  color: var(--ot-label-3);
+  cursor: default;
+}
+
+button[aria-pressed="true"] {
+  background: var(--ot-accent);
+  color: #ffffff;
+}
+
+button.primary {
+  background: var(--ot-accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+button.primary:hover {
+  background: var(--ot-accent);
+  filter: brightness(1.05);
+}
+
+button.primary:disabled {
+  background: var(--ot-fill);
+  color: var(--ot-label-3);
+  filter: none;
+}
+
+#copy {
+  min-width: 76px;
+}
+
 #close {
   font-size: 16px;
   line-height: 1;
   padding: 3px 8px;
+}
+
+@media (max-width: 430px) {
+  #title {
+    display: none;
+  }
 }
 
 #stage {
@@ -200,4 +237,16 @@ button:focus-visible {
   button {
     transition: none;
   }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

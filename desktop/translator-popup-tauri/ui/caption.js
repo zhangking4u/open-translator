@@ -30,6 +30,8 @@ listen("caption-config", (event) => {
 });
 
 listen("caption-segment", (event) => {
+  if (document.body.dataset.state === "paused") return;
+
   const text = (event.payload && event.payload.text) || "";
   if (!text) return;
 
@@ -43,6 +45,8 @@ listen("caption-segment", (event) => {
 });
 
 listen("caption-translation", (event) => {
+  if (document.body.dataset.state === "paused") return;
+
   const payload = event.payload || {};
   if (typeof payload.text !== "string" || layout === "source") return;
 
@@ -68,6 +72,25 @@ listen("caption-status", (event) => {
     translation.classList.remove("pending", "streaming");
     hint.textContent = payload.message || "";
     document.body.dataset.state = "error";
+    return;
+  }
+
+  if (payload.state === "paused") {
+    clearTimeout(hideTimer);
+    source.textContent = "实时字幕已暂停";
+    translation.textContent = "";
+    translation.classList.remove("pending", "streaming");
+    hint.textContent = "从托盘菜单继续字幕";
+    document.body.dataset.state = "paused";
+    return;
+  }
+
+  if (payload.state === "listening" && document.body.dataset.state === "paused") {
+    clearTimeout(hideTimer);
+    source.textContent = "";
+    translation.textContent = "";
+    hint.textContent = "";
+    document.body.dataset.state = "hidden";
     return;
   }
 

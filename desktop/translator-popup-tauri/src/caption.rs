@@ -54,6 +54,9 @@ struct EditingPayload {
 /// True while the user repositions the overlay (`caption-editing`); window
 /// moves are persisted only in that mode.
 static EDITING: AtomicBool = AtomicBool::new(false);
+/// While paused, VAD segments are dropped before transcription so the model
+/// does no work and no stale captions appear when capture resumes.
+static PAUSED: AtomicBool = AtomicBool::new(false);
 
 /// Owns the running capture task. Cloned handles live in `AppState`; the task
 /// itself is aborted (and the `pw-record` child killed) by [`Self::stop`].
@@ -76,11 +79,24 @@ impl CaptionRuntime {
         self.active.load(Ordering::SeqCst)
     }
 
+    pub fn is_paused() -> bool {
+        PAUSED.load(Ordering::SeqCst)
+    }
+
+    /// Pauses/resumes recognition without tearing down the capture stream, so
+    /// resuming is instant. The overlay keeps a visible "paused" hint while
+    /// capture continues in the background.
+    pub fn set_paused(app: &AppHandle, paused: bool) {
+        PAUSED.store(paused, Ordering::SeqCst);
+        emit_status(app, if paused { "paused" } else { "listening" }, None);
+    }
+
     pub fn start(&self, app: &AppHandle) -> Result<(), String> {
         if self.is_active() {
             return Ok(());
         }
 
+        PAUSED.store(false, Ordering::SeqCst);
         let stop = Arc::new(AtomicBool::new(false));
 
         #[cfg(target_os = "linux")]
@@ -105,6 +121,7 @@ impl CaptionRuntime {
     }
 
     pub fn stop(&self) {
+        PAUSED.store(false, Ordering::SeqCst);
         self.active.store(false, Ordering::SeqCst);
 
         // Cooperative stop for capture loops that survive task abort.
@@ -135,6 +152,10 @@ fn emit_status(app: &AppHandle, state: &'static str, message: Option<String>) {
 }
 
 fn emit_segment(app: &AppHandle, text: String) {
+    if PAUSED.load(Ordering::SeqCst) {
+        return;
+    }
+
     if caption_debug() {
         eprintln!("CAPDBG segment chars={} text={text}", text.chars().count());
     }
@@ -213,11 +234,14 @@ pub fn finish_move(app: &AppHandle) {
 /// overlay and puts the tray back to the off state.
 fn stop_after_failure(app: &AppHandle, message: &str) {
     let state = app.state::<crate::AppState>();
+    PAUSED.store(false, Ordering::SeqCst);
     state.caption.active.store(false, Ordering::SeqCst);
     translator_core::settings::persist_value("caption_enabled", "false");
 
     if let Some(menu) = state.caption_menu.lock().unwrap().as_ref() {
         let _ = menu.toggle.set_checked(false);
+        let _ = menu.pause.set_enabled(false);
+        let _ = menu.pause.set_checked(false);
     }
 
     if let Some(window) = app.get_webview_window(WINDOW) {
@@ -338,6 +362,10 @@ fn run_caption_translation(app: &AppHandle, text: String) {
                 }
             }
 
+            if PAUSED.load(Ordering::SeqCst) {
+                return;
+            }
+
             let _ = app.emit_to(
                 WINDOW,
                 EVENT_TRANSLATION,
@@ -351,6 +379,10 @@ fn run_caption_translation(app: &AppHandle, text: String) {
 
     match result {
         Ok(result) => {
+            if PAUSED.load(Ordering::SeqCst) {
+                return;
+            }
+
             append_transcript(app, &request.text, &result.translated_text);
 
             let _ = app.emit_to(
@@ -628,6 +660,10 @@ fn spawn_transcription_worker(
 
     tauri::async_runtime::spawn(async move {
         while let Some(samples) = receiver.recv().await {
+            if PAUSED.load(Ordering::SeqCst) {
+                continue;
+            }
+
             let engine = engine.clone();
             let result =
                 tauri::async_runtime::spawn_blocking(move || engine.transcribe(&samples, SAMPLE_RATE))
