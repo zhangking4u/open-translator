@@ -42,7 +42,7 @@ body {
   font-size: 12.5px;
   font-weight: 500;
   line-height: 1;
-  cursor: default;
+  cursor: pointer;
   transition:
     background-color 0.12s ease,
     color 0.12s ease,
@@ -93,7 +93,7 @@ body {
   border-radius: 50%;
   background: var(--ot-fill);
   color: var(--ot-label-2);
-  cursor: default;
+  cursor: pointer;
   transition:
     background-color 0.12s ease,
     color 0.12s ease;
@@ -142,7 +142,7 @@ body[data-menu="open"] .more {
   font-family: inherit;
   font-size: 12.5px;
   text-align: left;
-  cursor: default;
+  cursor: pointer;
 }
 
 .menu button:hover {

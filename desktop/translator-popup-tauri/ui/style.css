@@ -126,6 +126,10 @@ button.icon:hover:not(:disabled) {
   padding: 3px;
 }
 
+#copy {
+  min-width: 84px;
+}
+
 #copy .icon-check {
   display: none;
 }
@@ -193,7 +197,10 @@ button.icon:hover:not(:disabled) {
 }
 
 .translation {
-  min-height: 96px;
+  min-height: 160px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px 2px;
   user-select: text;
 }
@@ -264,7 +271,7 @@ button.icon:hover:not(:disabled) {
 
 .empty-state .sub {
   margin-top: 0;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .footer {
@@ -337,6 +344,22 @@ progress::-webkit-progress-value {
   line-height: 1.45;
 }
 
+.error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.error-action {
+  padding: 5px 12px;
+  font-size: 12.5px;
+}
+
+.error-action.primary {
+  background: var(--ot-accent);
+  color: #ffffff;
+}
+
 button.icon.active {
   color: var(--ot-accent);
 }
@@ -355,6 +378,14 @@ button.icon.active {
 
 .update-status.error {
   color: var(--ot-red);
+}
+
+#settings-view,
+#about-view,
+#history-view {
+  max-height: min(560px, var(--ot-view-max, 560px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .page-head {
@@ -733,7 +764,7 @@ button.icon.active {
 }
 
 .dim-text {
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--ot-label-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -835,22 +866,37 @@ button.icon.active {
 
 .history-entry {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   column-gap: 8px;
-  row-gap: 3px;
   align-items: start;
   width: 100%;
   padding: 10px 12px;
   background: transparent;
-  border: none;
   border-radius: 0;
+  cursor: pointer;
+}
+
+.history-open {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 8px;
+  row-gap: 3px;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.history-entry:focus-visible {
+.history-open:focus-visible {
   outline: 2px solid var(--ot-accent);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 .history-entry + .history-entry {
@@ -891,7 +937,7 @@ button.icon.active {
 }
 
 .history-text {
-  grid-column: 2;
+  grid-column: 1;
   grid-row: 1;
   font-size: 13.5px;
   color: var(--ot-label);
@@ -901,19 +947,19 @@ button.icon.active {
 }
 
 .history-time {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 1;
   justify-self: end;
   align-self: start;
   margin-top: 1px;
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--ot-label-2);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
 .history-copy {
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 1 / span 2;
   align-self: center;
   background: transparent;
@@ -953,7 +999,7 @@ button.icon.active {
 }
 
 .history-translation {
-  grid-column: 2 / span 2;
+  grid-column: 1 / span 2;
   grid-row: 2;
   font-size: 12px;
   color: var(--ot-label-2);
@@ -1142,8 +1188,8 @@ button.destructive {
 }
 
 .input-hint {
-  font-size: 11.5px;
-  color: var(--ot-label-3);
+  font-size: 12px;
+  color: var(--ot-label-2);
 }
 
 .input-primary {

@@ -128,6 +128,8 @@ let ttsDownloadErrorModel = "";
 let ttsKokoroSize = 179300000;
 let ttsVitsSize = 177500000;
 let ttsSupertonicSize = 145300000;
+let copyFeedbackTimer = 0;
+let retryableError = false;
 let ttsSpeakerMulti = 6;
 let ttsMultiSpeakers = [];
 let ttsPreviewTimer = 0;
@@ -423,8 +425,11 @@ function setDot(state) {
     dot.classList.add(state);
   }
 
-  dot.title =
+  const label =
     state === "loading" ? "正在准备翻译引擎" : state === "error" ? "翻译引擎出错" : "就绪";
+  dot.title = label;
+  dot.setAttribute("role", "img");
+  dot.setAttribute("aria-label", label);
 }
 
 function speakTitle() {
@@ -1194,10 +1199,54 @@ function render(html) {
   resize();
 }
 
-async function resize() {
+let resizeTimer = 0;
+let resizeWaiters = [];
+let lastWindowHeight = 0;
+
+// Coalesce the many layout changes a translation causes (ResizeObserver plus
+// explicit render calls) into one native resize. The card keeps a stable
+// height while tokens stream; the final resize happens in finish().
+function resize() {
+  return new Promise((resolve) => {
+    resizeWaiters.push(resolve);
+    clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(async () => {
+      const waiters = resizeWaiters;
+      resizeWaiters = [];
+      await applyResize();
+      waiters.forEach((done) => done());
+    }, 80);
+  });
+}
+
+async function applyResize() {
+  if (!isInputWindow && streaming) {
+    return;
+  }
+
   const margin = document.body.classList.contains("os-windows") ? 0 : 20;
-  const height =
-    Math.ceil(document.querySelector(".card").getBoundingClientRect().height) + margin;
+  // Keep long settings/history pages inside the work area; the views scroll
+  // internally instead of growing the native window past the screen.
+  const screenHeight = Number(window.screen && window.screen.availHeight) || 0;
+
+  if (screenHeight) {
+    const viewMax = Math.max(180, screenHeight - 200);
+    document.documentElement.style.setProperty("--ot-view-max", viewMax + "px");
+  }
+
+  const cardHeight = Math.ceil(
+    document.querySelector(".card").getBoundingClientRect().height
+  );
+  const maxHeight = screenHeight
+    ? Math.max(240, screenHeight - 48)
+    : cardHeight + margin;
+  const height = Math.min(cardHeight + margin, maxHeight);
+
+  if (Math.abs(height - lastWindowHeight) < 1) {
+    return;
+  }
+
+  lastWindowHeight = height;
   await invoke("resize_window", { height });
 }
 
@@ -1240,6 +1289,8 @@ function waitingHint() {
 
 function showWaiting() {
   current = "";
+  streaming = false;
+  retryableError = false;
   lastSource = "";
   source.hidden = true;
   source.textContent = "";
@@ -1266,6 +1317,8 @@ function showWaiting() {
 
 function showEmpty() {
   current = "";
+  streaming = false;
+  retryableError = false;
   source.hidden = true;
   source.textContent = "";
   retranslate.hidden = true;
@@ -1281,6 +1334,7 @@ function showSource(text, canReplace) {
   replaceable = canReplace;
   // A new source starts a fresh translation: never append to the old one.
   current = "";
+  retryableError = false;
   streaming = false;
   setCopyEnabled(false);
   source.hidden = false;
@@ -1322,10 +1376,12 @@ function showError(message, retryable) {
   speak.hidden = true;
   stopSpeaking();
   setDot("error");
-  retranslate.hidden = !retryable;
+  retryableError = retryable;
+  retranslate.hidden = true;
 
   const card = document.createElement("div");
   card.className = "error-card";
+  card.setAttribute("role", "alert");
 
   const title = document.createElement("p");
   title.className = "error-title";
@@ -1335,7 +1391,23 @@ function showError(message, retryable) {
   body.className = "error-body";
   body.textContent = message;
 
-  card.append(title, body);
+  const actions = document.createElement("div");
+  actions.className = "error-actions";
+
+  const primary = document.createElement("button");
+  primary.type = "button";
+  primary.className = "error-action primary";
+  primary.textContent = retryable ? "重试" : "关闭";
+  primary.addEventListener("click", () => {
+    if (retryable) {
+      invoke("retranslate");
+    } else {
+      invoke("hide_window");
+    }
+  });
+
+  actions.append(primary);
+  card.append(title, body, actions);
   translation.innerHTML = "";
   translation.appendChild(card);
   resize();
@@ -1366,6 +1438,7 @@ function appendDelta(piece) {
 function finish(translationText) {
   current = translationText;
   streaming = false;
+  retryableError = false;
   const paragraph = textParagraph();
   paragraph.classList.remove("streaming");
   paragraph.textContent = current;
@@ -1772,8 +1845,16 @@ copy.addEventListener("click", async () => {
   }
 
   await invoke("copy_text", { text: current });
+  const label = copy.querySelector("span");
   copy.classList.add("copied");
-  window.setTimeout(() => copy.classList.remove("copied"), 1200);
+  copy.setAttribute("aria-label", "已复制");
+  if (label) label.textContent = "已复制";
+  window.clearTimeout(copyFeedbackTimer);
+  copyFeedbackTimer = window.setTimeout(() => {
+    copy.classList.remove("copied");
+    copy.setAttribute("aria-label", "复制译文");
+    if (label) label.textContent = "复制";
+  }, 1500);
 });
 
 retranslate.addEventListener("click", () => {
@@ -1870,9 +1951,9 @@ window.addEventListener("keydown", (event) => {
   }
 
   if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key === "Enter") {
-    if (!retranslate.hidden) {
+    if (!retranslate.hidden || retryableError) {
       event.preventDefault();
-      retranslate.click();
+      invoke("retranslate");
     }
 
     return;
@@ -2697,9 +2778,6 @@ function renderHistory() {
   for (const { entry, index } of rows) {
     const row = document.createElement("div");
     row.className = "history-entry";
-    row.tabIndex = 0;
-    row.setAttribute("role", "button");
-    row.title = entry.text + "\n" + entry.translation;
 
     const star = document.createElement("button");
     star.type = "button";
@@ -2707,13 +2785,18 @@ function renderHistory() {
     star.textContent = entry.favorited ? "★" : "☆";
     star.title = entry.favorited ? "取消收藏" : "收藏";
     star.setAttribute("aria-label", star.title);
-    star.addEventListener("click", async (event) => {
-      event.stopPropagation();
+    star.setAttribute("aria-pressed", String(entry.favorited));
+    star.addEventListener("click", async () => {
       await invoke("toggle_history_favorite", { index });
       entry.favorited = !entry.favorited;
       renderHistory();
       resize();
     });
+
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "history-open";
+    openButton.title = entry.text + "\n" + entry.translation;
 
     const text = document.createElement("span");
     text.className = "history-text";
@@ -2743,8 +2826,7 @@ function renderHistory() {
     copyButton.innerHTML =
       '<svg class="icon-copy" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>' +
       '<svg class="icon-check" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
-    copyButton.addEventListener("click", async (event) => {
-      event.stopPropagation();
+    copyButton.addEventListener("click", async () => {
       await invoke("copy_text", { text: entry.translation });
       copyButton.classList.add("copied");
       window.setTimeout(() => copyButton.classList.remove("copied"), 1200);
@@ -2760,14 +2842,14 @@ function renderHistory() {
       }
     };
 
-    row.append(star, text, time, copyButton, translation);
-    row.addEventListener("click", open);
-    row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
+    openButton.addEventListener("click", open);
+    openButton.append(text, time, translation);
+    row.addEventListener("click", (event) => {
+      if (!event.target.closest("button")) {
         open();
       }
     });
+    row.append(star, openButton, copyButton);
     list.appendChild(row);
   }
 }

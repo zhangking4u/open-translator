@@ -30,6 +30,8 @@
     "  white-space: nowrap; transition: background-color .15s ease; }",
     ".ot-select-button:hover { background: var(--ot-fill-hover, rgba(120,120,128,.2)); }",
     ".ot-select-button:focus-visible { outline: 2px solid var(--ot-accent, #007aff); outline-offset: 1px; }",
+    ".ot-select-button[aria-expanded='true'] { background: var(--ot-fill-hover, rgba(120,120,128,.2)); }",
+    ".ot-select-menu:focus { outline: none; }",
     ".ot-select-label { overflow: hidden; text-overflow: ellipsis; }",
     ".ot-select-button svg { flex: none; opacity: .65; }",
     ".ot-select-menu { position: absolute; left: 0; top: calc(100% + 6px); z-index: 5;",
@@ -64,6 +66,7 @@
   ].join("\n");
 
   const controllers = new WeakMap();
+  let uid = 0;
 
   function icon(markup) {
     const doc = new DOMParser().parseFromString(markup, "image/svg+xml");
@@ -87,32 +90,44 @@
   function enhance(select, options = {}) {
     if (controllers.has(select)) return controllers.get(select);
 
+    uid += 1;
+    const menuId = "ot-select-menu-" + uid + "-" + Date.now();
     const wrap = document.createElement("span");
     wrap.className = "ot-select";
 
     const button = document.createElement("button");
     button.type = "button";
+    button.id = menuId + "-button";
     button.className = "ot-select-button";
     if (options.title) button.title = options.title;
     button.setAttribute("aria-haspopup", "listbox");
+    button.setAttribute("aria-expanded", "false");
+    button.setAttribute("aria-controls", menuId);
     button.setAttribute("aria-label", options.title || select.title || "选择");
+    if (select.id) button.id = select.id + "-button";
 
     const label = document.createElement("span");
     label.className = "ot-select-label";
     button.append(label, icon(CHEVRON));
 
     const menu = document.createElement("div");
+    menu.id = menuId;
     menu.className = "ot-select-menu" + (options.menuContainer ? " ot-select-menu-inline" : "");
     menu.hidden = true;
+    menu.tabIndex = -1;
     menu.setAttribute("role", "listbox");
+    menu.setAttribute("aria-label", options.title || select.title || "选择");
 
     const items = new Map();
-    for (const option of Array.from(select.options)) {
+    for (const [index, option] of Array.from(select.options).entries()) {
       const item = document.createElement("button");
       item.type = "button";
+      item.id = menuId + "-option-" + index;
       item.className = "ot-select-item";
       item.dataset.value = option.value;
+      item.tabIndex = -1;
       item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", "false");
 
       const check = document.createElement("span");
       check.className = "ot-select-check";
@@ -152,8 +167,11 @@
       const item = itemList[index];
 
       if (!item) {
+        menu.removeAttribute("aria-activedescendant");
         return;
       }
+
+      menu.setAttribute("aria-activedescendant", item.id);
 
       const top = item.offsetTop;
       const bottom = top + item.offsetHeight;
@@ -169,7 +187,9 @@
       const option = select.selectedOptions && select.selectedOptions[0];
       label.textContent = option ? option.textContent : "";
       for (const [value, item] of items) {
-        item.classList.toggle("active", value === select.value);
+        const active = value === select.value;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-selected", String(active));
       }
     }
 
@@ -206,9 +226,11 @@
       menu.classList.toggle("ot-select-menu-right", overflowRight && !overflowLeft);
     }
 
-    function close() {
+    function close(restoreFocus = false) {
       if (menu.hidden) return;
       menu.hidden = true;
+      menu.removeAttribute("aria-activedescendant");
+      button.setAttribute("aria-expanded", "false");
       focusedIndex = -1;
       for (const item of itemList) item.classList.remove("focused");
       document.removeEventListener("mousedown", onOutside, true);
@@ -216,11 +238,13 @@
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
       if (options.onToggle) options.onToggle(false);
+      if (restoreFocus) button.focus();
     }
 
     function open() {
       if (!menu.hidden) return;
       menu.hidden = false;
+      button.setAttribute("aria-expanded", "true");
       place();
       setFocused(itemList.findIndex((item) => item.dataset.value === select.value));
       document.addEventListener("mousedown", onOutside, true);
@@ -229,6 +253,9 @@
       window.addEventListener("scroll", place, true);
       if (options.onToggle) options.onToggle(true);
       place();
+      // The menu owns focus while open so the listbox can expose the active
+      // option through aria-activedescendant.
+      menu.focus({ preventScroll: true });
     }
 
     function choose(item) {
@@ -236,7 +263,7 @@
       select.value = item.dataset.value;
       select.dispatchEvent(new Event("change", { bubbles: true }));
       sync();
-      close();
+      close(true);
     }
 
     function onOutside(event) {
@@ -250,8 +277,7 @@
     function onKeydown(event) {
       if (event.key === "Escape" && !menu.hidden) {
         event.stopPropagation();
-        close();
-        button.focus();
+        close(true);
       }
     }
 
@@ -261,14 +287,30 @@
     });
 
     button.addEventListener("keydown", (event) => {
-      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      if (
+        event.key !== "ArrowDown" &&
+        event.key !== "ArrowUp" &&
+        event.key !== "Home" &&
+        event.key !== "End"
+      ) {
+        return;
+      }
+
       event.preventDefault();
+
       if (menu.hidden) {
         open();
         return;
       }
-      const step = event.key === "ArrowDown" ? 1 : -1;
-      setFocused((focusedIndex + step + itemList.length) % itemList.length);
+
+      if (event.key === "Home") {
+        setFocused(0);
+      } else if (event.key === "End") {
+        setFocused(itemList.length - 1);
+      } else {
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        setFocused((focusedIndex + step + itemList.length) % itemList.length);
+      }
     });
 
     menu.addEventListener("click", (event) => {
@@ -276,10 +318,22 @@
     });
 
     menu.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        close(true);
+      } else if (event.key === "Tab") {
+        close(true);
+      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         const step = event.key === "ArrowDown" ? 1 : -1;
         setFocused((focusedIndex + step + itemList.length) % itemList.length);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        setFocused(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        setFocused(itemList.length - 1);
       } else if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         choose(itemList[focusedIndex]);

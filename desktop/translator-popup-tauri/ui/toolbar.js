@@ -1,6 +1,7 @@
 ﻿const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+const toolbarEl = document.querySelector(".toolbar");
 const translate = document.getElementById("translate");
 const copy = document.getElementById("copy");
 const speak = document.getElementById("speak");
@@ -12,9 +13,34 @@ const toast = document.getElementById("toast");
 
 let toastTimer = null;
 let hideTimer = null;
+let holdTimer = null;
 let speaking = false;
 let speechGeneration = 0;
 let localAudio = null;
+
+// The native auto-hide timer is extended while the pointer rests on the pill
+// or its menu. The interval is deliberately shorter than the 10 s native
+// timeout so a held toolbar never disappears under the pointer.
+function holdToolbar() {
+  if (holdTimer !== null) {
+    return;
+  }
+
+  invoke("toolbar_hold").catch(() => {});
+  holdTimer = window.setInterval(() => {
+    invoke("toolbar_hold").catch(() => {});
+  }, 4000);
+}
+
+function releaseToolbar() {
+  if (holdTimer !== null) {
+    window.clearInterval(holdTimer);
+    holdTimer = null;
+  }
+
+  // Restart the normal timeout as soon as the pointer leaves.
+  invoke("toolbar_hold").catch(() => {});
+}
 
 function showToast(text, duration = 1200) {
   toast.textContent = text;
@@ -302,8 +328,14 @@ disableAll.addEventListener("click", () => {
   invoke("toolbar_disable_all").catch(() => {});
 });
 
+for (const element of [toolbarEl, menu]) {
+  element.addEventListener("pointerenter", holdToolbar);
+  element.addEventListener("pointerleave", releaseToolbar);
+}
+
 listen("toolbar-reset", () => {
   clearTimeout(hideTimer);
+  releaseToolbar();
   stopSpeech();
   resetMenu();
   toast.hidden = true;

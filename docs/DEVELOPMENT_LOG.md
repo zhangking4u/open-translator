@@ -2803,3 +2803,33 @@ Mobile client.
   the new `PendingSelection` fields.
 - Verification: Tauri 28 tests, translator-core 85 tests, frontend `node
   --check`, capabilities JSON, release build installed on the dev machine.
+
+## UX P0 Pass (2026-10-18)
+
+- Ball interaction: a real click now commits `ball_click`, a press becomes a
+  drag only after 5 px, and a drag never counts as a translation. This fixes
+  the case where `mousedown` cancelled the hover timer and a quick click did
+  nothing.
+- Selection toolbar: the pointer cursor is restored on actions, and hovering
+  the pill or its menu now re-arms the native 10 s timeout through
+  `toolbar_hold`, so the bar does not disappear while the user is deciding.
+- Result layout: the card translation area is capped at `min(60vh, 420px)` and
+  scrolls internally; window resizes are coalesced and paused while tokens
+  stream, then applied once in `finish()`. Long settings/about/history pages
+  scroll within a work-area-aware `--ot-view-max` instead of growing off-screen.
+- Readability: `--ot-label-2`/`--ot-label-3` were raised in light and dark,
+  small dim text moved to 11.5/12 px, and the extension waiting/error states
+  now use the shared tokens.
+- Feedback: card errors now expose a primary 重试/关闭 action and `role=alert`;
+  copy changes its label to 已复制 with a stable button width; the status dot
+  carries an accessible label.
+- History: rows are no longer nested interactive controls. A real
+  `.history-open` button owns the open action, the star/copy buttons are
+  siblings, and Enter on them no longer opens the row.
+- `OTSelect`: full listbox semantics (`aria-expanded`, `aria-controls`,
+  `aria-selected`, `aria-activedescendant`), focus moves into the menu, and
+  Home/End/Escape/Tab handling is available.
+- Verification: `node --check` on changed frontend files, shared dropdown and
+  token copies byte-identical, generated `tokens.js` matches the sync script,
+  `cargo check` clean, and Tauri `cargo test --locked` green (28 unit +
+  1 capability test).

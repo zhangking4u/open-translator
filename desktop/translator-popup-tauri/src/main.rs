@@ -566,6 +566,7 @@ fn main() {
             toolbar_info,
             toolbar_speech,
             toolbar_hide,
+            toolbar_hold,
             toolbar_expanded,
             toolbar_disable_app,
             toolbar_disable_all,
@@ -1569,6 +1570,13 @@ fn show_toolbar(
         .toolbar_visible
         .store(true, Ordering::SeqCst);
 
+    arm_toolbar_timeout(app, generation);
+}
+
+/// Hides the toolbar after the timeout unless a newer generation superseded
+/// it. `toolbar_hold` re-arms the same timeout while the pointer rests on the
+/// toolbar or its menu, so the bar does not vanish mid-decision.
+fn arm_toolbar_timeout(app: &AppHandle, generation: u64) {
     let handle = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(TOOLBAR_TIMEOUT);
@@ -1737,6 +1745,21 @@ fn toolbar_action(app: AppHandle, action: String) -> Result<(), String> {
 #[tauri::command]
 fn toolbar_hide(app: AppHandle) {
     hide_toolbar(&app);
+}
+
+/// Keeps a hovered/open toolbar alive: every call restarts the auto-hide
+/// timer without changing the pending selection.
+#[tauri::command]
+fn toolbar_hold(app: AppHandle) {
+    let state = app.state::<AppState>();
+
+    if !state.toolbar_visible.load(Ordering::SeqCst) {
+        return;
+    }
+
+    let generation = state.toolbar_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    drop(state);
+    arm_toolbar_timeout(&app, generation);
 }
 
 /// Grows the window downwards for the `−` menu; collapsing re-anchors the

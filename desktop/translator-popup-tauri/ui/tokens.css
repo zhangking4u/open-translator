@@ -14,8 +14,8 @@
   --ot-bg-solid: #ffffff;
   --ot-bg-material: rgba(255, 255, 255, 0.78);
   --ot-label: rgba(0, 0, 0, 0.85);
-  --ot-label-2: rgba(0, 0, 0, 0.5);
-  --ot-label-3: rgba(0, 0, 0, 0.26);
+  --ot-label-2: rgba(0, 0, 0, 0.6);
+  --ot-label-3: rgba(0, 0, 0, 0.42);
   --ot-fill: rgba(120, 120, 128, 0.12);
   --ot-fill-hover: rgba(120, 120, 128, 0.2);
   --ot-separator: rgba(60, 60, 67, 0.14);
@@ -42,8 +42,8 @@
     --ot-bg-solid: #2c2c2e;
     --ot-bg-material: rgba(30, 30, 32, 0.72);
     --ot-label: rgba(255, 255, 255, 0.85);
-    --ot-label-2: rgba(255, 255, 255, 0.55);
-    --ot-label-3: rgba(255, 255, 255, 0.3);
+    --ot-label-2: rgba(255, 255, 255, 0.62);
+    --ot-label-3: rgba(255, 255, 255, 0.45);
     --ot-fill: rgba(120, 120, 128, 0.24);
     --ot-fill-hover: rgba(120, 120, 128, 0.36);
     --ot-separator: rgba(255, 255, 255, 0.12);
