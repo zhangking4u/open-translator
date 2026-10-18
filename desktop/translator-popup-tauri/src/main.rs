@@ -19,7 +19,7 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use translator_core::update::ReleaseInfo;
 use tauri::tray::TrayIconBuilder;
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -104,11 +104,20 @@ struct AppState {
     /// Live 划词 settings; updated by the settings commands and read by the
     /// watcher on every poll.
     selection: Mutex<selection_watch::SelectionSettings>,
-    /// A settled selection waiting for the floating ball to be hovered/clicked.
+    /// A settled selection waiting for the floating ball to be hovered/clicked
+    /// or the selection toolbar to be used.
     pending_selection: Mutex<Option<PendingSelection>>,
+    /// Applications opted out of the selection toolbar (executable names).
+    toolbar_disabled: Mutex<Vec<String>>,
     /// Bumped whenever the ball is shown/hidden so stale auto-hide timers do
     /// nothing.
     ball_generation: AtomicU64,
+    /// Bumped whenever the toolbar is shown/hidden so stale auto-hide timers
+    /// do nothing.
+    toolbar_generation: AtomicU64,
+    /// Mirrors the toolbar window visibility for the native mouse callback,
+    /// which must not call blocking Tauri getters.
+    toolbar_visible: AtomicBool,
     /// The watcher ignores selections until this instant after a hotkey
     /// trigger (the hotkey captures the same selection itself).
     suppress_until: Mutex<Option<Instant>>,
@@ -145,19 +154,25 @@ struct AppState {
     clipboard: Mutex<Option<arboard::Clipboard>>,
 }
 
-/// Text captured by the watcher in `ball` mode, kept until the user moves the
-/// mouse onto the ball (or clicks it).
+/// Text captured by the watcher in `ball`/`toolbar` mode, kept until the user
+/// commits to an action.
 #[derive(Clone)]
 struct PendingSelection {
     text: String,
     /// Foreground window recorded at selection time, for replace-in-place.
     window: Option<isize>,
+    /// Mouse-release anchor, so the toolbar and its card land next to the
+    /// selection instead of wherever the cursor is later.
+    anchor: Option<(i32, i32)>,
+    /// Foreground executable (toolbar mode), for the per-app opt-out.
+    app: Option<String>,
 }
 
 /// Tray menu handles for the 划词翻译 submenu, so the checkmarks can follow the
 /// current mode.
 struct SelectionMenu {
     off: CheckMenuItem<tauri::Wry>,
+    toolbar: CheckMenuItem<tauri::Wry>,
     ball: CheckMenuItem<tauri::Wry>,
     auto: CheckMenuItem<tauri::Wry>,
 }
@@ -175,6 +190,17 @@ struct CaptionMenu {
 const BALL_IDLE: u64 = 0;
 const BALL_ARMED: u64 = 1;
 const BALL_BUSY: u64 = 2;
+
+/// Compact selection toolbar: a 300×44 pill that grows downwards while its
+/// `−` menu is open.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+const TOOLBAR_WIDTH: f64 = 300.0;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+const TOOLBAR_HEIGHT: f64 = 44.0;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+const TOOLBAR_MENU_HEIGHT: f64 = 128.0;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+const TOOLBAR_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 struct TranslateConfig {
@@ -234,7 +260,9 @@ struct SettingsPayload {
     selection_min_length: usize,
     selection_supported: bool,
     selection_ball_supported: bool,
+    selection_toolbar_supported: bool,
     selection_auto_supported: bool,
+    toolbar_disabled_apps: Vec<String>,
     model_exists: bool,
     extension_addr: String,
     extension_running: bool,
@@ -430,7 +458,12 @@ fn main() {
             selection_menu: Mutex::new(None),
             selection: Mutex::new(selection_watch::SelectionSettings::from_config(&config)),
             pending_selection: Mutex::new(None),
+            toolbar_disabled: Mutex::new(selection_watch::parse_disabled_apps(
+                config.toolbar_disabled_apps.as_deref(),
+            )),
             ball_generation: AtomicU64::new(0),
+            toolbar_generation: AtomicU64::new(0),
+            toolbar_visible: AtomicBool::new(false),
             suppress_until: Mutex::new(None),
             translation_queue: translator_core::latest_wins::LatestWins::new(),
             popup: AtomicBool::new(false),
@@ -533,6 +566,14 @@ fn main() {
             retranslate,
             ball_hover,
             ball_click,
+            toolbar_action,
+            toolbar_info,
+            toolbar_speech,
+            toolbar_hide,
+            toolbar_expanded,
+            toolbar_disable_app,
+            toolbar_disable_all,
+            remove_toolbar_disabled_app,
             card_engaged,
             save_selection_mode,
             save_selection_method,
@@ -585,6 +626,11 @@ fn main() {
 
             if let Err(error) = build_ball_window(&handle) {
                 eprintln!("failed to create the selection ball window: {error}");
+            }
+
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            if let Err(error) = build_toolbar_window(&handle) {
+                eprintln!("failed to create the selection toolbar window: {error}");
             }
 
             if let Err(error) = build_caption_window(&handle) {
@@ -1313,7 +1359,12 @@ fn refresh_ball_state(app: &AppHandle) {
 fn show_ball(app: &AppHandle, text: String, anchor: (i32, i32), window: Option<isize>) {
     let state = app.state::<AppState>();
     let generation = state.ball_generation.fetch_add(1, Ordering::SeqCst) + 1;
-    *state.pending_selection.lock().unwrap() = Some(PendingSelection { text, window });
+    *state.pending_selection.lock().unwrap() = Some(PendingSelection {
+        text,
+        window,
+        anchor: None,
+        app: None,
+    });
     drop(state);
 
     place_ball_window(app, anchor);
@@ -1344,6 +1395,386 @@ fn show_ball(app: &AppHandle, text: String, anchor: (i32, i32), window: Option<i
             let _ = ball.hide();
         }
     });
+}
+
+/// Places the compact toolbar above the selection end, flipping below when
+/// there is no room and staying inside the monitor work area.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn toolbar_position(
+    cursor: (i32, i32),
+    size: (i32, i32),
+    work: WorkArea,
+    margin: i32,
+    gap: i32,
+) -> (i32, i32) {
+    let work_right = work.x + work.width as i32;
+    let work_bottom = work.y + work.height as i32;
+
+    let x = cursor.0 - size.0 / 2;
+    let mut y = cursor.1 - size.1 - gap;
+
+    if y < work.y + margin {
+        y = cursor.1 + gap;
+    }
+
+    let min_x = work.x + margin;
+    let min_y = work.y + margin;
+    let max_x = work_right - size.0 - margin;
+    let max_y = work_bottom - size.1 - margin;
+
+    (
+        x.clamp(min_x, max_x.max(min_x)),
+        y.clamp(min_y, max_y.max(min_y)),
+    )
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn place_toolbar_window(app: &AppHandle, anchor: (i32, i32)) {
+    let Some(toolbar) = app.get_webview_window("toolbar") else {
+        return;
+    };
+
+    // macOS anchors are global points while monitor geometry is physical;
+    // convert the size and work area to points before clamping.
+    #[cfg(target_os = "macos")]
+    {
+        let scale = toolbar.scale_factor().unwrap_or(1.0);
+        let Ok(size) = toolbar.outer_size().or_else(|_| toolbar.inner_size()) else {
+            return;
+        };
+        let size = (
+            (size.width as f64 / scale).round() as i32,
+            (size.height as f64 / scale).round() as i32,
+        );
+
+        let (x, y) = match monitor_work_area_logical(app, anchor) {
+            Some(work) => toolbar_position(anchor, size, work, 12, 10),
+            None => (anchor.0 - size.0 / 2, anchor.1 - size.1 - 10),
+        };
+
+        let _ = toolbar.set_position(tauri::LogicalPosition::new(x as f64, y as f64));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let Ok(size) = toolbar.outer_size().or_else(|_| toolbar.inner_size()) else {
+            return;
+        };
+
+        let Some(monitor) =
+            monitor_at(app, anchor).or_else(|| toolbar.primary_monitor().ok().flatten())
+        else {
+            return;
+        };
+
+        let work = monitor.work_area();
+        let scale = monitor.scale_factor();
+        let margin = (12.0 * scale) as i32;
+        let gap = (10.0 * scale) as i32;
+
+        let (x, y) = toolbar_position(
+            anchor,
+            (size.width as i32, size.height as i32),
+            WorkArea {
+                x: work.position.x,
+                y: work.position.y,
+                width: work.size.width,
+                height: work.size.height,
+            },
+            margin,
+            gap,
+        );
+
+        let _ = toolbar.set_position(PhysicalPosition::new(x, y));
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn show_toolbar(
+    app: &AppHandle,
+    text: String,
+    anchor: (i32, i32),
+    window: Option<isize>,
+) {
+    let state = app.state::<AppState>();
+    let generation = state.toolbar_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let app_name = capture::app_name_for_window(window);
+    *state.pending_selection.lock().unwrap() = Some(PendingSelection {
+        text,
+        window,
+        anchor: Some(anchor),
+        app: app_name,
+    });
+    drop(state);
+
+    place_toolbar_window(app, anchor);
+
+    if let Some(toolbar) = app.get_webview_window("toolbar") {
+        let _ = toolbar.set_size(LogicalSize::new(TOOLBAR_WIDTH, TOOLBAR_HEIGHT));
+        let _ = toolbar.emit("toolbar-reset", ());
+        let _ = toolbar.show();
+    }
+
+    app.state::<AppState>()
+        .toolbar_visible
+        .store(true, Ordering::SeqCst);
+
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(TOOLBAR_TIMEOUT);
+
+        let state = handle.state::<AppState>();
+
+        if state.toolbar_generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
+
+        drop(state);
+        hide_toolbar(&handle);
+    });
+}
+
+fn hide_toolbar(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    state.toolbar_generation.fetch_add(1, Ordering::SeqCst);
+    state.toolbar_visible.store(false, Ordering::SeqCst);
+    *state.pending_selection.lock().unwrap() = None;
+
+    if let Some(toolbar) = app.get_webview_window("toolbar") {
+        // Let the page cancel speech and close its menu before the window is
+        // hidden; otherwise audio can continue with no visible stop control.
+        let _ = toolbar.emit("toolbar-reset", ());
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        let _ = toolbar.set_size(LogicalSize::new(TOOLBAR_WIDTH, TOOLBAR_HEIGHT));
+
+        let _ = toolbar.hide();
+    }
+}
+
+/// Worker-side hit test for a mouse-down outside the toolbar: clicking back
+/// into the document dismisses the offer without stealing focus. This runs off
+/// the native hook/tap thread, so blocking Tauri getters are safe here.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub(crate) fn dismiss_toolbar_at(app: &AppHandle, x: i32, y: i32) {
+    let Some(toolbar) = app.get_webview_window("toolbar") else {
+        return;
+    };
+
+    if !toolbar.is_visible().unwrap_or(false) {
+        return;
+    }
+
+    let (Ok(position), Ok(size)) = (toolbar.outer_position(), toolbar.outer_size()) else {
+        return;
+    };
+
+    #[cfg(target_os = "macos")]
+    let (left, top, width, height) = {
+        let scale = toolbar.scale_factor().unwrap_or(1.0);
+        (
+            (position.x as f64 / scale).round() as i32,
+            (position.y as f64 / scale).round() as i32,
+            (size.width as f64 / scale).round() as i32,
+            (size.height as f64 / scale).round() as i32,
+        )
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let (left, top, width, height) = {
+        (
+            position.x,
+            position.y,
+            size.width as i32,
+            size.height as i32,
+        )
+    };
+
+    if x >= left && x < left + width && y >= top && y < top + height {
+        return;
+    }
+
+    hide_toolbar(app);
+}
+
+#[derive(Clone, serde::Serialize)]
+struct ToolbarInfo {
+    app: Option<String>,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct ToolbarSpeech {
+    text: String,
+    lang: String,
+}
+
+/// Lightweight metadata for the `−` menu. The selected text is intentionally
+/// not sent on every show; [toolbar_speech] fetches it on demand.
+#[tauri::command]
+fn toolbar_info(app: AppHandle) -> Option<ToolbarInfo> {
+    let pending = app.state::<AppState>().pending_selection.lock().unwrap().clone()?;
+
+    Some(ToolbarInfo { app: pending.app })
+}
+
+#[tauri::command]
+fn toolbar_speech(app: AppHandle) -> Option<ToolbarSpeech> {
+    let pending = app.state::<AppState>().pending_selection.lock().unwrap().clone()?;
+    let source = app
+        .state::<Mutex<TranslateConfig>>()
+        .lock()
+        .unwrap()
+        .source
+        .clone();
+    let (lang, _) = translator_core::detect::resolve_source(&source, &pending.text);
+
+    Some(ToolbarSpeech {
+        text: pending.text,
+        lang,
+    })
+}
+
+#[tauri::command]
+fn toolbar_action(app: AppHandle, action: String) -> Result<(), String> {
+    match action.as_str() {
+        "copy" => {
+            let text = app
+                .state::<AppState>()
+                .pending_selection
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|pending| pending.text.clone())
+                .ok_or_else(|| "没有可复制的内容".to_string())?;
+
+            with_clipboard(&app, |clipboard| {
+                clipboard
+                    .set_text(text)
+                    .map_err(|error| format!("复制失败：{error}"))
+            })
+            .unwrap_or_else(|| Err("剪贴板不可用".to_string()))
+        }
+        "translate" => {
+            let pending = app
+                .state::<AppState>()
+                .pending_selection
+                .lock()
+                .unwrap()
+                .take();
+
+            let Some(pending) = pending else {
+                return Err("没有可翻译的文本".to_string());
+            };
+
+            hide_toolbar(&app);
+            *app.state::<AppState>().replace_window.lock().unwrap() = pending.window;
+            mark_suppressed(&app, Duration::from_millis(1200));
+
+            #[cfg(not(target_os = "linux"))]
+            show_main_popup(&app);
+
+            translate_text(&app, pending.text);
+            Ok(())
+        }
+        other => Err(format!("unknown toolbar action: {other}")),
+    }
+}
+
+#[tauri::command]
+fn toolbar_hide(app: AppHandle) {
+    hide_toolbar(&app);
+}
+
+/// Grows the window downwards for the `−` menu; collapsing re-anchors the
+/// compact pill above the original selection.
+#[tauri::command]
+fn toolbar_expanded(app: AppHandle, expanded: bool) {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        let Some(toolbar) = app.get_webview_window("toolbar") else {
+            return;
+        };
+
+        let height = if expanded {
+            TOOLBAR_MENU_HEIGHT
+        } else {
+            TOOLBAR_HEIGHT
+        };
+
+        let _ = toolbar.set_size(LogicalSize::new(TOOLBAR_WIDTH, height));
+
+        if !expanded {
+            if let Some(anchor) = app
+                .state::<AppState>()
+                .pending_selection
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|pending| pending.anchor)
+            {
+                place_toolbar_window(&app, anchor);
+            }
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let _ = (app, expanded);
+    }
+}
+
+fn persist_toolbar_disabled(state: &AppState) {
+    let apps = state.toolbar_disabled.lock().unwrap().clone();
+
+    if apps.is_empty() {
+        translator_core::settings::persist_remove("toolbar_disabled_apps");
+    } else {
+        translator_core::settings::persist_value(
+            "toolbar_disabled_apps",
+            &selection_watch::serialize_disabled_apps(&apps),
+        );
+    }
+}
+
+/// `− → 在此应用禁用`: remembers the foreground executable, then closes the
+/// toolbar. The settings page lists the entries and can remove them again.
+#[tauri::command]
+fn toolbar_disable_app(app: AppHandle) -> Result<(), String> {
+    let app_name = app
+        .state::<AppState>()
+        .pending_selection
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|pending| pending.app.clone())
+        .ok_or_else(|| "无法识别当前应用".to_string())?;
+
+    let state = app.state::<AppState>();
+    let mut apps = state.toolbar_disabled.lock().unwrap();
+
+    if !apps.iter().any(|entry| entry.eq_ignore_ascii_case(&app_name)) {
+        apps.push(app_name);
+    }
+
+    drop(apps);
+    persist_toolbar_disabled(&state);
+    hide_toolbar(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn toolbar_disable_all(app: AppHandle) {
+    apply_selection_mode(&app, selection_watch::SelectionMode::Off);
+    let _ = app.emit("selection-mode", "off");
+}
+
+#[tauri::command]
+fn remove_toolbar_disabled_app(app: AppHandle, app_name: String) {
+    let state = app.state::<AppState>();
+    state
+        .toolbar_disabled
+        .lock()
+        .unwrap()
+        .retain(|entry| !entry.eq_ignore_ascii_case(&app_name));
+    persist_toolbar_disabled(&state);
 }
 
 /// The user hovered the ball: this is the commit point.
@@ -2043,6 +2474,31 @@ fn build_ball_window(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The selection toolbar is a frameless, non-focusable popover. It is mapped
+/// only while a settled selection is waiting; its `−` menu grows the window
+/// downwards instead of opening a second window.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn build_toolbar_window(app: &AppHandle) -> tauri::Result<()> {
+    let toolbar = WebviewWindowBuilder::new(app, "toolbar", WebviewUrl::App("toolbar.html".into()))
+        .title("OpenTranslator")
+        .inner_size(TOOLBAR_WIDTH, TOOLBAR_HEIGHT)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .shadow(false)
+        .resizable(false)
+        .visible(false)
+        .build()?;
+
+    // Same reason as the ball: keep it from taking focus away from the
+    // document that owns the selection.
+    let _ = toolbar.set_focusable(false);
+
+    Ok(())
+}
+
 const CAPTION_WIDTH: f64 = 860.0;
 const CAPTION_HEIGHT: f64 = 150.0;
 
@@ -2341,6 +2797,14 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         mode.mode == selection_watch::SelectionMode::Off,
         None::<&str>,
     )?;
+    let selection_toolbar = CheckMenuItem::with_id(
+        app,
+        "selection-toolbar",
+        "划词工具栏",
+        selection_watch::toolbar_supported(),
+        mode.mode == selection_watch::SelectionMode::Toolbar,
+        None::<&str>,
+    )?;
     let selection_ball = CheckMenuItem::with_id(
         app,
         "selection-ball",
@@ -2357,9 +2821,15 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
         mode.mode == selection_watch::SelectionMode::Auto,
         None::<&str>,
     )?;
-    // 立即翻译 only exists where the watcher sees a mouse release.
+    // 划词工具栏 and 立即翻译 only exist where the watcher sees a mouse release.
     let mut selection_items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
-        vec![&selection_off, &selection_ball];
+        vec![&selection_off];
+
+    if selection_watch::toolbar_supported() {
+        selection_items.push(&selection_toolbar);
+    }
+
+    selection_items.push(&selection_ball);
 
     if selection_watch::auto_supported() {
         selection_items.push(&selection_auto);
@@ -2386,6 +2856,7 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
     *app.state::<UpdateSlot>().item.lock().unwrap() = Some(update_item);
     *app.state::<AppState>().selection_menu.lock().unwrap() = Some(SelectionMenu {
         off: selection_off,
+        toolbar: selection_toolbar,
         ball: selection_ball,
         auto: selection_auto,
     });
@@ -2428,6 +2899,9 @@ fn build_tray(app: &AppHandle, hotkey_spec: &str) -> tauri::Result<()> {
             }
             "selection-off" => {
                 set_selection_mode_from_menu(app, selection_watch::SelectionMode::Off)
+            }
+            "selection-toolbar" => {
+                set_selection_mode_from_menu(app, selection_watch::SelectionMode::Toolbar)
             }
             "selection-ball" => {
                 set_selection_mode_from_menu(app, selection_watch::SelectionMode::Ball)
@@ -2528,9 +3002,14 @@ fn save_selection_mode(app: AppHandle, mode: String) -> Result<(), String> {
     let parsed = match mode.trim() {
         "off" => selection_watch::SelectionMode::Off,
         "ball" => selection_watch::SelectionMode::Ball,
+        "toolbar" => selection_watch::SelectionMode::Toolbar,
         "auto" => selection_watch::SelectionMode::Auto,
         other => return Err(format!("unknown selection mode: {other}")),
     };
+
+    if parsed == selection_watch::SelectionMode::Toolbar && !selection_watch::toolbar_supported() {
+        return Err("the selection toolbar is not supported on this platform".to_string());
+    }
 
     apply_selection_mode(&app, parsed);
     Ok(())
@@ -2540,6 +3019,7 @@ fn save_selection_mode(app: AppHandle, mode: String) -> Result<(), String> {
 /// updates the runtime state, persists it and adjusts the watcher/ball.
 fn apply_selection_mode(app: &AppHandle, parsed: selection_watch::SelectionMode) {
     let state = app.state::<AppState>();
+    let previous = state.selection.lock().unwrap().mode;
     state.selection.lock().unwrap().mode = parsed;
     translator_core::settings::persist_value("selection_mode", parsed.as_str());
 
@@ -2554,6 +3034,9 @@ fn apply_selection_mode(app: &AppHandle, parsed: selection_watch::SelectionMode)
             .off
             .set_checked(parsed == selection_watch::SelectionMode::Off);
         let _ = menu
+            .toolbar
+            .set_checked(parsed == selection_watch::SelectionMode::Toolbar);
+        let _ = menu
             .ball
             .set_checked(parsed == selection_watch::SelectionMode::Ball);
         let _ = menu
@@ -2561,8 +3044,22 @@ fn apply_selection_mode(app: &AppHandle, parsed: selection_watch::SelectionMode)
             .set_checked(parsed == selection_watch::SelectionMode::Auto);
     }
 
-    if parsed == selection_watch::SelectionMode::Off {
+    // Only tear down the presentation being left. Re-applying the current
+    // mode (e.g. clicking the checked tray item) must keep the pending
+    // selection so the visible toolbar still works.
+    if previous == selection_watch::SelectionMode::Ball
+        && parsed != selection_watch::SelectionMode::Ball
+    {
         hide_ball(app);
+    }
+
+    if previous == selection_watch::SelectionMode::Toolbar
+        && parsed != selection_watch::SelectionMode::Toolbar
+    {
+        hide_toolbar(app);
+    }
+
+    if parsed == selection_watch::SelectionMode::Off {
         state.translation_queue.clear_queued();
 
         // A card that the watcher popped up should not linger once the feature
@@ -2583,9 +3080,13 @@ fn apply_selection_mode(app: &AppHandle, parsed: selection_watch::SelectionMode)
 #[tauri::command]
 fn save_selection_method(value: String) -> Result<(), String> {
     let method = match value.trim() {
-        "ball" | "auto" => value.trim().to_string(),
+        "ball" | "toolbar" | "auto" => value.trim().to_string(),
         other => return Err(format!("unknown selection method: {other}")),
     };
+
+    if method == "toolbar" && !selection_watch::toolbar_supported() {
+        return Err("the selection toolbar is not supported on this platform".to_string());
+    }
 
     translator_core::settings::persist_value("selection_method", &method);
     Ok(())
@@ -3182,14 +3683,35 @@ fn get_settings(app: AppHandle) -> SettingsPayload {
             .selection_method
             .as_deref()
             .map(str::trim)
-            .filter(|value| *value == "auto")
-            .unwrap_or("ball")
+            .filter(|value| matches!(*value, "ball" | "toolbar" | "auto"))
+            .filter(|value| *value != "toolbar" || selection_watch::toolbar_supported())
+            .unwrap_or(match selection.mode {
+                // A config without selection_method predates the key; keep the
+                // settings view aligned with the mode that is actually active.
+                selection_watch::SelectionMode::Ball => "ball",
+                selection_watch::SelectionMode::Toolbar => "toolbar",
+                selection_watch::SelectionMode::Auto => "auto",
+                selection_watch::SelectionMode::Off => {
+                    if selection_watch::toolbar_supported() {
+                        "toolbar"
+                    } else {
+                        "ball"
+                    }
+                }
+            })
             .to_string(),
         selection_delay_ms: selection.delay_ms(),
         selection_min_length: selection.min_length,
         selection_supported: selection_watch::selection_supported(),
         selection_ball_supported: selection_watch::ball_supported(),
+        selection_toolbar_supported: selection_watch::toolbar_supported(),
         selection_auto_supported: selection_watch::auto_supported(),
+        toolbar_disabled_apps: app
+            .state::<AppState>()
+            .toolbar_disabled
+            .lock()
+            .unwrap()
+            .clone(),
         model_exists: resolve_model_path(&config)
             .map(|path| path.is_file())
             .unwrap_or(false),
@@ -3617,6 +4139,26 @@ mod autostart {
     #[cfg(test)]
     mod tests {
         use super::{desktop_exec_quote, powershell_quote, xml_escape};
+
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        #[test]
+        fn places_toolbar_above_the_selection_end() {
+            use crate::{WorkArea, toolbar_position};
+
+            let work = WorkArea {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            };
+
+            assert_eq!(toolbar_position((500, 400), (300, 44), work, 12, 10), (350, 346));
+            assert_eq!(toolbar_position((500, 20), (300, 44), work, 12, 10), (350, 30));
+            assert_eq!(
+                toolbar_position((1900, 400), (300, 44), work, 12, 10),
+                (1608, 346)
+            );
+        }
 
         #[test]
         fn escapes_entry_artifacts() {

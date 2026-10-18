@@ -1,9 +1,10 @@
 # Selection Translation (划词翻译) — Design & Landing
 
-Status: Linux uses the docked confirm ball (Wayland and X11); Windows/macOS use
-the selection-following ball and keep direct translation. Windows real-machine
-checks passed 2026-10-04; the X11-session check is still pending; macOS cannot
-be real-machine-verified (no Mac hardware) and ships as an experimental watcher.
+Status: Linux uses the docked confirm ball (Wayland and X11); Windows/macOS offer
+the selection-following ball, the compact selection toolbar and direct
+translation. The Windows toolbar real-machine check passed 2026-10-18; the
+X11-session and Linux toolbar checks are still pending; macOS cannot be
+real-machine-verified (no Mac hardware) and ships as an experimental watcher.
 
 
 ## 1. Goal
@@ -14,8 +15,9 @@ tool ever interrupting the selection or the current activity.
 
 Selecting text is ambiguous (copy, edit, highlight), so the tool never treats a
 selection itself as translation intent. Confirmation is always an explicit
-small gesture: hover the ball (Linux/Windows/macOS) or, where a mouse-release
-signal is observable, the opt-in direct mode (Windows/macOS only).
+small gesture: hover the ball (Linux/Windows/macOS), click 翻译 in the compact
+toolbar, or, where a mouse-release signal is observable, the opt-in direct mode
+(Windows/macOS only).
 
 
 ## 2. Modes
@@ -24,11 +26,14 @@ signal is observable, the opt-in direct mode (Windows/macOS only).
 | --- | --- | --- |
 | `off` (default) | nothing | nothing |
 | `ball` | docked confirm ball | selection-following ball |
+| `toolbar` | not offered; a config value falls back to `ball` | compact action bar above the selection; 翻译 opens the card |
 | `auto` | not offered; a config value falls back to `ball` | direct card after the mouse-up settle |
 
 The settings UI exposes a 划词翻译 master switch plus a 翻译方式 choice
-(悬浮球翻译/立即翻译) that only appears where `auto` is supported; the tray has
-the same choice as a 划词翻译 submenu and both stay in sync.
+(划词工具栏/悬浮球翻译/立即翻译); unsupported options are hidden per platform.
+The tray has the same choice as a 划词翻译 submenu and both stay in sync. New
+configs default to `toolbar` on Windows/macOS and `ball` on Linux; an explicit
+`selection_method` from an older config is preserved.
 
 
 ## 3. Docked confirm ball (Linux)
@@ -108,24 +113,66 @@ single-flight: while one request streams, newer text only replaces a one-slot
 queued follow-up, so bursts cannot interleave streams or stack engine work.
 
 
-## 5. Configuration
+## 5. Selection toolbar (Windows/macOS)
+
+A compact 300×44 action bar appears above the selection end after the same
+settle as the ball. It follows the Yuanbao desktop pattern: the selection offers
+actions first and the result opens in place only after 翻译 is chosen.
+
+- **Actions**: 翻译 (primary, filled accent), 复制 (source text), 朗读 (original
+  text through the configured local TTS engine or the system voice fallback)
+  and a `−` menu with 在此应用禁用 / 关闭划词工具栏. There is deliberately no web
+  search or general chat entry.
+- **Window**: separate `toolbar` window, transparent, frameless, always on top,
+  no taskbar entry, non-focusable (`set_focusable(false)`), so clicking a button
+  cannot steal the selection or the source application's focus. Placement
+  centers on the mouse-release anchor, prefers above with a 10 px gap, flips
+  below when there is no room and clamps to the monitor work area.
+- **Result panel**: 翻译 hides the toolbar, records the source window for
+  replace-in-place, and reuses the existing card (`show_main_popup` +
+  `translate_text`), including streaming, copy, retranslate, alternatives and
+  replace. 复制 writes the captured text and closes after a short toast; 朗读
+  uses `speechSynthesis` with the detected source language and toggles to 停止.
+- **Dismissal**: clicking anywhere outside the toolbar, a new selection,
+  changing the mode, or a 10 s timeout hides it. The mouse hook/tap only touches
+  atomics and a channel; a worker thread performs the window hit-test and hide,
+  so the low-level callback never blocks on the Tauri event loop. The `−` menu
+  grows the same window downwards (44 → 128 px) instead of opening a second
+  window, and collapses it again when an action or a new selection resets it.
+- **Per-app opt-out**: `toolbar_disabled_apps` is a JSON string array of
+  executable names (legacy comma/semicolon values are still accepted,
+  case-insensitive). The `−` menu stores the current foreground executable; the
+  settings page renders the list as removable chips. The app is resolved before
+  the selection is read, so a disabled app is never inspected and never hits the
+  synthetic Ctrl+C/Cmd+C clipboarding fallback; it does not fall back to the
+  ball or direct mode. Windows resolves the executable through
+  `GetWindowThreadProcessId` + `QueryFullProcessImageNameW`; macOS currently
+  returns no name, so the per-app item stays hidden there.
+- **Intent memory**: there is no “即划即用” toggle inside the toolbar. Selecting
+  立即翻译 in the settings/tray is the equivalent and keeps the toolbar
+  action-first by default.
+
+
+## 6. Configuration
 
 | key | values | default |
 | --- | --- | --- |
-| `selection_mode` | `off`, `ball`, `auto` (auto: Windows/macOS only) | `off` |
-| `selection_method` | `ball`, `auto`: remembered for the next switch-on | `ball` |
+| `selection_mode` | `off`, `ball`, `toolbar`, `auto` (toolbar/auto: Windows/macOS only) | `off` |
+| `selection_method` | `ball`, `toolbar`, `auto`: remembered for the next switch-on | `toolbar` (Windows/macOS) / `ball` (Linux) |
 | `selection_delay` | 100–3000 ms settle | 900 (Linux) / 400 |
 | `selection_min_length` | 1–50 chars | 2 |
 | `ball_visibility` | `always`, `selection` | `always` |
 | `ball_x`, `ball_y` | custom dock position (physical px) | right-edge center |
+| `toolbar_disabled_apps` | JSON array of executable names (legacy comma/semicolon accepted) | empty |
 
-The settings UI intentionally exposes only `selection_mode` and the hotkey;
-the other keys are defaults for almost everyone and are edited in the config
-file by power users. The settings page structure (minimal rows plus a collapsed
-关于 block) is described in docs/ARCHITECTURE.md → UI Design Language.
+The settings UI intentionally exposes only `selection_mode`, the method, the
+per-app opt-out list and the hotkey; the other keys are defaults for almost
+everyone and are edited in the config file by power users. The settings page
+structure (minimal rows plus a collapsed 关于 block) is described in
+docs/ARCHITECTURE.md → UI Design Language.
 
 
-## 6. Flow (Linux docked ball)
+## 7. Flow (Linux docked ball)
 
 ```mermaid
 stateDiagram-v2
@@ -138,34 +185,45 @@ stateDiagram-v2
 ```
 
 
-## 7. Platform matrix
+## 8. Platform matrix
 
 | platform | sensor | confirm UI | state |
 | --- | --- | --- | --- |
 | Linux/Wayland | XFixes events + one X11 read after quiet (AT-SPI typing filter) | docked ball | landed, GNOME Wayland manual pass passed 2026-10-04 |
 | Linux/X11 | PRIMARY via X11 | docked ball | landed, X11-session manual pass pending |
-| Windows | WH_MOUSE_LL + UIA | selection-following ball / auto | landed, real-machine verified 2026-10-04 |
-| macOS | CGEventTap + AX | selection-following ball / auto | landed, cross-target compile-checked only (no Mac hardware to verify), experimental watcher |
+| Windows | WH_MOUSE_LL + UIA | ball / toolbar / auto | landed; ball verified 2026-10-04, toolbar verified 2026-10-18 |
+| macOS | CGEventTap + AX | ball / toolbar / auto | landed, cross-target compile-checked only (no Mac hardware to verify), experimental watcher; toolbar has no per-app opt-out yet |
 
 
-## 8. Files
+## 9. Files
 
 - `desktop/translator-popup-tauri/src/selection_watch.rs` — modes, watcher,
   settle/guards, platform modules.
-- `desktop/translator-popup-tauri/src/main.rs` — ball window, dock placement,
-  states, hover commit, card placement, settings commands.
+- `desktop/translator-popup-tauri/src/main.rs` — ball/toolbar windows, dock and
+  selection placement, states, hover/action commits, card placement, settings
+  commands, per-app opt-out persistence.
 - `desktop/translator-popup-tauri/ui/ball.{html,css,js}` — ball UI, hover dwell,
   drag handling.
-- `desktop/translator-core/src/settings.rs` — `selection_*`, `ball_*` keys and
-  `persist_remove`.
+- `desktop/translator-popup-tauri/ui/toolbar.{html,css,js}` — compact toolbar,
+  `−` menu, copy/toast and WebView speech.
+- `desktop/translator-core/src/settings.rs` — `selection_*`, `ball_*`,
+  `toolbar_disabled_apps` keys and `persist_remove`.
 
 
-## 9. Verification
+## 10. Verification
 
 - `cargo test` in `desktop/translator-core` and
   `desktop/translator-popup-tauri`.
-- `node --check ui/main.js ui/ball.js ui/dropdown.js`; `python3 -m json.tool`
-  for the capabilities/config; `bash shared/sync-ui.sh --check`.
+- `node --check ui/main.js ui/ball.js ui/toolbar.js ui/dropdown.js`;
+  `python3 -m json.tool` for the capabilities/config;
+  `bash shared/sync-ui.sh --check`.
+- Manual (Windows): choose 划词工具栏, select text in a browser/Notepad/VS Code
+  and confirm the pill appears above the selection end without stealing focus;
+  翻译 opens the streaming card, 复制 copies the source, 朗读 speaks it, and
+  `− → 在此应用禁用` makes the next selection in that app do nothing; the app
+  then appears in 设置 → 已禁用应用 and can be removed; clicking outside, a new
+  selection, or 10 s idle hides the pill; repeat near the top edge and on a
+  second monitor to check flipping/clamping.
 - Manual (Linux): choose 悬浮球翻译 in 选中文字后, confirm the ball appears at
   the right edge and is dim; select text → it lights up; move onto it → after
   ~150 ms the card opens beside it with the translation; hovering again

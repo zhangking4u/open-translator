@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenTranslator</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="toolbar.css" />
+  </head>
+  <body data-menu="closed">
+    <div class="toolbar" role="toolbar" aria-label="划词操作">
+      <button class="action primary" id="translate" type="button" title="翻译选中文本">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m5 8 6 6" />
+          <path d="m4 14 6-6 2-3" />
+          <path d="M2 5h12" />
+          <path d="M7 2h1" />
+          <path d="m22 22-5-10-5 10" />
+          <path d="M14 18h6" />
+        </svg>
+        <span>翻译</span>
+      </button>
+
+      <button class="action" id="copy" type="button" title="复制选中文本">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect width="14" height="14" x="8" y="8" rx="2" />
+          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+        </svg>
+        <span>复制</span>
+      </button>
+
+      <button class="action" id="speak" type="button" title="朗读选中文本">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M11 5 6 9H2v6h4l5 4z" />
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+        </svg>
+        <span>朗读</span>
+      </button>
+
+      <button
+        class="more"
+        id="more"
+        type="button"
+        title="更多"
+        aria-haspopup="menu"
+        aria-expanded="false"
+        aria-label="更多"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg>
+      </button>
+    </div>
+
+    <div class="menu" id="menu" role="menu" hidden>
+      <button id="disable-app" type="button" role="menuitem" hidden>在此应用禁用</button>
+      <button id="disable-all" type="button" role="menuitem">关闭划词工具栏</button>
+    </div>
+
+    <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+
+    <script src="toolbar.js"></script>
+  </body>
+</html>

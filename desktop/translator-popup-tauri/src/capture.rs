@@ -184,6 +184,63 @@ pub fn foreground_window() -> Option<isize> {
     }
 }
 
+/// Executable name of the window that owns a selection, used by the per-app
+/// toolbar opt-out. Only Windows resolves it today (macOS/Linux return `None`,
+/// which keeps the toolbar enabled there).
+#[cfg(target_os = "windows")]
+pub fn app_name_for_window(window: Option<isize>) -> Option<String> {
+    use std::ffi::c_void;
+
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    let window = window? as usize as *mut c_void;
+    let mut process_id = 0u32;
+
+    unsafe {
+        GetWindowThreadProcessId(window, &mut process_id);
+    }
+
+    if process_id == 0 {
+        return None;
+    }
+
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
+
+    if process.is_null() {
+        return None;
+    }
+
+    let mut buffer = [0u16; 1024];
+    let mut length = buffer.len() as u32;
+    let ok = unsafe {
+        QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buffer.as_mut_ptr(), &mut length)
+    };
+
+    unsafe {
+        CloseHandle(process);
+    }
+
+    if ok == 0 {
+        return None;
+    }
+
+    let path = String::from_utf16_lossy(&buffer[..length as usize]);
+
+    std::path::Path::new(&path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn app_name_for_window(_window: Option<isize>) -> Option<String> {
+    None
+}
+
 #[cfg(target_os = "linux")]
 mod linux {
     use std::time::{Duration, Instant};

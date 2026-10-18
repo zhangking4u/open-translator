@@ -74,6 +74,8 @@ const selectionMethodSelect = document.getElementById("selection-method");
 const selectionMethodRow = document.getElementById("selection-method-row");
 const selectionSaved = document.getElementById("selection-saved");
 const selectionGroup = document.getElementById("selection-group");
+const toolbarDisabledRow = document.getElementById("toolbar-disabled-row");
+const toolbarDisabledList = document.getElementById("toolbar-disabled-list");
 const switchAutostart = document.getElementById("switch-autostart");
 const switchAutoCopy = document.getElementById("switch-auto-copy");
 const openAbout = document.getElementById("open-about");
@@ -86,6 +88,8 @@ let selectionModeValue = "off";
 let selectionMethodValue = "ball";
 let selectionAutoSupported = false;
 let selectionBallSupported = true;
+let selectionToolbarSupported = false;
+let toolbarDisabledApps = [];
 let autoCopyEnabled = false;
 let historyCache = [];
 let historyFilter = "";
@@ -365,24 +369,33 @@ async function initLanguages() {
   resize();
 }
 
-// "立即翻译" is not offered where the watcher has no mouse-release signal
-// (Linux); the option must go before the segmented control is built.
+// "划词工具栏" and "立即翻译" are not offered where the watcher has no
+// mouse-release anchor (Linux); the options must go before the segmented
+// control is built.
 function removeUnsupportedSelectionOptions(settings) {
-  if (!settings || settings.selection_auto_supported) {
+  if (!settings) {
     return;
   }
 
-  const option = selectionMethodSelect.querySelector('option[value="auto"]');
+  if (!settings.selection_toolbar_supported) {
+    selectionMethodSelect.querySelector('option[value="toolbar"]')?.remove();
 
-  if (option) {
-    option.remove();
+    if (selectionMethodSelect.value === "toolbar") {
+      selectionMethodSelect.value = "ball";
+    }
   }
 
-  if (selectionMethodSelect.value === "auto") {
-    selectionMethodSelect.value = "ball";
+  if (!settings.selection_auto_supported) {
+    selectionMethodSelect.querySelector('option[value="auto"]')?.remove();
+
+    if (selectionMethodSelect.value === "auto") {
+      selectionMethodSelect.value = "ball";
+    }
   }
 
-  selectionMethodValue = "ball";
+  if (![...selectionMethodSelect.options].some((option) => option.value === selectionMethodValue)) {
+    selectionMethodValue = "ball";
+  }
 }
 
 sourceSelect.addEventListener("change", () => {
@@ -2369,23 +2382,59 @@ function flashSelectionSaved() {
 function updateSelectionMethodRow() {
   selectionMethodRow.hidden = !(
     !selectionGroup.hidden &&
-    selectionAutoSupported &&
+    (selectionAutoSupported || selectionToolbarSupported) &&
     switchSelection.checked
   );
 }
 
+function renderToolbarDisabledApps() {
+  toolbarDisabledList.replaceChildren();
+  toolbarDisabledRow.hidden = toolbarDisabledApps.length === 0;
+
+  for (const appName of toolbarDisabledApps) {
+    const chip = document.createElement("span");
+    chip.className = "toolbar-disabled-chip";
+    chip.append(appName);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.title = "恢复在此应用显示工具栏";
+    remove.setAttribute("aria-label", `恢复 ${appName}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", async () => {
+      await invoke("remove_toolbar_disabled_app", { appName }).catch(() => {});
+      toolbarDisabledApps = toolbarDisabledApps.filter((entry) => entry !== appName);
+      renderToolbarDisabledApps();
+      resize();
+    });
+
+    chip.append(remove);
+    toolbarDisabledList.append(chip);
+  }
+}
+
 function applySelectionSettings(settings) {
   selectionModeValue = settings.selection_supported ? settings.selection_mode : "off";
-  selectionMethodValue = settings.selection_method === "auto" ? "auto" : "ball";
+  selectionMethodValue = ["ball", "toolbar", "auto"].includes(settings.selection_method)
+    ? settings.selection_method
+    : "ball";
 
-  // The backend clamps `auto` to `ball` where it is not supported; guard here
-  // too so the select can never hold a value without a matching option.
+  // The backend clamps modes it cannot support; guard here too so the select
+  // can never hold a value without a matching option.
   if (!settings.selection_auto_supported && selectionMethodValue === "auto") {
+    selectionMethodValue = "ball";
+  }
+
+  if (!settings.selection_toolbar_supported && selectionMethodValue === "toolbar") {
     selectionMethodValue = "ball";
   }
 
   selectionAutoSupported = settings.selection_auto_supported;
   selectionBallSupported = settings.selection_ball_supported;
+  selectionToolbarSupported = settings.selection_toolbar_supported;
+  toolbarDisabledApps = Array.isArray(settings.toolbar_disabled_apps)
+    ? settings.toolbar_disabled_apps
+    : [];
   removeUnsupportedSelectionOptions(settings);
   selectionGroup.hidden = !settings.selection_supported;
 
@@ -2397,6 +2446,7 @@ function applySelectionSettings(settings) {
     selectionMethodControl.sync();
   }
 
+  renderToolbarDisabledApps();
   updateSelectionMethodRow();
 }
 
@@ -2850,10 +2900,14 @@ listen("selection-mode", (event) => {
   // waiting hint stay in sync too.
   const mode = event.payload;
 
-  if (mode === "off" || mode === "ball" || mode === "auto") {
+  if (mode === "off" || mode === "ball" || mode === "toolbar" || mode === "auto") {
     selectionModeValue = mode;
 
-    if (mode === "ball" || (mode === "auto" && selectionAutoSupported)) {
+    if (
+      mode === "ball" ||
+      (mode === "toolbar" && selectionToolbarSupported) ||
+      (mode === "auto" && selectionAutoSupported)
+    ) {
       selectionMethodValue = mode;
     }
   }

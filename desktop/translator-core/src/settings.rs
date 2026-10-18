@@ -24,6 +24,7 @@ pub struct FileConfig {
     pub ball_visibility: Option<String>,
     pub ball_x: Option<String>,
     pub ball_y: Option<String>,
+    pub toolbar_disabled_apps: Option<String>,
     pub asr_model_dir: Option<String>,
     pub ocr_model_dir: Option<String>,
     pub caption_enabled: Option<String>,
@@ -107,6 +108,9 @@ pub fn load_file_config(path: &Path) -> FileConfig {
             "ball_visibility" => config.ball_visibility = Some(value.to_string()),
             "ball_x" => config.ball_x = Some(value.to_string()),
             "ball_y" => config.ball_y = Some(value.to_string()),
+            "toolbar_disabled_apps" => {
+                config.toolbar_disabled_apps = Some(value.to_string())
+            }
             "asr_model_dir" => config.asr_model_dir = Some(value.to_string()),
             "ocr_model_dir" => config.ocr_model_dir = Some(value.to_string()),
             "caption_enabled" => config.caption_enabled = Some(value.to_string()),
@@ -240,7 +244,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nscreenshot_hotkey = Ctrl+Alt+S\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_method = auto\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\nasr_model_dir = /models/sense-voice\nocr_model_dir = /models/ocr\ncaption_enabled = true\ncaption_language = auto\ncaption_x = 640\ncaption_y = 960\ncaption_layout = translation\ncaption_glossary = /config/glossary.txt\ninput_hotkey = Ctrl+Alt+I\nocr_hotkey = Ctrl+Alt+Z\ntts_target = both\ntts_rate = 0.8\ntts_voice = Microsoft Xiaoxiao\ntts_engine = local\ntts_local_engine = fast\ntts_speaker = 3\ntts_speaker_zh = 3\ntts_speaker_en = 1\ntts_speaker_multi = 6\ntts_model_dir = /models/tts\nauto_copy = false\nunknown = x\n",
+            "# comment\nsource = ja\n\ntarget=ko\nclipboard = true\nrecent_targets = zh, ja\nservice_url = \"http://127.0.0.1:1\"\nhotkey = Ctrl+Shift+T\nscreenshot_hotkey = Ctrl+Alt+S\nmodel_path = /models/hy-mt.gguf\nprompt_style = hymt\nserve_extension = false\nauto_download = false\ncheck_updates = false\nselection_mode = ball\nselection_method = auto\nselection_delay = 650\nselection_min_length = 3\nball_visibility = selection\nball_x = 120\nball_y = 480\ntoolbar_disabled_apps = Code.exe, Notepad.exe\nasr_model_dir = /models/sense-voice\nocr_model_dir = /models/ocr\ncaption_enabled = true\ncaption_language = auto\ncaption_x = 640\ncaption_y = 960\ncaption_layout = translation\ncaption_glossary = /config/glossary.txt\ninput_hotkey = Ctrl+Alt+I\nocr_hotkey = Ctrl+Alt+Z\ntts_target = both\ntts_rate = 0.8\ntts_voice = Microsoft Xiaoxiao\ntts_engine = local\ntts_local_engine = fast\ntts_speaker = 3\ntts_speaker_zh = 3\ntts_speaker_en = 1\ntts_speaker_multi = 6\ntts_model_dir = /models/tts\nauto_copy = false\nunknown = x\n",
         )
         .unwrap();
 
@@ -269,6 +273,10 @@ mod tests {
         assert_eq!(config.ball_visibility.as_deref(), Some("selection"));
         assert_eq!(config.ball_x.as_deref(), Some("120"));
         assert_eq!(config.ball_y.as_deref(), Some("480"));
+        assert_eq!(
+            config.toolbar_disabled_apps.as_deref(),
+            Some("Code.exe, Notepad.exe")
+        );
         assert_eq!(config.asr_model_dir.as_deref(), Some("/models/sense-voice"));
         assert_eq!(config.ocr_model_dir.as_deref(), Some("/models/ocr"));
         assert_eq!(config.caption_enabled.as_deref(), Some("true"));

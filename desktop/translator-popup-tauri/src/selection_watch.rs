@@ -1,9 +1,10 @@
 //! Selection watcher for 划词翻译.
 //!
 //! The watcher observes the user's selection while the feature is enabled and
-//! either shows the floating ball (`ball`) or opens the translation card
-//! directly (`auto`). It never writes the clipboard and never synthesizes
-//! keys; the platform readers only inspect the current selection.
+//! shows the floating ball (`ball`), the compact action toolbar (`toolbar`) or
+//! opens the translation card directly (`auto`). It never writes the clipboard
+//! and never synthesizes keys; the platform readers only inspect the current
+//! selection.
 //!
 //! Linux subscribes to XFixes selection-owner updates and reads PRIMARY only
 //! once the selection has been quiet for the settle delay. GNOME mirrors every
@@ -18,6 +19,8 @@
 //! AX text) and Linux never touches the clipboard at all.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Sender};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use tauri::AppHandle;
@@ -39,6 +42,7 @@ pub const MAX_LENGTH: usize = 50;
 pub enum SelectionMode {
     Off,
     Ball,
+    Toolbar,
     Auto,
 }
 
@@ -48,6 +52,7 @@ impl SelectionMode {
     pub fn parse(value: Option<&str>) -> Self {
         match value.map(str::trim) {
             Some("ball") => Self::Ball,
+            Some("toolbar") => Self::Toolbar,
             Some("auto") => Self::Auto,
             _ => Self::Off,
         }
@@ -57,6 +62,7 @@ impl SelectionMode {
         match self {
             Self::Off => "off",
             Self::Ball => "ball",
+            Self::Toolbar => "toolbar",
             Self::Auto => "auto",
         }
     }
@@ -109,13 +115,13 @@ impl SelectionSettings {
 
         let mode = SelectionMode::parse(config.selection_mode.as_deref());
 
-        // Direct translation has no mouse-release signal on Linux and is not
-        // offered in the UI there; an old config value falls back to the ball.
+        // Direct translation and the selection-following toolbar both need a
+        // mouse-release anchor that the Linux watcher cannot provide yet; an
+        // old config value falls back to the ball.
         #[cfg(target_os = "linux")]
-        let mode = if mode == SelectionMode::Auto {
-            SelectionMode::Ball
-        } else {
-            mode
+        let mode = match mode {
+            SelectionMode::Auto | SelectionMode::Toolbar => SelectionMode::Ball,
+            other => other,
         };
 
         let ball_visibility =
@@ -179,6 +185,52 @@ pub fn auto_supported() -> bool {
     }
 }
 
+/// The compact selection toolbar needs a screen anchor for the selection, which
+/// only the native mouse hooks provide. Linux keeps the docked ball for now.
+pub fn toolbar_supported() -> bool {
+    cfg!(any(target_os = "windows", target_os = "macos"))
+}
+
+/// `toolbar_disabled_apps` is stored as a JSON string array so executable names
+/// that contain a comma or semicolon cannot collide. Older comma/semicolon
+/// configs are still accepted as a fallback.
+pub fn parse_disabled_apps(value: Option<&str>) -> Vec<String> {
+    let value = value.unwrap_or_default().trim();
+
+    if value.is_empty() {
+        return Vec::new();
+    }
+
+    let raw: Vec<String> = if value.starts_with('[') {
+        serde_json::from_str(value).unwrap_or_default()
+    } else {
+        value
+            .split([',', ';'])
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    };
+
+    let mut apps: Vec<String> = Vec::new();
+
+    for name in raw {
+        let name = name.trim();
+
+        if name.is_empty() || name.chars().any(char::is_control) {
+            continue;
+        }
+
+        if !apps.iter().any(|existing| existing.eq_ignore_ascii_case(name)) {
+            apps.push(name.to_string());
+        }
+    }
+
+    apps
+}
+
+pub fn serialize_disabled_apps(apps: &[String]) -> String {
+    serde_json::to_string(apps).unwrap_or_else(|_| "[]".to_string())
+}
+
 /// Mirror of "the feature is enabled", checked by the native hook/tap
 /// callbacks so they stay near-free while `selection_mode = off` (the global
 /// hook itself is only installed the first time the feature is enabled).
@@ -200,6 +252,9 @@ pub fn ensure(app: AppHandle) {
         return;
     }
 
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    start_dismiss_worker(&app);
+
     #[cfg(target_os = "linux")]
     std::thread::spawn(move || linux::run(app));
 
@@ -213,6 +268,57 @@ pub fn ensure(app: AppHandle) {
             // flag unset so a later settings change can retry the install.
             WATCHER_STARTED.store(false, Ordering::SeqCst);
         }
+    }
+}
+
+/// The mouse hook/tap may only touch atomics and a channel: Tauri window
+/// getters synchronously wait for the main event loop, and a slow callback can
+/// make Windows remove the hook or macOS disable the tap. This worker performs
+/// the actual toolbar hit-test/hide off the input callback thread.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+static DISMISS_EVENTS: OnceLock<Sender<(u64, i32, i32)>> = OnceLock::new();
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn start_dismiss_worker(app: &AppHandle) {
+    let (sender, receiver) = mpsc::channel::<(u64, i32, i32)>();
+
+    if DISMISS_EVENTS.set(sender).is_err() {
+        return;
+    }
+
+    let app = app.clone();
+
+    std::thread::spawn(move || {
+        use tauri::Manager;
+
+        while let Ok((generation, x, y)) = receiver.recv() {
+            let state = app.state::<crate::AppState>();
+
+            if state.toolbar_generation.load(Ordering::SeqCst) != generation {
+                continue;
+            }
+
+            crate::dismiss_toolbar_at(&app, x, y);
+        }
+    });
+}
+
+/// Called from the native mouse callback. Non-blocking: reads two atomics and
+/// sends a small message to the dismiss worker.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub fn queue_toolbar_dismiss(app: &AppHandle, x: i32, y: i32) {
+    use tauri::Manager;
+
+    let state = app.state::<crate::AppState>();
+
+    if !state.toolbar_visible.load(Ordering::Relaxed) {
+        return;
+    }
+
+    let generation = state.toolbar_generation.load(Ordering::Relaxed);
+
+    if let Some(sender) = DISMISS_EVENTS.get() {
+        let _ = sender.send((generation, x, y));
     }
 }
 
@@ -261,6 +367,24 @@ fn blocked(app: &AppHandle) -> bool {
     false
 }
 
+/// Whether the user opted this application out of the selection toolbar. The
+/// list matches the foreground executable name, case-insensitively.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn toolbar_disabled(app: &AppHandle, window: Option<isize>) -> bool {
+    use tauri::Manager;
+
+    let Some(name) = crate::capture::app_name_for_window(window) else {
+        return false;
+    };
+
+    app.state::<crate::AppState>()
+        .toolbar_disabled
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|entry| entry.eq_ignore_ascii_case(&name))
+}
+
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 fn handle(
     app: &AppHandle,
@@ -270,6 +394,27 @@ fn handle(
     window: Option<isize>,
 ) {
     use tauri::Manager;
+
+    if settings.mode == SelectionMode::Toolbar && toolbar_supported() {
+        if crate::selection_debug() {
+            eprintln!(
+                "SELDBG toolbar branch anchor={anchor:?} disabled={}",
+                toolbar_disabled(app, window)
+            );
+        }
+
+        if let Some(anchor) = anchor {
+            if !toolbar_disabled(app, window) {
+                crate::show_toolbar(app, text, anchor, window);
+            }
+
+            return;
+        }
+    }
+
+    if crate::selection_debug() {
+        eprintln!("SELDBG handle fallback mode={:?}", settings.mode);
+    }
 
     if settings.mode == SelectionMode::Ball && ball_supported() {
         if let Some(anchor) = anchor {
@@ -322,6 +467,16 @@ fn run_events(
             }
         }
 
+        let window = crate::capture::foreground_window();
+
+        // Resolve the per-app opt-out before reading: a disabled app must not
+        // be inspected and must not hit the synthetic Ctrl+C/Cmd+C fallback,
+        // which briefly writes the selection to the clipboard.
+        if settings(&app).mode == SelectionMode::Toolbar && toolbar_disabled(&app, window) {
+            last_seen = None;
+            continue;
+        }
+
         let Some(text) = read_selection(&event) else {
             // An empty selection resets the dedupe, so re-selecting the same
             // text later triggers again.
@@ -343,7 +498,6 @@ fn run_events(
             continue;
         }
 
-        let window = crate::capture::foreground_window();
         handle(&app, settings, text, Some((event.x, event.y)), window);
     }
 }
@@ -812,7 +966,9 @@ mod windows {
         WM_LBUTTONUP,
     };
 
-    use super::{MouseUp, WATCHER_ACTIVE, capture_fallback, run_events};
+    use super::{
+        MouseUp, WATCHER_ACTIVE, capture_fallback, queue_toolbar_dismiss, run_events,
+    };
 
     /// What the UI Automation probe found for the focused element.
     enum Probe {
@@ -826,6 +982,7 @@ mod windows {
     }
 
     static MOUSE_EVENTS: OnceLock<Sender<MouseUp>> = OnceLock::new();
+    static APP: OnceLock<AppHandle> = OnceLock::new();
     static DOWN_X: AtomicI32 = AtomicI32::new(0);
     static DOWN_Y: AtomicI32 = AtomicI32::new(0);
 
@@ -839,6 +996,10 @@ mod windows {
                 let info = unsafe { &*(lparam as *const MSLLHOOKSTRUCT) };
                 DOWN_X.store(info.pt.x, Ordering::Relaxed);
                 DOWN_Y.store(info.pt.y, Ordering::Relaxed);
+
+                if let Some(app) = APP.get() {
+                    queue_toolbar_dismiss(app, info.pt.x, info.pt.y);
+                }
             } else if message == WM_LBUTTONUP {
                 let info = unsafe { &*(lparam as *const MSLLHOOKSTRUCT) };
                 let dx = info.pt.x - DOWN_X.load(Ordering::Relaxed);
@@ -864,6 +1025,8 @@ mod windows {
         if MOUSE_EVENTS.set(sender).is_err() {
             return;
         }
+
+        let _ = APP.set(app.clone());
 
         // The hook lives on its own thread with a message pump for the app
         // lifetime; the worker then settles and reads the selection.
@@ -1013,7 +1176,9 @@ mod macos {
     };
     use tauri::AppHandle;
 
-    use super::{MouseUp, WATCHER_ACTIVE, capture_fallback, run_events};
+    use super::{
+        MouseUp, WATCHER_ACTIVE, capture_fallback, queue_toolbar_dismiss, run_events,
+    };
 
     #[link(name = "ApplicationServices", kind = "framework")]
     unsafe extern "C" {
@@ -1027,6 +1192,7 @@ mod macos {
     }
 
     static MOUSE_EVENTS: OnceLock<Sender<MouseUp>> = OnceLock::new();
+    static APP: OnceLock<AppHandle> = OnceLock::new();
     static DOWN_X: AtomicI32 = AtomicI32::new(0);
     static DOWN_Y: AtomicI32 = AtomicI32::new(0);
 
@@ -1042,6 +1208,8 @@ mod macos {
         if MOUSE_EVENTS.set(sender).is_err() {
             return true;
         }
+
+        let _ = APP.set(app.clone());
 
         std::thread::spawn(move || {
             let result = CGEventTap::with_enabled(
@@ -1060,6 +1228,10 @@ mod macos {
                         CGEventType::LeftMouseDown => {
                             DOWN_X.store(location.x as i32, Ordering::Relaxed);
                             DOWN_Y.store(location.y as i32, Ordering::Relaxed);
+
+                            if let Some(app) = APP.get() {
+                                queue_toolbar_dismiss(app, location.x as i32, location.y as i32);
+                            }
                         }
                         CGEventType::LeftMouseUp => {
                             let dx = location.x as i32 - DOWN_X.load(Ordering::Relaxed);
@@ -1162,6 +1334,10 @@ mod tests {
     #[test]
     fn parses_selection_modes() {
         assert_eq!(SelectionMode::parse(Some("ball")), SelectionMode::Ball);
+        assert_eq!(
+            SelectionMode::parse(Some(" toolbar ")),
+            SelectionMode::Toolbar
+        );
         assert_eq!(SelectionMode::parse(Some(" auto ")), SelectionMode::Auto);
         assert_eq!(SelectionMode::parse(Some("off")), SelectionMode::Off);
         assert_eq!(SelectionMode::parse(Some("bogus")), SelectionMode::Off);
@@ -1210,6 +1386,39 @@ mod tests {
         let settings = SelectionSettings::from_config(&config);
         assert_eq!(settings.delay_ms(), MAX_DELAY_MS);
         assert_eq!(settings.min_length, MIN_LENGTH);
+    }
+
+    #[test]
+    fn parses_disabled_app_lists() {
+        assert_eq!(
+            parse_disabled_apps(Some(" Code.exe, Notepad.exe ; code.exe ")),
+            vec!["Code.exe".to_string(), "Notepad.exe".to_string()]
+        );
+        assert!(parse_disabled_apps(None).is_empty());
+        assert_eq!(
+            serialize_disabled_apps(&["Code.exe".to_string(), "Notepad.exe".to_string()]),
+            r#"["Code.exe","Notepad.exe"]"#
+        );
+
+        assert_eq!(
+            parse_disabled_apps(Some(r#"["Code.exe","A,B.exe"]"#)),
+            vec!["Code.exe".to_string(), "A,B.exe".to_string()]
+        );
+    }
+
+    #[test]
+    fn linux_clamps_toolbar_to_the_docked_ball() {
+        let config = FileConfig {
+            selection_mode: Some("toolbar".to_string()),
+            ..FileConfig::default()
+        };
+        let settings = SelectionSettings::from_config(&config);
+
+        #[cfg(target_os = "linux")]
+        assert_eq!(settings.mode, SelectionMode::Ball);
+
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(settings.mode, SelectionMode::Toolbar);
     }
 
     #[test]

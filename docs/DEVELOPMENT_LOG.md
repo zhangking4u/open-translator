@@ -2769,3 +2769,30 @@ matrix.
 ## Sprint 6
 
 Mobile client.
+
+
+## 2026-10-18: Selection toolbar (Yuanbao-style)
+
+- Researched the Yuanbao desktop selection toolbar and adopted its action-first
+  model instead of its search/chat entries: a compact pill above the selection
+  with 翻译/复制/朗读 and a `−` menu, a per-app opt-out list, and the existing
+  streaming card as the result panel.
+- Added `SelectionMode::Toolbar` and `selection_method = toolbar` (default for
+  new configs on Windows/macOS), the 300×44 non-focusable `toolbar` window,
+  anchor placement with flip/clamp, a 10 s timeout, outside-click dismissal
+  through the existing low-level mouse hook/tap, and the `toolbar_disabled_apps`
+  config key.
+- Settings gained the three-way 翻译方式 control and removable 已禁用应用 chips;
+  the tray submenu gained 划词工具栏.
+- Windows real-machine pass 2026-10-18 (toolbar shows and translates, settings
+  method/list work). macOS is wired but remains compile-checked only; Linux
+  keeps the docked ball and hides the toolbar option until an X11 anchor is
+  implemented.
+- Review hardening: toolbar dismissal moved off the native mouse hook/tap onto
+  a worker channel; per-app opt-out is resolved before reading the selection;
+  the disabled list is JSON-encoded with a legacy parser; tray/settings mode sync
+  accepts `toolbar`; the `−` menu collapses when an action keeps the toolbar
+  visible; toolbar 朗读 honors the configured local TTS engine/voice/rate and
+  stops on dismissal.
+- Verification: Tauri 28 tests, translator-core 85 tests, frontend `node
+  --check`, capabilities JSON, release build installed on the dev machine.

@@ -468,6 +468,51 @@ button.icon.active {
   min-width: 0;
 }
 
+.setting-row.stacked {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.toolbar-disabled-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toolbar-disabled-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 4px 0 9px;
+  border-radius: 12px;
+  background: var(--ot-fill);
+  color: var(--ot-label-2);
+  font-size: 12px;
+}
+
+.toolbar-disabled-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ot-label-2);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.toolbar-disabled-chip button:hover {
+  background: var(--ot-fill-hover);
+  color: var(--ot-label);
+}
+
 .nav-row {
   width: 100%;
   padding: 7px 12px;

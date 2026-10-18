@@ -187,18 +187,23 @@
               class="switch"
               role="switch"
               aria-checked="false"
-              title="开启后，选中文字会出现悬浮球，把鼠标移到小球上悬停即可翻译。"
+              title="开启后，选中文字会出现划词工具栏或悬浮球。"
             />
           </label>
           <div class="setting-row" id="selection-method-row" hidden>
             <span class="setting-name">翻译方式</span>
             <div class="setting-control">
               <select id="selection-method" class="setting-select" title="翻译方式">
+                <option value="toolbar" title="选中文字后显示轻量工具栏，点翻译才展开结果。">划词工具栏</option>
                 <option value="ball" title="选中文字后显示悬浮球，把鼠标移上去悬停即可翻译。">悬浮球翻译</option>
                 <option value="auto" title="选中文字后立即翻译。">立即翻译</option>
               </select>
               <span id="selection-saved" class="ok-text" hidden>已保存</span>
             </div>
+          </div>
+          <div class="setting-row stacked" id="toolbar-disabled-row" hidden>
+            <span class="setting-name">已禁用应用</span>
+            <div class="toolbar-disabled-list" id="toolbar-disabled-list"></div>
           </div>
           <div class="setting-row">
             <span class="setting-name">按快捷键翻译</span>
