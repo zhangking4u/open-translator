@@ -70,15 +70,18 @@ const ttsLocalEngineRow = document.getElementById("tts-local-engine-row");
 const ttsSupertonicModelRow = document.getElementById("tts-supertonic-model-row");
 const ttsSupertonicModelStatus = document.getElementById("tts-supertonic-model-status");
 const ttsSupertonicModelDownload = document.getElementById("tts-supertonic-model-download");
+const ttsSupertonicModelDelete = document.getElementById("tts-supertonic-model-delete");
 const ttsMultiSpeakerSelect = document.getElementById("tts-speaker-multi");
 const ttsMultiPreview = document.getElementById("tts-multi-preview");
 const ttsMultiSpeakerRow = document.getElementById("tts-multi-speaker-row");
 const ttsVitsModelRow = document.getElementById("tts-vits-model-row");
 const ttsVitsModelStatus = document.getElementById("tts-vits-model-status");
 const ttsVitsModelDownload = document.getElementById("tts-vits-model-download");
+const ttsVitsModelDelete = document.getElementById("tts-vits-model-delete");
 const ttsKokoroModelRow = document.getElementById("tts-kokoro-model-row");
 const ttsKokoroModelStatus = document.getElementById("tts-kokoro-model-status");
 const ttsKokoroModelDownload = document.getElementById("tts-kokoro-model-download");
+const ttsKokoroModelDelete = document.getElementById("tts-kokoro-model-delete");
 const ttsSpeakerZhSelect = document.getElementById("tts-speaker-zh");
 const ttsSpeakerEnSelect = document.getElementById("tts-speaker-en");
 const ttsSpeakerZhRow = document.getElementById("tts-speaker-zh-row");
@@ -1134,7 +1137,7 @@ function applyModelStatus(status) {
   ttsSupertonicSize = Number(status.supertonic_size) || ttsSupertonicSize;
 }
 
-function setModelRow(statusElement, button, installed, size, model) {
+function setModelRow(statusElement, button, deleteButton, installed, size, model) {
   if (ttsModelDownloading && ttsDownloadingModel === model) {
     statusElement.textContent = "下载中…";
     statusElement.title = "";
@@ -1152,6 +1155,8 @@ function setModelRow(statusElement, button, installed, size, model) {
 
   button.disabled = ttsModelDownloading;
   button.textContent = installed ? "校验" : "下载";
+  deleteButton.hidden = !installed;
+  deleteButton.disabled = ttsModelDownloading;
 }
 
 function syncTtsRows() {
@@ -1173,6 +1178,7 @@ function syncTtsRows() {
   setModelRow(
     ttsSupertonicModelStatus,
     ttsSupertonicModelDownload,
+    ttsSupertonicModelDelete,
     ttsSupertonicInstalled,
     ttsSupertonicSize,
     "supertonic",
@@ -1180,6 +1186,7 @@ function syncTtsRows() {
   setModelRow(
     ttsVitsModelStatus,
     ttsVitsModelDownload,
+    ttsVitsModelDelete,
     ttsVitsInstalled,
     ttsVitsSize,
     "vits",
@@ -1187,6 +1194,7 @@ function syncTtsRows() {
   setModelRow(
     ttsKokoroModelStatus,
     ttsKokoroModelDownload,
+    ttsKokoroModelDelete,
     ttsKokoroInstalled,
     ttsKokoroSize,
     "kokoro",
@@ -2716,6 +2724,29 @@ ttsKokoroModelDownload.addEventListener("click", () => {
 ttsSupertonicModelDownload.addEventListener("click", () => {
   downloadLocalTtsModel("supertonic");
 });
+
+async function deleteLocalTtsModel(model, label) {
+  try {
+    const status = await invoke("delete_tts_model", { model });
+    applyModelStatus(status);
+    syncTtsRows();
+    announce(label + "语音包已删除");
+  } catch (message) {
+    setStatus(String(message));
+    announce("删除语音包失败：" + message);
+    window.setTimeout(() => setStatus(""), 3000);
+  }
+}
+
+ttsVitsModelDelete.addEventListener("click", () =>
+  deleteLocalTtsModel("vits", "MeloTTS")
+);
+ttsKokoroModelDelete.addEventListener("click", () =>
+  deleteLocalTtsModel("kokoro", "Kokoro")
+);
+ttsSupertonicModelDelete.addEventListener("click", () =>
+  deleteLocalTtsModel("supertonic", "Supertonic")
+);
 
 ttsMultiSpeakerSelect.addEventListener("change", () => {
   ttsSpeakerMulti = Number(ttsMultiSpeakerSelect.value) || 6;

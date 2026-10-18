@@ -126,6 +126,65 @@ pub(crate) fn supertonic_installed(dir: &Path) -> bool {
     }
 }
 
+/// Removes one downloaded voice pack. The caller confirms first; unloaded
+/// engines release their file handles before the directory is deleted.
+#[tauri::command]
+pub fn delete_tts_model(app: AppHandle, model: String) -> Result<TtsModelStatus, String> {
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+
+        let dir = model_dir()?;
+        let (subdir, label) = match model.as_str() {
+            "kokoro" => (
+                dir.join(KOKORO_DIR_NAME),
+                "Kokoro 中英自然模型",
+            ),
+            "vits" => (
+                dir.join(translator_core::models::VITS_ZH_MODEL_DIR),
+                "MeloTTS 中文快速模型",
+            ),
+            "supertonic" => (
+                dir.join(translator_core::models::SUPERTONIC_MODEL_DIR),
+                "Supertonic 多语种模型",
+            ),
+            other => return Err(format!("unknown tts model: {other}")),
+        };
+
+        if !subdir.is_dir() {
+            return Err("未找到可删除的语音包目录".to_string());
+        }
+
+        let confirmed = app
+            .dialog()
+            .message(format!(
+                "删除{label}？删除后需要重新下载，当前本地朗读会回退到其他语音。"
+            ))
+            .title("删除语音包")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "删除".to_string(),
+                "取消".to_string(),
+            ))
+            .blocking_show();
+
+        if !confirmed {
+            return status(&app);
+        }
+
+        unload_tts_models(app.clone());
+        std::fs::remove_dir_all(&subdir)
+            .map_err(|error| format!("删除语音包失败：{error}"))?;
+        emit_status(&app);
+        status(&app)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = (app, model);
+        Err("本地朗读暂不支持当前系统".to_string())
+    }
+}
+
 fn status(app: &AppHandle) -> Result<TtsModelStatus, String> {
     let state = app.state::<LocalTtsState>();
     let dir = model_dir()?;

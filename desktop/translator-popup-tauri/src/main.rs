@@ -29,8 +29,9 @@ use translator_service::domain::translation::{GlossaryTerm, TranslationRequest};
 use translator_service::engine::llama_cpp::LlamaCppEngine;
 
 use local_tts::{
-    download_tts_model, preload_tts_model, stop_local_tts, tts_engine_supported,
-    tts_model_status, tts_multi_speakers, tts_speakers, tts_synthesize, unload_tts_models,
+    delete_tts_model, download_tts_model, preload_tts_model, stop_local_tts,
+    tts_engine_supported, tts_model_status, tts_multi_speakers, tts_speakers, tts_synthesize,
+    unload_tts_models,
 };
 
 const DEFAULT_HOTKEY: &str = "Ctrl+Alt+T";
@@ -564,6 +565,7 @@ fn main() {
             tts_model_status,
             preload_tts_model,
             download_tts_model,
+            delete_tts_model,
             tts_synthesize,
             stop_local_tts,
             unload_tts_models,

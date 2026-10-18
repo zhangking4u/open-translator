@@ -776,6 +776,15 @@ body.settings-mode .page-head {
   color: var(--ot-label-3);
 }
 
+.model-delete {
+  color: var(--ot-label-2);
+}
+
+.model-delete:hover:not(:disabled) {
+  background: var(--ot-fill-hover);
+  color: var(--ot-red);
+}
+
 .hotkey-recorder {
   flex: none;
   min-width: 96px;

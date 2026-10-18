@@ -2942,3 +2942,8 @@ Mobile client.
   centered sheet with the current candidate keycaps, a second-press hint, the
   conflict error and a 取消 action. Key capture still stays on the recorder
   button (so the global shortcut is not stolen), and Escape/取消 dismisses it.
+
+- 语音包 delete: each installed model row now has a trash action. The native
+  dialog asks for confirmation (删除/取消) before `delete_tts_model` unloads the
+  local engines and removes the pack directory; the status event refreshes the
+  row and the 已就绪 count. Re-download remains available on the same row.
