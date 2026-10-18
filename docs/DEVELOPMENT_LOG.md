@@ -2937,3 +2937,8 @@ Mobile client.
   `pick_model_file` / `pick_toolbar_disabled_app`. The model row has
   选择文件…, and the disabled-app list shows 未禁用任何应用 plus 添加应用…
   (the chosen executable name is persisted and added immediately).
+
+- 快捷键 sheet: starting a recorder now dims the shortcuts page and shows a
+  centered sheet with the current candidate keycaps, a second-press hint, the
+  conflict error and a 取消 action. Key capture still stays on the recorder
+  button (so the global shortcut is not stolen), and Escape/取消 dismisses it.

@@ -53,6 +53,11 @@ const inputMore = document.getElementById("input-more");
 const inputActionsMenu = document.getElementById("input-actions-menu");
 const onboarding = document.getElementById("onboarding");
 const onboardingDone = document.getElementById("onboarding-done");
+const hotkeySheet = document.getElementById("hotkey-sheet");
+const hotkeySheetKeys = document.getElementById("hotkey-sheet-keys");
+const hotkeySheetHint = document.getElementById("hotkey-sheet-hint");
+const hotkeySheetError = document.getElementById("hotkey-sheet-error");
+const hotkeySheetCancel = document.getElementById("hotkey-sheet-cancel");
 const srStatus = document.getElementById("sr-status");
 const ttsTargetSelect = document.getElementById("tts-target");
 const ttsRateSelect = document.getElementById("tts-rate");
@@ -113,6 +118,7 @@ const settingsSystemBack = document.getElementById("settings-system-back");
 const ttsPacksGroup = document.getElementById("tts-packs-group");
 let selectionSupported = false;
 let lastSettingsPage = "";
+let activeHotkeyRecorder = null;
 let selectionMethodControl = null;
 let selectionModeValue = "off";
 let selectionMethodValue = "ball";
@@ -2391,8 +2397,60 @@ function specFromEvent(event) {
   return { modifiers, key: keyLabel(event) };
 }
 
+function renderHotkeySheet() {
+  const active = activeHotkeyRecorder;
+
+  if (!active) {
+    hotkeySheet.hidden = true;
+    return;
+  }
+
+  hotkeySheet.hidden = false;
+  hotkeySheetKeys.replaceChildren();
+
+  const parts = active.state.candidate ? hotkeyParts(active.state.candidate) : [];
+
+  for (const part of parts) {
+    const keycap = document.createElement("kbd");
+    keycap.textContent = part;
+    hotkeySheetKeys.append(keycap);
+  }
+
+  if (!parts.length) {
+    const placeholder = document.createElement("span");
+    placeholder.className = "placeholder";
+    placeholder.textContent = active.state.candidate
+      ? active.state.candidate
+      : "按下新的组合键";
+    hotkeySheetKeys.append(placeholder);
+  }
+
+  hotkeySheetHint.textContent = active.state.candidate
+    ? "再按一次确认 · Esc 取消"
+    : "Esc 取消";
+
+  hotkeySheetError.textContent = active.config.error.textContent;
+  hotkeySheetError.hidden = active.config.error.hidden;
+}
+
+function hideHotkeySheet() {
+  activeHotkeyRecorder = null;
+  hotkeySheet.hidden = true;
+}
+
+hotkeySheetCancel.addEventListener("click", () => {
+  activeHotkeyRecorder?.stop();
+});
+
 function createHotkeyRecorder(config) {
   const state = { recording: false, candidate: "", current: "" };
+  const controller = {
+    state,
+    config,
+    stop() {
+      stop();
+    },
+  };
 
   function render() {
     config.recorder.classList.toggle("recording", state.recording);
@@ -2426,6 +2484,10 @@ function createHotkeyRecorder(config) {
     config.reset.hidden = !state.recording;
     updateSettingsSummaries();
 
+    if (activeHotkeyRecorder === controller) {
+      renderHotkeySheet();
+    }
+
     resize();
   }
 
@@ -2434,13 +2496,20 @@ function createHotkeyRecorder(config) {
     state.candidate = "";
     config.error.hidden = true;
     config.saved.hidden = true;
+    activeHotkeyRecorder = controller;
     config.recorder.focus();
     render();
+    renderHotkeySheet();
   }
 
   function stop() {
     state.recording = false;
     state.candidate = "";
+
+    if (activeHotkeyRecorder === controller) {
+      hideHotkeySheet();
+    }
+
     render();
   }
 
@@ -2456,6 +2525,10 @@ function createHotkeyRecorder(config) {
       config.saved.hidden = false;
       window.setTimeout(() => (config.saved.hidden = true), 1500);
       config.onApplied?.(spec);
+
+      if (activeHotkeyRecorder === controller) {
+        hideHotkeySheet();
+      }
     } catch (message) {
       config.error.textContent = String(message);
       config.error.hidden = false;
